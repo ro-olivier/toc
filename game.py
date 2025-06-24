@@ -74,6 +74,7 @@ class Game:
 
 	def runRound(self, round_name : str, first_round : bool) -> None:
 	    print(f'Starting {round_name} round with dealer {self.dealer}...')
+	    self._activePlayerIndex = -1
 	    self.drawHands(first_round)
 	    self._handsFinished = 0
 	    while self._handsFinished < self._numPlayers:
@@ -82,7 +83,6 @@ class Game:
 
 	def start(self) -> None:
 		self._isStarted = True
-		self._activePlayerIndex = -1
 
 		while not self._isFinished:
 			self.runRound('First', first_round = True)
@@ -102,49 +102,56 @@ class Game:
 		if self._activePlayer.hand.size > 0:
 			print(f'\nMoving on to next player: {str(self._activePlayer)}')
 
-			if len(self._board.getOccupiedSpotsOnTheBoard(self._activePlayer)) == 0 and self._activePlayer.hand.hasNoExitCard():
-				print(f'Player has no exit card (Ace or King) and must fold.')
+			moveOptions = self._activePlayer.hand.getAllPossibleMoves(self._board)
+			if len(moveOptions) == 0:
+				# player has no available move, he must fold his hand
+				print(f'Player has no available move and must fold.')
 				self._activePlayer.hand.fold()
 			else:
-				moveChoice = None
-				while moveChoice is None or moveChoice.ID == 'CHANGE_CARD':
-					cardChoice = self._activePlayer.getCardChoiceFromPlayer()
-					options = self._board.getMoveOptions(self._activePlayer, cardChoice)
-					options.append(Move('CHANGE_CARD'))
+				if len(moveOptions) == 1:
+					# player has only one move and therefore MUST play it
+					print(f'Player has only one available move and therefore must play it.')
+					moveChoice = moveOptions[0]
+					moveChoice.updateDescription()
+				else:
+					# player has several possible moves and is prompted to select one
+					moveChoice = self._activePlayer.getMoveChoiceFromPlayer(moveOptions)
 
-					if len(options) > 0:
-						moveChoice = self._activePlayer.getMoveChoiceFromPlayer(options)
+				cardChoice = moveChoice.card
+				print(f'Player {self._activePlayer.name} has selected the following move: {str(moveChoice)}')
 
-						if moveChoice.ID in ['OUT', 'MOVE', 'SWITCH', 'BACK', 'ENTER']:
-							# have the player discard the card from his hand
-							self._activePlayer.discard(cardChoice)
-							# and put the card in the discard pile of the deck
-							cardChoice.discard()
-							
-							# player decided to take a piece out
-							if moveChoice.ID == 'OUT':
-								moveChoice.targetSpot.setOccupant(self._activePlayer, True)
+				if moveChoice.ID in ['OUT', 'MOVE', 'SWITCH', 'BACK', 'ENTER']:
+					# have the player discard the card from his hand
+					self._activePlayer.discard(cardChoice)
+					# and put the card in the discard pile of the deck
+					cardChoice.discard()
+					
+					# player decided to take a piece out
+					if moveChoice.ID == 'OUT':
+						self._activePlayer.addAPieceOnTheBoard()
+						moveChoice.targetSpot.setOccupant(self._activePlayer, True)
 
-							# player decided to move a piece foward or backward
-							if moveChoice.ID in ['MOVE', 'BACK']:
-								moveChoice.originSpot.setEmpty()
-								moveChoice.targetSpot.setOccupant(self._activePlayer)
+					# player decided to move a piece foward or backward
+					if moveChoice.ID in ['MOVE', 'BACK']:
+						moveChoice.originSpot.setEmpty()
+						kickedPlayer = moveChoice.targetSpot.setOccupant(self._activePlayer)
+						if not kickedPlayer is None:
+							kickedPlayer.removeAPieceFromTheBoard()
 
-							# player decided to switch two pieces
-							if moveChoice.ID == 'SWITCH':
-								moveChoice.originSpot.setOccupant(moveChoice.targetSpot.occupant)
-								moveChoice.targetSpot.setOccupant(self._activePlayer)
+					# player decided to switch two pieces
+					if moveChoice.ID == 'SWITCH':
+						moveChoice.originSpot.setOccupant(moveChoice.targetSpot.occupant)
+						moveChoice.targetSpot.setOccupant(self._activePlayer)
 
-							# player decided to move a piece into a house
-							if moveChoice.ID == 'ENTER':
-								moveChoice.originSpot.setEmpty()
-								moveChoice.targetSpot.setOccupant(self._activePlayer)
+					# player decided to move a piece into a house
+					if moveChoice.ID == 'ENTER':
+						moveChoice.originSpot.setEmpty()
+						moveChoice.targetSpot.setOccupant(self._activePlayer)
 
-			#TODO : player must be able to fold his hand, but only when no move is possible... this may require a complete overall of the way options are provided to player, instead of calculating options upon card selection, maybe I should compute all available options based on the hand an display these to the player... But having in mind the way to game will work, player will first decide on a card and only then on a move (because he/she will click the card, and then the board...). More thinking needed. 
 			if self._activePlayer.hand.size == 0:
 				self._handsFinished += 1
 
 			print(f'End of turn for player {self._activePlayer.name}.')
-			print(str(self._board))
+			print(f'\nState of the board:\n{str(self._board)}')
 		else:
 			print(f'\nNext player: {self._activePlayer.name} has folded in a previous turn, moving on...')

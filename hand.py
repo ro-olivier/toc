@@ -54,3 +54,13 @@ class Hand:
 
 	def discardFromHand(self, card) -> None:
 		del self._cards[self._cards.index(card)]
+
+	def getAllPossibleMoves(self, board : Board) -> [Move]:
+		allPossibleMoveOptions = []
+		for card in self._cards:
+			optionsFromThisCard = board.getMoveOptions(self._player, card)
+			for option in optionsFromThisCard:
+				allPossibleMoveOptions.append(option)
+		return allPossibleMoveOptions
+
+

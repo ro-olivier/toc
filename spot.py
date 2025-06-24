@@ -36,12 +36,19 @@ class Spot:
 	def occupant(self) -> Player:
 		return self._occupant
 
-	def setOccupant(self, player : Player, isOwnPlayerTakingAPieceOut : bool = False) -> None:
+	def setOccupant(self, player : Player, isOwnPlayerTakingAPieceOut : bool = False) -> Optional[Player]:
+		# The 'result' variable is returned with the previous occupant of the spot, if there is one. This is used by the game.py logic to decrease the counter keeping track of how many pieces any given player has on the board. 
+		result = None
+		if self._isOccupied:
+			result = self._occupant
+		
 		self._occupant = player
 		self._isOccupied = True
 
 		if isOwnPlayerTakingAPieceOut:
 			self._isBlocking = True
+
+		return result
 
 	def setEmpty(self):
 		self._occupant = None

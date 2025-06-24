@@ -57,25 +57,22 @@ class Board:
 		return self._spots[targetIndex]
 
 	def getHouseFromDistance(self, originSpot : Spot, distance : int, player : Player) -> House:
-		print(f'Call to getHouseFromDistance with originSpot = {originSpot}, distance = {distance}, player = {player.name}')
+		##debug##print(f'Call to getHouseFromDistance with originSpot = {originSpot}, distance = {distance}, player = {player.name}')
 		targetIndex = self._spots.index(originSpot) + distance
-		print(f'targetIndex = {targetIndex}')
+		##debug##print(f'targetIndex = {targetIndex}')
 		if targetIndex >= SPOTS_PER_REGION * len(COLORS):
 			targetIndex -= SPOTS_PER_REGION * len(COLORS)
-			print(f'targetIndex is >= than SPOTS_PER_REGION * len(COLORS) = {SPOTS_PER_REGION * len(COLORS)}, so correcting its value to {targetIndex}')
+			##debug##print(f'targetIndex is >= than SPOTS_PER_REGION * len(COLORS) = {SPOTS_PER_REGION * len(COLORS)}, so correcting its value to {targetIndex}')
 
 		playerColorIndex = COLORS.index(player.color)
 		firstHouseIndex = (playerColorIndex * SPOTS_PER_REGION) + 1
-		print(f'firstHouseIndex = {firstHouseIndex}')
+		##debug##print(f'firstHouseIndex = {firstHouseIndex}')
 		if targetIndex in range(firstHouseIndex, firstHouseIndex + SPOTS_PER_HOUSE):
-			print(f'targetIndex is in the house range so returning {self._houses[(playerColorIndex * SPOTS_PER_HOUSE) + targetIndex - firstHouseIndex]}')
+			##debug##print(f'targetIndex is in the house range so returning {self._houses[(playerColorIndex * SPOTS_PER_HOUSE) + targetIndex - firstHouseIndex]}')
 			return self._houses[(playerColorIndex * SPOTS_PER_HOUSE) + targetIndex - firstHouseIndex]
 
-		
-
-
 	def isMoveValid(self, move : Move) -> bool:
-		print(f'call isMoveValid with move = {move.ID}, originSpot = {move.originSpot}, targetSpot = {move.targetSpot}')
+		##debug##print(f'call isMoveValid with move = {move.ID}, originSpot = {move.originSpot}, targetSpot = {move.targetSpot}')
 		result = True
 		if move.ID == 'SWITCH' and (move.originSpot.isBlocking or move.targetSpot.isBlocking):
 			# Cannot do a SWITCH move where one of the pieces is on a blocking spots
@@ -83,6 +80,9 @@ class Board:
 		elif move.ID == 'OUT':
 			# Cannot take a piece out if there is already a piece in the exit spot
 			if move.originSpot.isBlocking:
+				result = False
+			# Cannot take more pieces out than there are spots in the houses
+			if move.player.piecesOnTheBoard == SPOTS_PER_HOUSE:
 				result = False
 		elif move.ID == 'MOVE':
 			# Cannot do a MOVE move up X spots if there is a blocking spot less or equal to X spots ahead
@@ -111,7 +111,7 @@ class Board:
 			if move.originSpot.isBlocking:
 				return False
 			return True
-		print(f'returning {result}')
+		##debug##print(f'returning {result}')
 		return result
 
 
@@ -121,7 +121,7 @@ class Board:
 		
 		# player wants to play an A : player can either get a piece out, or move a piece 11 or 1
 		if card.value == 'A':
-			potentialMove = Move('OUT', self.getFirstSpot(player.color), self.getFirstSpot(player.color))
+			potentialMove = Move('OUT', self.getFirstSpot(player.color), self.getFirstSpot(player.color), card, player)
 			if self.isMoveValid(potentialMove):
 				options.append(potentialMove)
 
@@ -129,28 +129,28 @@ class Board:
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
-					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 1))
+					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 1), card, player)
 					if self.isMoveValid(potentialMove):
 						options.append(potentialMove)
-					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 11))
+					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 11), card, player)
 					if self.isMoveValid(potentialMove):
 						options.append(potentialMove)
 
 					availableHouse = self.getHouseFromDistance(piece, 1, player)
 					if not availableHouse is None:
-						potentialMove = Move('ENTER', piece, availableHouse)
+						potentialMove = Move('ENTER', piece, availableHouse, card, player)
 						if self.isMoveValid(potentialMove):
 							options.append(potentialMove)
 					availableHouse = self.getHouseFromDistance(piece, 11, player)
 					if not availableHouse is None:
-						potentialMove = Move('ENTER', piece, availableHouse)
+						potentialMove = Move('ENTER', piece, availableHouse, card, player)
 						if self.isMoveValid(potentialMove):
 							options.append(potentialMove)
 
 
 		# player wants to play a K : player can either get a piece out, or move a piece 13
 		elif card.value == 'K':
-			potentialMove = Move('OUT', self.getFirstSpot(player.color), self.getFirstSpot(player.color))
+			potentialMove = Move('OUT', self.getFirstSpot(player.color), self.getFirstSpot(player.color), card, player)
 			if self.isMoveValid(potentialMove):
 				options.append(potentialMove)
 
@@ -158,13 +158,13 @@ class Board:
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
-					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 13))
+					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 13), card, player)
 					if self.isMoveValid(potentialMove):
 						options.append(potentialMove)
 
 					availableHouse = self.getHouseFromDistance(piece, 13, player)
 					if not availableHouse is None:
-						potentialMove = Move('ENTER', piece, availableHouse)
+						potentialMove = Move('ENTER', piece, availableHouse, card, player)
 						if self.isMoveValid(potentialMove):
 							options.append(potentialMove)
 
@@ -176,7 +176,7 @@ class Board:
 				# player has at least a piece on the board, and there is at least one other piece on the board belonging to another player
 				for piece in occupiedSpotsOnTheBoard:
 					for other_piece in otherPiecesOnTheBoard:
-						potentialMove = Move('SWITCH', piece, other_piece)
+						potentialMove = Move('SWITCH', piece, other_piece, card)
 						if self.isMoveValid(potentialMove):
 							options.append(potentialMove)
 
@@ -186,16 +186,16 @@ class Board:
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
-					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 4))
+					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 4), card)
 					if self.isMoveValid(potentialMove):
 						options.append(potentialMove)
-					potentialMove = Move('BACK', piece, self.getSpotFromDistance(piece, -4))
+					potentialMove = Move('BACK', piece, self.getSpotFromDistance(piece, -4), card)
 					if self.isMoveValid(potentialMove):
 						options.append(potentialMove)
 
 					availableHouse = self.getHouseFromDistance(piece, 4, player)
 					if not availableHouse is None:
-						potentialMove = Move('ENTER', piece, availableHouse)
+						potentialMove = Move('ENTER', piece, availableHouse, card)
 						if self.isMoveValid(potentialMove):
 							options.append(potentialMove)
 
@@ -205,13 +205,13 @@ class Board:
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
-					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 7))
+					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 7), card)
 					if self.isMoveValid(potentialMove):
 						options.append(potentialMove)
 
 					availableHouse = self.getHouseFromDistance(piece, 7, player)
 					if not availableHouse is None:
-						potentialMove = Move('ENTER', piece, availableHouse)
+						potentialMove = Move('ENTER', piece, availableHouse, card)
 						if self.isMoveValid(potentialMove):
 							options.append(potentialMove)
 
@@ -221,13 +221,13 @@ class Board:
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
-					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, card.getNumValue()))
+					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, card.getNumValue()), card)
 					if self.isMoveValid(potentialMove):
 						options.append(potentialMove)
 
 					availableHouse = self.getHouseFromDistance(piece, card.getNumValue(), player)
 					if not availableHouse is None:
-						potentialMove = Move('ENTER', piece, availableHouse)
+						potentialMove = Move('ENTER', piece, availableHouse, card)
 						if self.isMoveValid(potentialMove):
 							options.append(potentialMove)
 
