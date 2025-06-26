@@ -36,6 +36,9 @@ class Board:
 		colorIndex = COLORS.index(color)
 		return self._houses[colorIndex * SPOTS_PER_HOUSE: (colorIndex + 1) * SPOTS_PER_HOUSE]
 
+	def areAllHouseFilled(self, color : str) -> bool:
+		return all([house.isOccupied for house in self.getHousesByColor(color)])
+
 	def getPreviousColor(self, color : str) -> str:
 		colorIndex = COLORS.index(color)
 		if colorIndex == 0:

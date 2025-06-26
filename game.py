@@ -163,3 +163,9 @@ class Game:
 			print(f'\nState of the board:\n{str(self._board)}')
 		else:
 			print(f'\nNext player: {self._activePlayer.name} has folded in a previous turn, moving on...')
+
+
+		# Win condition:
+		if self._board.areAllHouseFilled(self._activePlayer.color)
+			print(f'Player {self._activePlayer.name} has filled all houses, game is over! Team {self._activePlayer.team} wins!!')
+			self._isFinished = True
