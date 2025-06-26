@@ -14,6 +14,7 @@ class Move:
 		self._targetSpot = targetSpot
 		self._card = card
 		self._player = player
+		##debug##print(f'REPR of move in the __init__ : {repr(self)}')
 
 	@property
 	def ID(self) -> str:
@@ -39,9 +40,10 @@ class Move:
 		return self._description
 
 	def __repr__(self) -> str:
-		return f'REPR of Move with ID : {self._ID}, originSpot {self._originSpot}, targetSpot {self._targetSpot}'
+		return f'Move(ID = {self._ID}, originSpot = {self._originSpot}, targetSpot = {self._targetSpot})'
 
 	def updateDescription(self) -> None:
+		##debug##print(f'REPR of move in the updateDescription : {repr(self)}')
 		##debug##print(f'Call to updateDescription for move of type {self._ID} with current description: {self._description}')
 		if self._ID == 'OUT':
 			self._description = f'Play {self._card} to take a piece out and place it in {self._originSpot}.'
@@ -61,4 +63,6 @@ class Move:
 			self._description = f'Play {self._card} to move piece currently in spot {self._originSpot} back to house spot {self._targetSpot}.'
 		elif self._ID == 'SWITCH':
 			self._description = f'Play {self._card} to switch piece in spot {self._originSpot} with piece of player {self._targetSpot.occupant.name} in spot {self._targetSpot}.'
+		elif self._ID == 'SEVEN':
+			self._description = f'Play {self._card} to do a "seven split" : move any of your pieces as you wish a total of 7 times, kicking any piece you meet as you go.'
 		##debug##print(f'End of updateDescription, new description: {self._description}')

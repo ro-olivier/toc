@@ -125,28 +125,36 @@ class Game:
 					self._activePlayer.discard(cardChoice)
 					# and put the card in the discard pile of the deck
 					cardChoice.discard()
+
+					origin = self._board.getSpot(moveChoice.originSpot.color, moveChoice.originSpot.number)
+					target = self._board.getSpot(moveChoice.targetSpot.color, moveChoice.targetSpot.number)
 					
 					# player decided to take a piece out
 					if moveChoice.ID == 'OUT':
 						self._activePlayer.addAPieceOnTheBoard()
-						moveChoice.targetSpot.setOccupant(self._activePlayer, True)
+						target.setOccupant(self._activePlayer, True)
 
 					# player decided to move a piece foward or backward
 					if moveChoice.ID in ['MOVE', 'BACK']:
-						moveChoice.originSpot.setEmpty()
-						kickedPlayer = moveChoice.targetSpot.setOccupant(self._activePlayer)
+						origin.setEmpty()
+						kickedPlayer = target.setOccupant(self._activePlayer)
 						if not kickedPlayer is None:
 							kickedPlayer.removeAPieceFromTheBoard()
 
 					# player decided to switch two pieces
 					if moveChoice.ID == 'SWITCH':
-						moveChoice.originSpot.setOccupant(moveChoice.targetSpot.occupant)
-						moveChoice.targetSpot.setOccupant(self._activePlayer)
+						origin.setOccupant(moveChoice.targetSpot.occupant)
+						target.setOccupant(self._activePlayer)
 
 					# player decided to move a piece into a house
 					if moveChoice.ID == 'ENTER':
-						moveChoice.originSpot.setEmpty()
-						moveChoice.targetSpot.setOccupant(self._activePlayer)
+						# Re-getting the target spot because it's now a house, not a spot !
+						target = self._board.getHouse(moveChoice.targetSpot.color, moveChoice.targetSpot.number)
+						origin.setEmpty()
+						target.setOccupant(self._activePlayer)
+
+				elif moveChoice.ID == 'SEVEN':
+					self._activePlayer.getSevenMoveFromPlayer(self._board)
 
 			if self._activePlayer.hand.size == 0:
 				self._handsFinished += 1

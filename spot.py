@@ -56,4 +56,5 @@ class Spot:
 		self._isBlocking = False
 
 class House(Spot):
-	pass
+	def __str__(self) -> str:
+		return 'house-'+self._color+'-'+str(self._number)

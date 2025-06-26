@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Optional
+import copy
 
 from move import Move
 from spot import Spot, House
@@ -26,7 +27,39 @@ class Board:
 				if spot.isBlocking:
 					s += ' This spot is blocked.'
 				s += '\n'
+		for house in self._houses:
+			if house.isOccupied:
+				s += f'House {str(house)} is occupied by player {house.occupant.name}.\n'
 		return s
+
+	def getHousesByColor(self, color : str) -> [House]:
+		colorIndex = COLORS.index(color)
+		return self._houses[colorIndex * SPOTS_PER_HOUSE: (colorIndex + 1) * SPOTS_PER_HOUSE]
+
+	def getPreviousColor(self, color : str) -> str:
+		colorIndex = COLORS.index(color)
+		if colorIndex == 0:
+			return COLORS[-1]
+		else:
+			return COLORS[colorIndex - 1]
+
+	def saveState(self) -> None:
+		# This method used by the Player.getSevenMoveFromPlayer() to store the state of the board while the player is doing the "seven split".
+		# This way, the seven split can be done while giving the player a view of what is done step by step, while giving the player the option
+		# to cancel and choose another card to play, or to play the seven split a different way.
+		self._savedState = {'Spots': copy.deepcopy(self._spots), 'Houses': copy.deepcopy(self._houses)}
+
+	def restoreState(self) -> None:
+		# See method above.
+		##debug##print(f'Call to restoreState with self.saveState Spots = {[str(spot) + ' - Occupied ? ' + str(spot.isOccupied) + ' by ' + str(spot.occupant.name) for spot in self._savedState['Spots']]} and self.saveState Houses = {[str(house) + ' - Occupied ? ' + str(house.isOccupied) + ' by ' + str(house.occupant.name) for house in self._savedState['Houses']]}')
+		self._spots = self._savedState['Spots']
+		self._houses = self._savedState['Houses']
+
+	def getSpot(self, color : str, number : int) -> Spot:
+		return self._spots[COLORS.index(color)*SPOTS_PER_REGION + number]
+
+	def getHouse(self, color : str, number : int) -> Spot:
+		return self._houses[COLORS.index(color)*SPOTS_PER_HOUSE + number]
 
 	def getFirstSpot(self, color : str) -> Optional[Spot]:
 		for spot in self._spots:
@@ -36,9 +69,12 @@ class Board:
 
 	def getOccupiedSpotsOnTheBoard(self, player) -> [Spot]:
 		result = []
+		##debug##print(f'Call to getOccupiedSpotsOnTheBoard with requested with current self._spots = {[str(spot) + ' - Occupied ? ' + str(spot.isOccupied) + ' by ' + str(spot.occupant) for spot in self._spots]}')
 		for spot in self._spots:
-			if spot.occupant == player:
-				result.append(spot)
+			if not spot.occupant is None:
+				if spot.occupant.name == player.name:
+					result.append(spot)
+		##debug##print(f'returning : {result}')
 		return result
 
 	def getOtherPiecesOnTheBoard(self, player) -> [Spot]:
@@ -57,19 +93,33 @@ class Board:
 		return self._spots[targetIndex]
 
 	def getHouseFromDistance(self, originSpot : Spot, distance : int, player : Player) -> House:
-		##debug##print(f'Call to getHouseFromDistance with originSpot = {originSpot}, distance = {distance}, player = {player.name}')
+		##TODO##TOCHECH##
+
+		##debug##
+		print(f'Call to getHouseFromDistance with originSpot = {originSpot}, distance = {distance}, player = {player.name}')
+		
+		if originSpot.color != self.getPreviousColor(player.color) or (originSpot.color == player.color and originSpot.number != 0 and originSpot.isBlocking):
+			# houses are only reachable from spots just before the player's own color, or from the player own color-0 spot (unless it just exited and thus is blocking).
+			##debug##
+			print('Returning empty array because current spot cannot reach any house')
+			return None
+
 		targetIndex = self._spots.index(originSpot) + distance
-		##debug##print(f'targetIndex = {targetIndex}')
+		##debug##
+		print(f'targetIndex = {targetIndex}')
 		if targetIndex >= SPOTS_PER_REGION * len(COLORS):
 			targetIndex -= SPOTS_PER_REGION * len(COLORS)
-			##debug##print(f'targetIndex is >= than SPOTS_PER_REGION * len(COLORS) = {SPOTS_PER_REGION * len(COLORS)}, so correcting its value to {targetIndex}')
+			##debug##
+			print(f'targetIndex is >= than SPOTS_PER_REGION * len(COLORS) = {SPOTS_PER_REGION * len(COLORS)}, so correcting its value to {targetIndex}')
 
 		playerColorIndex = COLORS.index(player.color)
-		firstHouseIndex = (playerColorIndex * SPOTS_PER_REGION) + 1
-		##debug##print(f'firstHouseIndex = {firstHouseIndex}')
+		firstHouseIndex = (playerColorIndex * SPOTS_PER_REGION)
+		##debug##
+		print(f'firstHouseIndex = {firstHouseIndex}')
 		if targetIndex in range(firstHouseIndex, firstHouseIndex + SPOTS_PER_HOUSE):
-			##debug##print(f'targetIndex is in the house range so returning {self._houses[(playerColorIndex * SPOTS_PER_HOUSE) + targetIndex - firstHouseIndex]}')
-			return self._houses[(playerColorIndex * SPOTS_PER_HOUSE) + targetIndex - firstHouseIndex]
+			##debug##
+			print(f'targetIndex is in the house range so returning {self._houses[(playerColorIndex * SPOTS_PER_HOUSE) + targetIndex - firstHouseIndex  - 1]}')
+			return self._houses[(playerColorIndex * SPOTS_PER_HOUSE) + targetIndex - firstHouseIndex - 1]
 
 	def isMoveValid(self, move : Move) -> bool:
 		##debug##print(f'call isMoveValid with move = {move.ID}, originSpot = {move.originSpot}, targetSpot = {move.targetSpot}')
@@ -107,11 +157,29 @@ class Board:
 			if move.targetSpot.isBlocking:
 				result = False
 		elif move.ID == 'ENTER':
-			# Cannot do a ENTER move X spots if there is a house spot already taken
-			if move.originSpot.isBlocking:
-				return False
-			return True
-		##debug##print(f'returning {result}')
+			# Cannot do a ENTER move X spots if there is a house spot already taken before...
+			# also if the player is coming from a spot before the exit point then it's OK to enter at any of the 4 houses as long as the previous houses (before the targetted house) are not already occupied
+			# if the player is coming from another house before the target house, it's actually the same logic, the houses in between the origin house and the targethouse cannot be occupied
+			houseColor = move.targetSpot.color
+			##debug##print(f'isinstance(move.originSpot, Spot) = {isinstance(move.originSpot, Spot)} and self.getFirstSpot(houseColor).isBlocking {self.getFirstSpot(houseColor).isBlocking}')
+			if isinstance(move.originSpot, Spot) and self.getFirstSpot(houseColor).isBlocking:
+				result = False
+			else:
+				housesBeforeTarget = []
+				for house in self.getHousesByColor(houseColor):
+					if house.number < move.targetSpot.number:
+						housesBeforeTarget.append(house) 
+				##debug##print(housesBeforeTarget)
+				if any(house.isOccupied for house in housesBeforeTarget):
+					##debug##print('a house is blocking the way!')
+					##debug##print([house.isOccupied for hoyuse in housesBeforeTarget])
+					result = False
+		elif move.ID == 'SEVEN':
+			# Cannot do a SEVEN move if there is not at least one piece on the board
+			# and even then it might not be possible !! ##TODO##
+			if move.player.piecesOnTheBoard == 0:
+				result = False
+		##debug##		print(f'returning {result}')
 		return result
 
 
@@ -176,7 +244,7 @@ class Board:
 				# player has at least a piece on the board, and there is at least one other piece on the board belonging to another player
 				for piece in occupiedSpotsOnTheBoard:
 					for other_piece in otherPiecesOnTheBoard:
-						potentialMove = Move('SWITCH', piece, other_piece, card)
+						potentialMove = Move('SWITCH', piece, other_piece, card, player)
 						if self.isMoveValid(potentialMove):
 							options.append(potentialMove)
 
@@ -186,34 +254,45 @@ class Board:
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
-					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 4), card)
+					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 4), card, player)
 					if self.isMoveValid(potentialMove):
 						options.append(potentialMove)
-					potentialMove = Move('BACK', piece, self.getSpotFromDistance(piece, -4), card)
+					potentialMove = Move('BACK', piece, self.getSpotFromDistance(piece, -4), card, player)
 					if self.isMoveValid(potentialMove):
 						options.append(potentialMove)
 
 					availableHouse = self.getHouseFromDistance(piece, 4, player)
 					if not availableHouse is None:
-						potentialMove = Move('ENTER', piece, availableHouse, card)
+						potentialMove = Move('ENTER', piece, availableHouse, card, player)
 						if self.isMoveValid(potentialMove):
 							options.append(potentialMove)
 
 		# player wants to play a 7 : player can move exactly 7 times split among all the pieces he/she has one the board
 		elif card.value == '7':
+			potentialMove = Move('SEVEN', None, None, card, player)
+			if self.isMoveValid(potentialMove):
+				options.append(potentialMove)
+
+		#special card which cannot be played by a player but is used by the Player.getSevenMoveFromPlayer() method to get options for "one-step" moves during a seven split.
+		elif card.value == '1':
 			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player)
+			##debug##print(f'in call getMoveOptions, when asking move for a 1 (in seven-split) : occupiedSpotsOnTheBoard = {occupiedSpotsOnTheBoard}')
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
-					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 7), card)
+					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, 1), card, player)
 					if self.isMoveValid(potentialMove):
+						##debug##print('found a valid MOVE move, appending...')
 						options.append(potentialMove)
-
-					availableHouse = self.getHouseFromDistance(piece, 7, player)
+					availableHouse = self.getHouseFromDistance(piece, 1, player)
+					##debug##print(f'found the following availableHouses : {availableHouse}')
 					if not availableHouse is None:
-						potentialMove = Move('ENTER', piece, availableHouse, card)
+						potentialMove = Move('ENTER', piece, availableHouse, card, player)
+						##debug##print(f'evaluation the potentialMove : {potentialMove}')
 						if self.isMoveValid(potentialMove):
+							##debug##print('found a valid ENTER move, appending...')
 							options.append(potentialMove)
+
 
 		# player is playing any other card, only possible move is to go forward
 		else:
@@ -221,13 +300,13 @@ class Board:
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
-					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, card.getNumValue()), card)
+					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, card.getNumValue()), card, player)
 					if self.isMoveValid(potentialMove):
 						options.append(potentialMove)
 
 					availableHouse = self.getHouseFromDistance(piece, card.getNumValue(), player)
 					if not availableHouse is None:
-						potentialMove = Move('ENTER', piece, availableHouse, card)
+						potentialMove = Move('ENTER', piece, availableHouse, card, player)
 						if self.isMoveValid(potentialMove):
 							options.append(potentialMove)
 

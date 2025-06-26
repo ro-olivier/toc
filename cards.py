@@ -44,7 +44,7 @@ class Deck:
 
 
 class Card:
-	def __init__(self, suit : str, value : str, deck : Deck):
+	def __init__(self, suit : str, value : str, deck : Deck = None):
 		self._suit = suit
 		self._value = value
 		self._deck = deck
@@ -57,7 +57,7 @@ class Card:
 		return self._value
 
 	def getNumValue(self) -> int:
-		if self._value in [str(i) for i in range(2, 10)]:
+		if self._value in [str(i) for i in range(1, 10)]:
 			return int(self._value)
 		elif self._value == 'T':
 			return 10
