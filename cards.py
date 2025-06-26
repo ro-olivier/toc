@@ -5,6 +5,7 @@ from params import *
 
 import random
 
+
 class Deck:
 	def __init__(self):
 		self._cards = [Card(suit, value, self) for value in VALUES for suit in SUITS]
@@ -30,7 +31,7 @@ class Deck:
 	def discardPile(self) -> list[Card]:
 		return self._discardPile
 
-	def reset(self, players):
+	def reset(self, players) -> None:
 		player_index = 0
 		temp_hands = []
 		for card in self._discardPile:
@@ -49,14 +50,15 @@ class Card:
 		self._value = value
 		self._deck = deck
 
-	def __str__(self):
+	def __str__(self) -> str:
 		return f'{self._suit}{self._value}'
 
 	@property
 	def value(self) -> str:
 		return self._value
 
-	def getNumValue(self) -> int:
+	@property
+	def numValue(self) -> int:
 		if self._value in [str(i) for i in range(1, 10)]:
 			return int(self._value)
 		elif self._value == 'T':

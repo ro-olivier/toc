@@ -5,6 +5,7 @@ from player import Player
 
 from params import *
 
+
 class Move:
 	def __init__(self, ID : str, originSpot : Spot = None, targetSpot : Spot = None, card : Card = None, player : Player = None):
 		self._ID = ID

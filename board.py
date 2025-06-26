@@ -7,6 +7,7 @@ from spot import Spot, House
 
 from params import *
 
+
 class Board:
 	def __init__(self):
 		self._savedState = None
@@ -97,8 +98,6 @@ class Board:
 		return self._spots[targetIndex]
 
 	def getHouseFromDistance(self, originSpot : Spot, distance : int, player : Player) -> Optional[House]:
-		##TODO##TOCHECH##
-
 		##debug##print(f'Call to getHouseFromDistance with originSpot = {originSpot}, distance = {distance}, player = {player.name}')
 		
 		if originSpot.color != self.getPreviousColor(player.color) or (originSpot.color == player.color and originSpot.number != 0 and originSpot.isBlocking):
@@ -181,8 +180,6 @@ class Board:
 		##debug##		print(f'returning {result}')
 		return result
 
-
-
 	def getMoveOptions(self, player : Player, card : Card) -> Optional[list[Move]]:
 		options = []
 		
@@ -213,7 +210,6 @@ class Board:
 						potentialMove = Move('ENTER', piece, availableHouse, card, player)
 						if self.isMoveValid(potentialMove):
 							options.append(potentialMove)
-
 
 		# player wants to play a K : player can either get a piece out, or move a piece 13
 		elif card.value == 'K':
@@ -292,18 +288,17 @@ class Board:
 							##debug##print('found a valid ENTER move, appending...')
 							options.append(potentialMove)
 
-
 		# player is playing any other card, only possible move is to go forward
 		else:
 			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player)
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
-					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, card.getNumValue()), card, player)
+					potentialMove = Move('MOVE', piece, self.getSpotFromDistance(piece, card.numValue), card, player)
 					if self.isMoveValid(potentialMove):
 						options.append(potentialMove)
 
-					availableHouse = self.getHouseFromDistance(piece, card.getNumValue(), player)
+					availableHouse = self.getHouseFromDistance(piece, card.numValue, player)
 					if not availableHouse is None:
 						potentialMove = Move('ENTER', piece, availableHouse, card, player)
 						if self.isMoveValid(potentialMove):

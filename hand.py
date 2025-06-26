@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 class Hand:
 	def __init__(self, cards : list[Card], player : Player):
 		if len(cards) in [4, 5]:
@@ -9,7 +10,7 @@ class Hand:
 			raise Exception(f'Cannot create a hand of less than 4 cards or more than 5 cards...')
 		self._remainingCards = len(self._cards)
 
-	def __str__(self):
+	def __str__(self) -> str:
 		if len(self._cards) == 0:
 			return f'{self._player.name}\'s hand is empty'
 		else:

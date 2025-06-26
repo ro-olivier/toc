@@ -46,10 +46,10 @@ class Player:
 	def removeAPieceFromTheBoard(self) -> None:
 		self._piecesOnTheBoard -= 1
 
-	def setHand(self, hand : Hand):
+	def setHand(self, hand : Hand) -> None:
 		self._hand = hand
 
-	def setDealer(self):
+	def setDealer(self) -> None:
 		self._isDealer = True
 
 	def getCardChoiceFromPlayer(self) -> Card:
@@ -58,7 +58,6 @@ class Player:
 			print(f'Please input a number between 0 and {self._hand.size - 1} to select an available card from your hand.')
 			choice = self._hand.getCard(input('What card do you want to play?\t'))
 		return choice
-
 
 	def getMoveChoiceFromPlayer(self, options : list[Move]) -> Move:
 		##debug##print(f'{[repr(move) for move in options]}')

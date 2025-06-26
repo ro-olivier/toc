@@ -49,10 +49,11 @@ class Spot:
 
 		return result
 
-	def setEmpty(self):
+	def setEmpty(self) -> None:
 		self._occupant = None
 		self._isOccupied = False
 		self._isBlocking = False
+
 
 class House(Spot):
 	def __str__(self) -> str:
