@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from board import Board
 from cards import Deck
 from params import *
@@ -52,6 +54,12 @@ class Game:
 	def players(self) -> list[Player]:
 		return self._players
 
+	def getTeammate(self, player) -> Optional[Player]:
+		for player2 in self._players:
+			if player2 == player and player2.color == player.color:
+				return player2
+		return None
+
 	@property
 	def dealer(self) -> Player:
 		return self._players[0]
@@ -92,8 +100,8 @@ class Game:
 		self.drawHands(first_round)
 
 		teams = range(NUMBER_OF_TEAMS)
-		self.requestCardExchange(self._players[0], self._players[2])
-		self.requestCardExchange(self._players[1], self._players[3])
+		self.requestCardExchange(self._players[0], self.getTeammate(self._players[0]))
+		self.requestCardExchange(self._players[1], self.getTeammate(self._players[1]))
 
 		self._handsFinished = 0
 		while self._handsFinished < self._numPlayers:
@@ -184,7 +192,14 @@ class Game:
 			print(f'\nNext player: {self._activePlayer.name} has folded in a previous turn, moving on...')
 
 
-		# Win condition:
+		# When a player manages to fill all his/her houses:
 		if self._board.areAllHouseFilled(self._activePlayer.color):
-			print(f'Player {self._activePlayer.name} has filled all houses, game is over! Team {self._activePlayer.team} wins!!')
-			self._isFinished = True
+			print(f'Player {self._activePlayer.name} has filled all houses!)')
+
+			teammate = self.getTeammate(self._activePlayer)
+			# If the teammate's houses are all filled as well, the game is won!
+			if self._board.areAllHouseFilled(teammate.color):
+				print(f'Player {self._activePlayer.name} and {teammate.name} win!!!')
+			else:
+				print(f'This player will now play using his/her teammate\'s pieces and attempt to win the game.')
+				self._activePlayer.color = self.getTeammate(self._activePlayer).color
