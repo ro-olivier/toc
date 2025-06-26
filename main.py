@@ -14,7 +14,7 @@ if __name__ == "__main__":
 		while player_name == '' or player_name in names:
 			player_name = input(f'Please provide a unique name for player {i} (playing {COLORS[i]}): ')
 		
-		player = Player(player_name, str(i%2), COLORS[i])
+		player = Player(player_name, str(i%NUMBER_OF_TEAMS), COLORS[i])
 		players.append(player)
 
 	game.setPlayers(players)

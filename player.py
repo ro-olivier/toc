@@ -113,3 +113,14 @@ class Player:
 
 	def discard(self, card) -> None:
 		self._hand.discardFromHand(card)
+
+	def requestCardExchange(self) -> Card:
+		print(f'Player {self._name}, here are the cards in your hand: {'\t\t\t ||\t'.join([str(index) + ' -- ' + str(card) for index,card in enumerate(self._hand.cards)])}')
+		cardChoice = input('Please choose a card to give to your team-mate: ')
+		while cardChoice not in [str(i) for i in range(len(self._hand.cards))]:
+			cardChoice = input('Please choose a card to give to your team-mate: ')
+		return self._hand.cards[int(cardChoice)]
+
+	def switchCard(self, card1, card2) -> None:
+		self._hand.discardFromHand(card1)
+		self._hand.addToHand(card2)

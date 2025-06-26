@@ -33,6 +33,10 @@ class Hand:
 	def size(self) -> int:
 		return len(self._cards)
 
+	@property
+	def cards(self) -> list[Card]:
+		return self._cards
+
 	def getCard(self, index : str) -> Card:
 		try:
 			return self._cards[int(index)]
@@ -52,6 +56,9 @@ class Hand:
 
 	def discardFromHand(self, card) -> None:
 		del self._cards[self._cards.index(card)]
+
+	def addToHand(self, card) -> None:
+		self._cards.append(card)
 
 	def getAllPossibleMoves(self, board : Board) -> list[Move]:
 		allPossibleMoveOptions = []

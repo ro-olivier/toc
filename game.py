@@ -79,10 +79,22 @@ class Game:
 				hand = self._deck.drawHand(4, player)
 				player.setHand(hand)
 
+	def requestCardExchange(self, player1 : Player, player2 : Player) -> None:
+		card1 = player1.requestCardExchange()
+		card2 = player2.requestCardExchange()
+
+		player1.switchCard(card1, card2)
+		player2.switchCard(card2, card1)
+
 	def runRound(self, round_name : str, first_round : bool) -> None:
 		print(f'Starting {round_name} round with dealer {self.dealer}...')
 		self.resetActivePlayerIndex()
 		self.drawHands(first_round)
+
+		teams = range(NUMBER_OF_TEAMS)
+		self.requestCardExchange(self._players[0], self._players[2])
+		self.requestCardExchange(self._players[1], self._players[3])
+
 		self._handsFinished = 0
 		while self._handsFinished < self._numPlayers:
 			self.nextPlayer()
