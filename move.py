@@ -1,5 +1,4 @@
 from __future__ import annotations
-from typing import Optional
 
 from cards import Card
 from player import Player
@@ -7,7 +6,7 @@ from player import Player
 from params import *
 
 class Move:
-	def __init__(self, ID : int, originSpot : Spot = None, targetSpot : Spot = None, card : Card = None, player : Player = None):
+	def __init__(self, ID : str, originSpot : Spot = None, targetSpot : Spot = None, card : Card = None, player : Player = None):
 		self._ID = ID
 		self._description = MOVE_DESCRIPTION[self._ID]
 		self._originSpot = originSpot

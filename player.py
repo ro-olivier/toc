@@ -1,15 +1,14 @@
 from __future__ import annotations
-from typing import Optional
 
 from cards import Card
+from hand import Hand
 
-from params import *
 
 class Player:
 	def __init__(self, name : str, team : str, color : str):
-		self._name = str(name)
-		self._team = str(team)
-		self._color = str(color)
+		self._name = name
+		self._team = team
+		self._color = color
 		self._hand = None
 		self._active = False
 		self._isDealer = False
@@ -24,7 +23,7 @@ class Player:
 	@property
 	def name(self) -> str:
 		return self._name
-	
+
 	@property
 	def team(self) -> str:
 		return self._team
@@ -61,11 +60,10 @@ class Player:
 		return choice
 
 
-	def getMoveChoiceFromPlayer(self, options : [Move]) -> Move:
+	def getMoveChoiceFromPlayer(self, options : list[Move]) -> Move:
 		##debug##print(f'{[repr(move) for move in options]}')
 		for move in options:
 			move.updateDescription()
-		
 
 		for index,option in enumerate(options):
 			print(f'{str(index)} -- {str(option)}')
@@ -76,7 +74,7 @@ class Player:
 			choice = input('What move do you want to play?\t')
 		return options[int(choice)]
 
-	def getSevenMoveFromPlayer(self, board : Board) -> [Move]:
+	def getSevenMoveFromPlayer(self, board : Board) -> None:
 		counter = 0
 		moves = []
 		board.saveState()
@@ -84,11 +82,11 @@ class Player:
 		# This loop will display all the 'one-move' options to the user, who will have to choose one seven times
 		while counter < 7:
 			moveOptions = board.getMoveOptions(self, Card('', '1'))
-			print(f'moveOptions provided to user : {moveOptions}')
+			##debug##print(f'moveOptions provided to user : {moveOptions}')
 			moveChoice = self.getMoveChoiceFromPlayer(moveOptions)
 
 			# the move effect on the board are applied as if the move was really going to happen, but it's ok since the board.saveState() was called earlier
-			# and so the board can be restored later 
+			# and so the board can be restored later
 			moveChoice.originSpot.setEmpty()
 			moveChoice.targetSpot.setOccupant(self)
 			# we don't actually kick the users from the spots they occupy because that would mess up the pieceOnTheBoard counter
@@ -108,12 +106,10 @@ class Player:
 				kickedPlayer = board.getSpot(move.targetSpot.color, move.targetSpot.number).setOccupant(self)
 				if not kickedPlayer is None:
 					kickedPlayer.removeAPieceFromTheBoard()
-		# if the user does not confirm we simply call the method again to offer the possibly to choose differently
+		# if the user does not confirm we simply call the method again to offer the possibility to choose differently
 		# (the board was already restored so we're good)
 		else:
 			self.getSevenMoveFromPlayer(board)
-
-
 
 	def discard(self, card) -> None:
 		self._hand.discardFromHand(card)

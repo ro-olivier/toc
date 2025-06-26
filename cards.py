@@ -1,5 +1,4 @@
 from __future__ import annotations
-from typing import Optional
 
 from hand import Hand
 from params import *
@@ -12,6 +11,7 @@ class Deck:
 		random.shuffle(self._cards)
 
 		self._discardPile = []
+		self._player = None
 
 	def drawHand(self, number_of_cards : int, player : Player) -> Hand:
 		if not number_of_cards in [4, 5]:
@@ -27,7 +27,7 @@ class Deck:
 			return Hand(temp, player)
 
 	@property
-	def discardPile(self) -> [Card]:
+	def discardPile(self) -> list[Card]:
 		return self._discardPile
 
 	def reset(self, players):
@@ -69,6 +69,8 @@ class Card:
 			return 13
 		elif self._value == 'A':
 			return 11
-		
+		else:
+			return 0
+
 	def discard(self) -> None:
 		self._deck.discardPile.append(self)

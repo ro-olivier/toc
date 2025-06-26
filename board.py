@@ -9,6 +9,7 @@ from params import *
 
 class Board:
 	def __init__(self):
+		self._savedState = None
 		self._spots = []
 		for color in COLORS:
 			for i in range(SPOTS_PER_REGION):
@@ -32,7 +33,7 @@ class Board:
 				s += f'House {str(house)} is occupied by player {house.occupant.name}.\n'
 		return s
 
-	def getHousesByColor(self, color : str) -> [House]:
+	def getHousesByColor(self, color : str) -> list[House]:
 		colorIndex = COLORS.index(color)
 		return self._houses[colorIndex * SPOTS_PER_HOUSE: (colorIndex + 1) * SPOTS_PER_HOUSE]
 
@@ -70,7 +71,7 @@ class Board:
 				return spot
 		return None  # in case no such spot is found, but there should always be one
 
-	def getOccupiedSpotsOnTheBoard(self, player) -> [Spot]:
+	def getOccupiedSpotsOnTheBoard(self, player) -> list[Spot]:
 		result = []
 		##debug##print(f'Call to getOccupiedSpotsOnTheBoard with requested with current self._spots = {[str(spot) + ' - Occupied ? ' + str(spot.isOccupied) + ' by ' + str(spot.occupant) for spot in self._spots]}')
 		for spot in self._spots:
@@ -80,7 +81,7 @@ class Board:
 		##debug##print(f'returning : {result}')
 		return result
 
-	def getOtherPiecesOnTheBoard(self, player) -> [Spot]:
+	def getOtherPiecesOnTheBoard(self, player) -> list[Spot]:
 		result = []
 		for spot in self._spots:
 			if spot.occupant != player and spot.isOccupied:
@@ -95,34 +96,29 @@ class Board:
 			targetIndex += SPOTS_PER_REGION * len(COLORS)
 		return self._spots[targetIndex]
 
-	def getHouseFromDistance(self, originSpot : Spot, distance : int, player : Player) -> House:
+	def getHouseFromDistance(self, originSpot : Spot, distance : int, player : Player) -> Optional[House]:
 		##TODO##TOCHECH##
 
-		##debug##
-		print(f'Call to getHouseFromDistance with originSpot = {originSpot}, distance = {distance}, player = {player.name}')
+		##debug##print(f'Call to getHouseFromDistance with originSpot = {originSpot}, distance = {distance}, player = {player.name}')
 		
 		if originSpot.color != self.getPreviousColor(player.color) or (originSpot.color == player.color and originSpot.number != 0 and originSpot.isBlocking):
 			# houses are only reachable from spots just before the player's own color, or from the player own color-0 spot (unless it just exited and thus is blocking).
-			##debug##
-			print('Returning empty array because current spot cannot reach any house')
+			##debug##print('Returning empty array because current spot cannot reach any house')
 			return None
 
 		targetIndex = self._spots.index(originSpot) + distance
-		##debug##
-		print(f'targetIndex = {targetIndex}')
+		##debug##print(f'targetIndex = {targetIndex}')
 		if targetIndex >= SPOTS_PER_REGION * len(COLORS):
 			targetIndex -= SPOTS_PER_REGION * len(COLORS)
-			##debug##
-			print(f'targetIndex is >= than SPOTS_PER_REGION * len(COLORS) = {SPOTS_PER_REGION * len(COLORS)}, so correcting its value to {targetIndex}')
+			##debug##print(f'targetIndex is >= than SPOTS_PER_REGION * len(COLORS) = {SPOTS_PER_REGION * len(COLORS)}, so correcting its value to {targetIndex}')
 
 		playerColorIndex = COLORS.index(player.color)
 		firstHouseIndex = (playerColorIndex * SPOTS_PER_REGION)
-		##debug##
-		print(f'firstHouseIndex = {firstHouseIndex}')
+		##debug##print(f'firstHouseIndex = {firstHouseIndex}')
 		if targetIndex in range(firstHouseIndex, firstHouseIndex + SPOTS_PER_HOUSE):
-			##debug##
-			print(f'targetIndex is in the house range so returning {self._houses[(playerColorIndex * SPOTS_PER_HOUSE) + targetIndex - firstHouseIndex  - 1]}')
+			##debug##print(f'targetIndex is in the house range so returning {self._houses[(playerColorIndex * SPOTS_PER_HOUSE) + targetIndex - firstHouseIndex  - 1]}')
 			return self._houses[(playerColorIndex * SPOTS_PER_HOUSE) + targetIndex - firstHouseIndex - 1]
+		return None
 
 	def isMoveValid(self, move : Move) -> bool:
 		##debug##print(f'call isMoveValid with move = {move.ID}, originSpot = {move.originSpot}, targetSpot = {move.targetSpot}')
@@ -175,7 +171,7 @@ class Board:
 				##debug##print(housesBeforeTarget)
 				if any(house.isOccupied for house in housesBeforeTarget):
 					##debug##print('a house is blocking the way!')
-					##debug##print([house.isOccupied for hoyuse in housesBeforeTarget])
+					##debug##print([house.isOccupied for house in housesBeforeTarget])
 					result = False
 		elif move.ID == 'SEVEN':
 			# Cannot do a SEVEN move if there is not at least one piece on the board
@@ -187,7 +183,7 @@ class Board:
 
 
 
-	def getMoveOptions(self, player : Player, card : Card) -> Optional[Move]:
+	def getMoveOptions(self, player : Player, card : Card) -> Optional[list[Move]]:
 		options = []
 		
 		# player wants to play an A : player can either get a piece out, or move a piece 11 or 1

@@ -3,7 +3,6 @@ from typing import Optional
 
 from player import Player
 
-from params import *
 
 class Spot:
 	def __init__(self, color : str, number : int):

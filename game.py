@@ -1,10 +1,10 @@
 from __future__ import annotations
-from typing import Optional
 
 from board import Board
-from move import Move
 from cards import Deck
 from params import *
+from player import Player
+
 
 class Game:
 	def __init__(self):
@@ -12,15 +12,20 @@ class Game:
 		self._deck = Deck()
 		self._isStarted = False
 		self._isFinished = False
+		self._numPlayers = 0
+		self._players = []
+		self._handsFinished = 0
+		self._activePlayerIndex = -1
+		self._activePlayer = None
 
-	def __str__(self):
+	def __str__(self) -> str:
 		s = f'This game has {self._numPlayers} players.\r\n'
 		for i in range(0, self._numPlayers):
 			s += f'Player {i} : {str(self._players[i])}'
 			s += '\r\n'
 		return s
 
-	def printNumPlayers(self):
+	def printNumPlayers(self) -> None:
 		print(f'This game has {self._numPlayers} players.')
 
 	@property
@@ -44,14 +49,17 @@ class Game:
 		return self._isFinished
 
 	@property
-	def players(self) -> [Players]:
+	def players(self) -> list[Player]:
 		return self._players
 
 	@property
 	def dealer(self) -> Player:
 		return self._players[0]
 
-	def setPlayers(self, players : [Player]) -> None:
+	def resetActivePlayerIndex(self) -> None:
+		self._activePlayerIndex = -1
+
+	def setPlayers(self, players : list[Player]) -> None:
 		# self._players is an ordered array, where the first element is always the dealer
 		self._numPlayers = len(players)
 		self._players = players
@@ -62,7 +70,6 @@ class Game:
 		self._players[0].setDealer()
 
 	def drawHands(self, first_round : bool) -> None:
-		self._handsFinished = 0
 		if first_round:
 			for player in self._players:
 				hand = self._deck.drawHand(5, player)
@@ -73,13 +80,13 @@ class Game:
 				player.setHand(hand)
 
 	def runRound(self, round_name : str, first_round : bool) -> None:
-	    print(f'Starting {round_name} round with dealer {self.dealer}...')
-	    self._activePlayerIndex = -1
-	    self.drawHands(first_round)
-	    self._handsFinished = 0
-	    while self._handsFinished < self._numPlayers:
-	        self.nextPlayer()
-	    print(f'{round_name} round is finished.\n')
+		print(f'Starting {round_name} round with dealer {self.dealer}...')
+		self.resetActivePlayerIndex()
+		self.drawHands(first_round)
+		self._handsFinished = 0
+		while self._handsFinished < self._numPlayers:
+			self.nextPlayer()
+		print(f'{round_name} round is finished.\n')
 
 	def start(self) -> None:
 		self._isStarted = True
@@ -89,11 +96,11 @@ class Game:
 			self.runRound('Second', first_round = False)
 			self.runRound('Third', first_round = False)
 
-			self._deck.reset()
+			self._deck.reset(self.players)
 			self.nextDealer()
 			self.start()
 
-	def nextPlayer(self):
+	def nextPlayer(self) -> None:
 		self._activePlayerIndex += 1
 		if self._activePlayerIndex == NUMBER_OF_PLAYERS:
 			self._activePlayerIndex = 0
@@ -134,7 +141,7 @@ class Game:
 						self._activePlayer.addAPieceOnTheBoard()
 						target.setOccupant(self._activePlayer, True)
 
-					# player decided to move a piece foward or backward
+					# player decided to move a piece forward or backward
 					if moveChoice.ID in ['MOVE', 'BACK']:
 						origin.setEmpty()
 						kickedPlayer = target.setOccupant(self._activePlayer)
@@ -166,6 +173,6 @@ class Game:
 
 
 		# Win condition:
-		if self._board.areAllHouseFilled(self._activePlayer.color)
+		if self._board.areAllHouseFilled(self._activePlayer.color):
 			print(f'Player {self._activePlayer.name} has filled all houses, game is over! Team {self._activePlayer.team} wins!!')
 			self._isFinished = True
