@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Play Toc Online!</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white font-mono p-6">
+  <div class="max-w-xl mx-auto">
+    <h1 class="text-3xl font-bold mb-4 text-center">TOC Online</h1>
+
+    <!-- Start screen -->
+    <div id="start-screen" class="space-y-4">
+      <input id="name-input" type="text" placeholder="Enter your name"
+             class="w-full p-2 bg-gray-800 border border-gray-600 rounded" />
+
+      <input id="game-id-input" type="text" placeholder="Enter Game ID (for joining)"
+             class="w-full p-2 bg-gray-800 border border-gray-600 rounded" />
+
+      <div class="flex space-x-2">
+        <button id="create-btn" class="w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+          Create Game
+        </button>
+        <button id="join-btn" class="w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50" disabled>
+          Join Game
+        </button>
+      </div>
+
+      <div id="error-msg" class="text-red-400 text-sm hidden"></div>
+    </div>
+
+    <!-- Game screen -->
+    <div id="game-screen" class="hidden flex flex-col space-y-4">
+      <div id="terminal" class="bg-black text-green-400 p-4 rounded h-64 overflow-y-auto whitespace-pre-wrap text-sm border border-green-500"></div>
+      <div class="flex space-x-2">
+        <input id="command-input" type="text" placeholder="Type a command"
+               class="flex-1 p-2 bg-gray-800 border border-gray-600 rounded" />
+        <button id="send-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+          Send
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const nameInput = document.getElementById("name-input");
+    const gameIdInput = document.getElementById("game-id-input");
+    const createBtn = document.getElementById("create-btn");
+    const joinBtn = document.getElementById("join-btn");
+    const sendBtn = document.getElementById("send-btn");
+    const commandInput = document.getElementById("command-input");
+    const terminal = document.getElementById("terminal");
+    const startScreen = document.getElementById("start-screen");
+    const gameScreen = document.getElementById("game-screen");
+    const errorMsg = document.getElementById("error-msg");
+
+    let ws = null;
+
+    function log(msg) {
+      terminal.textContent += msg + "\n";
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    function showGameUI() {
+      startScreen.classList.add("hidden");
+      gameScreen.classList.remove("hidden");
+    }
+
+    function showError(message) {
+      errorMsg.textContent = message;
+      errorMsg.classList.remove("hidden");
+    }
+
+    function clearError() {
+      errorMsg.textContent = "";
+      errorMsg.classList.add("hidden");
+    }
+
+    async function connectToGame(gameId, name) {
+      clearError();
+      const wsUrl = `wss://${window.location.host}/toc/ws/${gameId}/${name}`;
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch (err) {
+        showError("Failed to construct WebSocket URL.");
+        return;
+      }
+
+      ws.onopen = () => {
+        log(`Connected to game ${gameId} as ${name}`);
+        showGameUI();
+      };
+
+      ws.onmessage = (event) => log(`> ${event.data}`);
+      ws.onclose = () => log("WebSocket connection closed.");
+      ws.onerror = () => {
+        showError("Failed to join game. Game ID might be invalid.");
+      };
+    }
+
+    createBtn.addEventListener("click", async () => {
+      const name = nameInput.value.trim();
+      if (!name) {
+        showError("Please enter your name.");
+        return;
+      }
+
+      clearError();
+      try {
+        const res = await fetch("/toc/api/create-game", {
+          method: "POST"
+        });
+        const data = await res.json();
+        const gameId = data.game_id;
+        log(`Created game ID: ${gameId}`);
+        await connectToGame(gameId, name);
+      } catch (err) {
+        showError("Failed to create game.");
+      }
+    });
+
+    joinBtn.addEventListener("click", async () => {
+      const name = nameInput.value.trim();
+      const gameId = gameIdInput.value.trim();
+      if (!name || !gameId) {
+        showError("Please enter both your name and a Game ID.");
+        return;
+      }
+      await connectToGame(gameId, name);
+    });
+
+    sendBtn.addEventListener("click", () => {
+      const message = commandInput.value.trim();
+      if (message && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+        log(`< ${message}`);
+        commandInput.value = "";
+      }
+    });
+
+    commandInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendBtn.click();
+    });
+
+    gameIdInput.addEventListener("input", () => {
+      joinBtn.disabled = gameIdInput.value.trim() === "";
+    });
+  </script>
+</body>
+</html>
+

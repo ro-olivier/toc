@@ -1,24 +1,138 @@
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+from typing import Dict, List
+import uuid
+import asyncio
+import string
+import random
+
 from game import Game
 from player import Player
 from params import *
 
+app = FastAPI()
 
-if __name__ == "__main__":
+class ConnectionManager:
+    def __init__(self):
+        self.games: Dict[str, GameSession] = {}
 
-	game = Game()
+    def _generate_game_id(self, length=4):
+        charset = string.ascii_uppercase + string.digits
+        while True:
+            game_id = ''.join(random.choices(charset, k=length))
+            if game_id not in self.games:
+                return game_id
 
-	players = []
-	names = []
-	for i in range(0, NUMBER_OF_PLAYERS):
-		player_name = ''
-		while player_name == '' or player_name in names:
-			player_name = input(f'Please provide a unique name for player {i} (playing {COLORS[i]}): ')
-		
-		player = Player(player_name, str(i%NUMBER_OF_TEAMS), COLORS[i])
-		players.append(player)
+    def create_game(self) -> str:
+        game_id = self._generate_game_id()
+        self.games[game_id] = GameSession(game_id)
+        return game_id
 
-	game.setPlayers(players)
+    def get_game(self, game_id: str):
+        return self.games.get(game_id)
 
-	print('Ready to start the game...\n')
-	print(str(game))
-	game.start()
+manager = ConnectionManager()
+
+class GameSession:
+    def __init__(self, game_id: str):
+        self.id = game_id
+        self.players: Dict = {}
+        self.started = False
+        self.lock = asyncio.Lock()
+
+    def team_is_full(self, team: str):
+        return sum([self.players[p]['team'] == team for p in self.players.keys()]) == 2
+
+    async def connect_player(self, websocket: WebSocket, name: str) -> str:
+        await websocket.accept()
+        player_name = name
+        self.players[player_name]['websocket'] = websocket
+        await self.broadcast(f"{name} has joined the game.")
+        return player_name
+
+    async def disconnect_player(self, player_name: str):
+        if player_name in self.players:
+            del self.players[player_name]
+            await self.broadcast(f"{name} has left the game.")
+
+    async def broadcast(self, message: str, excluded_player: str):
+        for player_name in self.players.keys():
+            if player_name != excluded_player:
+                websocket = self.players[player_name]['websocket']
+                await websocket.send_text(message)
+
+    async def receive_input(self, player_name: str, prompt: str) -> str:
+        websocket = self.players[player_name]['websocket']
+        await websocket.send_text(prompt)
+        return await websocket.receive_text()
+
+    async def game_loop(self):
+        async with self.lock:
+            if self.started:
+                return
+            self.started = True
+            await self.broadcast("Game is starting!")
+            # Placeholder: actual game logic will go here.
+            await asyncio.sleep(1)
+            await self.broadcast("Game loop would run here.")
+
+@app.websocket("/toc/ws/{game_id}/{player_name}")
+async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: str):
+    await websocket.accept()
+
+    if game_id not in manager.games:
+        await websocket.send_text("Invalid game ID.")
+        await websocket.close()
+        return
+
+    game = manager.games[game_id]
+
+    if player_name in game.players.keys():
+        await websocket.send_text("Player name already taken.")
+        await websocket.close()
+        return
+
+    if not game.players:
+        team = "0"
+        await websocket.send_text("You have been assigned to team 0.")
+    else:
+        if game.team_is_full("0"):
+            team = "1"
+            await websocket.send_text("Team 0 is full, you have been assigned to team 1.")
+        elif game.team_is_full("1"):
+            team = "0"
+            await websocket.send_text("Team 1 is full, you have been assigned to team 0.")
+        else:
+            await websocket.send_text("Choose your team (0 or 1):")
+            while True:
+                msg = await websocket.receive_text()
+                if msg.strip() in ["0", "1"]:
+                    team = msg.strip()
+                    await websocket.send_text(f"Succesfully joined team {team}")
+                    break
+                else:
+                    await websocket.send_text("Invalid team. Please enter '0' or '1'.")
+
+    game.players[player_name] = {
+        "websocket": websocket,
+        "team": team,
+    }
+
+    await game.broadcast(f"{player_name} has joined team {team}.", excluded_player=player_name)
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await game.broadcast(f"{player_name}: {data}")
+    except WebSocketDisconnect:
+        del game.players[player_name]
+        await game.broadcast(f"{player_name} disconnected.")
+
+@app.get("/toc")
+async def root():
+    return {"message": "Game backend is running."}
+
+@app.post("/toc/api/create-game")
+async def create_game():
+    game_id = manager.create_game()
+    return {"game_id": game_id}
