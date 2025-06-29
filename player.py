@@ -116,9 +116,9 @@ class Player:
 
 	def requestCardExchange(self) -> Card:
 		self._gameSession.send_text(self._name, f'Player {self._name}, here are the cards in your hand: {"       ||  ".join([str(index) + " -- " + str(card) for index,card in enumerate(self._hand.cards)])}')
-		cardChoice = self._gameSession.receive_input('Please choose a card to give to your team-mate: ')
+		cardChoice = self._gameSession.receive_input(self._name, 'Please choose a card to give to your team-mate: ')
 		while cardChoice not in [str(i) for i in range(len(self._hand.cards))]:
-			cardChoice = self._gameSession.receive_input('Please choose a card to give to your team-mate: ')
+			cardChoice = self._gameSession.receive_input(self._name, 'Please choose a card to give to your team-mate: ')
 		return self._hand.cards[int(cardChoice)]
 
 	def switchCard(self, card1, card2) -> None:
