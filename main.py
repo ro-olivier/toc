@@ -1,7 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from typing import Dict, List
-import uuid
 import asyncio
 import string
 import random
@@ -53,9 +52,9 @@ class GameSession:
     async def disconnect_player(self, player_name: str):
         if player_name in self.players:
             del self.players[player_name]
-            await self.broadcast(f"{name} has left the game.")
+            await self.broadcast(f"{player_name} has left the game.")
 
-    async def broadcast(self, message: str, excluded_player: str):
+    async def broadcast(self, message: str, excluded_player : str = None):
         for player_name in self.players.keys():
             if player_name != excluded_player:
                 websocket = self.players[player_name]['websocket']
@@ -108,7 +107,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
                 msg = await websocket.receive_text()
                 if msg.strip() in ["0", "1"]:
                     team = msg.strip()
-                    await websocket.send_text(f"Succesfully joined team {team}")
+                    await websocket.send_text(f"Successfully joined team {team}")
                     break
                 else:
                     await websocket.send_text("Invalid team. Please enter '0' or '1'.")
@@ -128,9 +127,11 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
         del game.players[player_name]
         await game.broadcast(f"{player_name} disconnected.")
 
+
 @app.get("/toc")
 async def root():
     return {"message": "Game backend is running."}
+
 
 @app.post("/toc/api/create-game")
 async def create_game():
