@@ -43,19 +43,6 @@ class GameSession:
     def team_is_full(self, team: str):
         return sum([self.players[p]['team'] == team for p in self.players.keys()]) == 2
 
-    async def connect_player(self, websocket: WebSocket, name: str) -> str:
-        await websocket.accept()
-        player_name = name
-        self.players[player_name]['websocket'] = websocket
-        await self.broadcast(f"{name} has joined the game.")
-        self.players[player_name]['object'] = Player(player_name, self.players[player_name]['team'], self.players[player_name]['color'], self)
-        return player_name
-
-    async def disconnect_player(self, player_name: str):
-        if player_name in self.players:
-            del self.players[player_name]
-            await self.broadcast(f"{player_name} has left the game.")
-
     async def broadcast(self, message: str, excluded_player : str = None):
         for player_name in self.players.keys():
             if player_name != excluded_player:
@@ -102,7 +89,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     if not game.players:
         team = "0"
         await websocket.send_text("You have been assigned to team 0.")
-        await websocket.send_text(f"Choose the color you wish to play. Available colors: {','.join(game.remaining_colors)}.")
+        await websocket.send_text(f"Choose the color you wish to play. Available colors: {', '.join(game.remaining_colors)}.")
         while True:
             msg = await websocket.receive_text()
             if msg.strip() in game.remaining_colors:
@@ -128,7 +115,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
                     break
                 else:
                     await websocket.send_text("Invalid team. Please enter '0' or '1'.")
-            await websocket.send_text(f"Choose the color you wish to play. Available colors: {','.join(game.remaining_colors)}.")
+            await websocket.send_text(f"Choose the color you wish to play. Available colors: {', '.join(game.remaining_colors)}.")
             while True:
                 msg = await websocket.receive_text()
                 if msg.strip() in game.remaining_colors:
@@ -141,11 +128,15 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     game.players[player_name] = {
         "websocket": websocket,
         "team": team,
-        "color" : color
+        "color": color,
+        "object": Player(player_name, team, color, game)
     }
 
     await game.broadcast(f"{player_name} has joined team {team} and will play {color}.", excluded_player=player_name)
-    await game.game_loop()
+
+    if len(game.players) == 4:
+        await game.game_loop()
+
     try:
         while True:
             data = await websocket.receive_text()
