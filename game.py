@@ -111,17 +111,17 @@ class Game:
 			await self.nextPlayer()
 		await self.broadcast(f'{round_name} round is finished.\n')
 
-	def start(self) -> None:
+	async def start(self) -> None:
 		self._isStarted = True
 
 		while not self._isFinished:
-			self.runRound('First', first_round = True)
-			self.runRound('Second', first_round = False)
-			self.runRound('Third', first_round = False)
+			await self.runRound('First', first_round = True)
+			await self.runRound('Second', first_round = False)
+			await self.runRound('Third', first_round = False)
 
 			self._deck.reset(self.players)
 			self.nextDealer()
-			self.start()
+			await self.start()
 
 	async def nextPlayer(self) -> None:
 		self._activePlayerIndex += 1
