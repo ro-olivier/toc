@@ -4,7 +4,6 @@ from typing import Optional
 
 from board import Board
 from cards import Deck
-from main import GameSession
 from params import *
 from player import Player
 
