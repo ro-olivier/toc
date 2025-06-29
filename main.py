@@ -102,6 +102,15 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     if not game.players:
         team = "0"
         await websocket.send_text("You have been assigned to team 0.")
+        await websocket.send_text(f"Choose the color you wish to play. Available colors: {','.join(game.remaining_colors)}.")
+        while True:
+            msg = await websocket.receive_text()
+            if msg.strip() in game.remaining_colors:
+                color = msg.strip()
+                game.remaining_colors = [c for c in game.remaining_colors if c != color]
+                break
+            else:
+                await websocket.send_text("Please choose a valid color.")
     else:
         if game.team_is_full("0"):
             team = "1"
@@ -119,7 +128,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
                     break
                 else:
                     await websocket.send_text("Invalid team. Please enter '0' or '1'.")
-            await websocket.send_text(f"Choose the color you wish to play. Available colors: {game.remaining_colors}.")
+            await websocket.send_text(f"Choose the color you wish to play. Available colors: {','.join(game.remaining_colors)}.")
             while True:
                 msg = await websocket.receive_text()
                 if msg.strip() in game.remaining_colors:
@@ -135,8 +144,8 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
         "color" : color
     }
 
-    await game.broadcast(f"{player_name} has joined team {team}.", excluded_player=player_name)
-
+    await game.broadcast(f"{player_name} has joined team {team} and will play {color}.", excluded_player=player_name)
+    await game.game_loop()
     try:
         while True:
             data = await websocket.receive_text()
