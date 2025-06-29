@@ -4,12 +4,14 @@ from typing import Optional
 
 from board import Board
 from cards import Deck
+from main import GameSession
 from params import *
 from player import Player
 
 
 class Game:
-	def __init__(self):
+	def __init__(self, gameSession : GameSession):
+		self._gameSession = gameSession
 		self._board = Board()
 		self._deck = Deck()
 		self._isStarted = False
@@ -27,8 +29,11 @@ class Game:
 			s += '\r\n'
 		return s
 
+	async def broadcast(self, msg: str):
+		await self._gameSession.broadcast(msg)
+
 	def printNumPlayers(self) -> None:
-		print(f'This game has {self._numPlayers} players.')
+		self.broadcast(f'This game has {self._numPlayers} players.')
 
 	@property
 	def numPlayers(self) -> int:
@@ -95,18 +100,17 @@ class Game:
 		player2.switchCard(card2, card1)
 
 	def runRound(self, round_name : str, first_round : bool) -> None:
-		print(f'Starting {round_name} round with dealer {self.dealer}...')
+		self.broadcast(f'Starting {round_name} round with dealer {self.dealer}...')
 		self.resetActivePlayerIndex()
 		self.drawHands(first_round)
 
-		teams = range(NUMBER_OF_TEAMS)
 		self.requestCardExchange(self._players[0], self.getTeammate(self._players[0]))
 		self.requestCardExchange(self._players[1], self.getTeammate(self._players[1]))
 
 		self._handsFinished = 0
 		while self._handsFinished < self._numPlayers:
 			self.nextPlayer()
-		print(f'{round_name} round is finished.\n')
+		self.broadcast(f'{round_name} round is finished.\n')
 
 	def start(self) -> None:
 		self._isStarted = True
@@ -127,17 +131,17 @@ class Game:
 		self._activePlayer = self._players[self._activePlayerIndex]
 
 		if self._activePlayer.hand.size > 0:
-			print(f'\nMoving on to next player: {str(self._activePlayer)}')
+			self.broadcast(f'\nMoving on to next player: {str(self._activePlayer)}')
 
 			moveOptions = self._activePlayer.hand.getAllPossibleMoves(self._board)
 			if len(moveOptions) == 0:
 				# player has no available move, he must fold his hand
-				print(f'Player has no available move and must fold.')
+				self.broadcast(f'Player has no available move and must fold.')
 				self._activePlayer.hand.fold()
 			else:
 				if len(moveOptions) == 1:
 					# player has only one move and therefore MUST play it
-					print(f'Player has only one available move and therefore must play it.')
+					self.broadcast(f'Player has only one available move and therefore must play it.')
 					moveChoice = moveOptions[0]
 					moveChoice.updateDescription()
 				else:
@@ -145,7 +149,7 @@ class Game:
 					moveChoice = self._activePlayer.getMoveChoiceFromPlayer(moveOptions)
 
 				cardChoice = moveChoice.card
-				print(f'Player {self._activePlayer.name} has selected the following move: {str(moveChoice)}')
+				self.broadcast(f'Player {self._activePlayer.name} has selected the following move: {str(moveChoice)}')
 
 				if moveChoice.ID in ['OUT', 'MOVE', 'SWITCH', 'BACK', 'ENTER']:
 					# have the player discard the card from his hand
@@ -186,20 +190,20 @@ class Game:
 			if self._activePlayer.hand.size == 0:
 				self._handsFinished += 1
 
-			print(f'End of turn for player {self._activePlayer.name}.')
-			print(f'\nState of the board:\n{str(self._board)}')
+			self.broadcast(f'End of turn for player {self._activePlayer.name}.')
+			self.broadcast(f'\nState of the board:\n{str(self._board)}')
 		else:
-			print(f'\nNext player: {self._activePlayer.name} has folded in a previous turn, moving on...')
+			self.broadcast(f'\nNext player: {self._activePlayer.name} has folded in a previous turn, moving on...')
 
 
 		# When a player manages to fill all his/her houses:
 		if self._board.areAllHouseFilled(self._activePlayer.color):
-			print(f'Player {self._activePlayer.name} has filled all houses!)')
+			self.broadcast(f'Player {self._activePlayer.name} has filled all houses!)')
 
 			teammate = self.getTeammate(self._activePlayer)
 			# If the teammate's houses are all filled as well, the game is won!
 			if self._board.areAllHouseFilled(teammate.color):
-				print(f'Player {self._activePlayer.name} and {teammate.name} win!!!')
+				self.broadcast(f'Players {self._activePlayer.name} and {teammate.name} win!!!')
 			else:
-				print(f'This player will now play using his/her teammate\'s pieces and attempt to win the game.')
+				self.broadcast(f'This player will now play using his/her teammate\'s pieces and attempt to win the game.')
 				self._activePlayer.color = self.getTeammate(self._activePlayer).color

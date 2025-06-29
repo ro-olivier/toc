@@ -5,7 +5,7 @@ from hand import Hand
 
 
 class Player:
-	def __init__(self, name : str, team : str, color : str):
+	def __init__(self, name : str, team : str, color : str, gameSession = None):
 		self._name = name
 		self._team = team
 		self._color = color
@@ -13,6 +13,7 @@ class Player:
 		self._active = False
 		self._isDealer = False
 		self._piecesOnTheBoard = 0
+		self._gameSession = gameSession
 
 	def __str__(self) -> str:
 		s = f'{self._name} in team {self._team} playing {self._color}'
@@ -53,10 +54,10 @@ class Player:
 		self._isDealer = True
 
 	def getCardChoiceFromPlayer(self) -> Card:
-		choice = self._hand.getCard(input('What card do you want to play?\t'))
+		choice = self._hand.getCard(self._gameSession.receive_input(self._name, 'What card do you want to play?\t'))
 		while choice is None:
-			print(f'Please input a number between 0 and {self._hand.size - 1} to select an available card from your hand.')
-			choice = self._hand.getCard(input('What card do you want to play?\t'))
+			self._gameSession.send_text(f'Please input a number between 0 and {self._hand.size - 1} to select an available card from your hand.')
+			choice = self._hand.getCard(self._gameSession.receive_input(self._name, 'What card do you want to play?\t'))
 		return choice
 
 	def getMoveChoiceFromPlayer(self, options : list[Move]) -> Move:
@@ -67,17 +68,17 @@ class Player:
 		for index,option in enumerate(options):
 			print(f'{str(index)} -- {str(option)}')
 
-		choice = input('What move do you want to play?\t')
+		choice = self._gameSession.receive_input(self._name, 'What move do you want to play?\t')
 		while choice not in [str(i) for i in range(len(options))]:
-			print(f'Please input a number between 0 and {len(options) - 1} to select an available move.')
-			choice = input('What move do you want to play?\t')
+			self._gameSession.send_text(f'Please input a number between 0 and {len(options) - 1} to select an available move.')
+			choice = self._gameSession.receive_input(self._name, 'What move do you want to play?\t')
 		return options[int(choice)]
 
 	def getSevenMoveFromPlayer(self, board : Board) -> None:
 		counter = 0
 		moves = []
 		board.saveState()
-		print('Print select the moves you want to do in your seven-split:')
+		self._gameSession.send_text('Print select the moves you want to do in your seven-split:')
 		# This loop will display all the 'one-move' options to the user, who will have to choose one seven times
 		while counter < 7:
 			moveOptions = board.getMoveOptions(self, Card('', '1'))
@@ -92,10 +93,10 @@ class Player:
 			# we store the move and go on seven times
 			moves.append(moveChoice)
 			counter += 1
-		print(f'Selected moves for seven split : {moves}')
-		confirmation = input('Please confirm that you wish to do this seven-split this way? (Y/N) ')
+		self._gameSession.send_text(f'Selected moves for seven split : {moves}')
+		confirmation = self._gameSession.receive_input(self._name, 'Please confirm that you wish to do this seven-split this way? (Y/N) ')
 		while confirmation not in ['Y', 'N']:
-			confirmation = input('Please confirm that you wish to do this seven-split this way? (Y/N) ')
+			confirmation = self._gameSession.receive_input(self._name, 'Please confirm that you wish to do this seven-split this way? (Y/N) ')
 		# we restore the board state before re-applying all the changes, but this time kicking player along the way
 		board.restoreState()
 		# if the user confirms we proceed
@@ -114,10 +115,10 @@ class Player:
 		self._hand.discardFromHand(card)
 
 	def requestCardExchange(self) -> Card:
-		print(f'Player {self._name}, here are the cards in your hand: {'\t\t\t ||\t'.join([str(index) + ' -- ' + str(card) for index,card in enumerate(self._hand.cards)])}')
-		cardChoice = input('Please choose a card to give to your team-mate: ')
+		self._gameSession.send_text(f'Player {self._name}, here are the cards in your hand: {'\t\t\t ||\t'.join([str(index) + ' -- ' + str(card) for index,card in enumerate(self._hand.cards)])}')
+		cardChoice = self._gameSession.receive_input('Please choose a card to give to your team-mate: ')
 		while cardChoice not in [str(i) for i in range(len(self._hand.cards))]:
-			cardChoice = input('Please choose a card to give to your team-mate: ')
+			cardChoice = self._gameSession.receive_input('Please choose a card to give to your team-mate: ')
 		return self._hand.cards[int(cardChoice)]
 
 	def switchCard(self, card1, card2) -> None:
