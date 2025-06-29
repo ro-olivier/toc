@@ -122,7 +122,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
                 else:
                     await websocket.send_text("Invalid team. Please enter '0' or '1'.")
 
-    await game.make_player_choose_color(websocket)
+    color = await game.make_player_choose_color(websocket)
 
     game.players[player_name] = {
         "websocket": websocket,
