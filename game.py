@@ -91,25 +91,25 @@ class Game:
 				hand = self._deck.drawHand(4, player)
 				player.setHand(hand)
 
-	def requestCardExchange(self, player1 : Player, player2 : Player) -> None:
-		card1 = player1.requestCardExchange()
-		card2 = player2.requestCardExchange()
+	async def requestCardExchange(self, player1 : Player, player2 : Player) -> None:
+		card1 = await player1.requestCardExchange()
+		card2 = await player2.requestCardExchange()
 
 		player1.switchCard(card1, card2)
 		player2.switchCard(card2, card1)
 
-	def runRound(self, round_name : str, first_round : bool) -> None:
-		self.broadcast(f'Starting {round_name} round with dealer {self.dealer}...')
+	async def runRound(self, round_name : str, first_round : bool) -> None:
+		await self.broadcast(f'Starting {round_name} round with dealer {self.dealer}...')
 		self.resetActivePlayerIndex()
 		self.drawHands(first_round)
 
-		self.requestCardExchange(self._players[0], self.getTeammate(self._players[0]))
-		self.requestCardExchange(self._players[1], self.getTeammate(self._players[1]))
+		await self.requestCardExchange(self._players[0], self.getTeammate(self._players[0]))
+		await self.requestCardExchange(self._players[1], self.getTeammate(self._players[1]))
 
 		self._handsFinished = 0
 		while self._handsFinished < self._numPlayers:
-			self.nextPlayer()
-		self.broadcast(f'{round_name} round is finished.\n')
+			await self.nextPlayer()
+		await self.broadcast(f'{round_name} round is finished.\n')
 
 	def start(self) -> None:
 		self._isStarted = True
@@ -123,32 +123,32 @@ class Game:
 			self.nextDealer()
 			self.start()
 
-	def nextPlayer(self) -> None:
+	async def nextPlayer(self) -> None:
 		self._activePlayerIndex += 1
 		if self._activePlayerIndex == NUMBER_OF_PLAYERS:
 			self._activePlayerIndex = 0
 		self._activePlayer = self._players[self._activePlayerIndex]
 
 		if self._activePlayer.hand.size > 0:
-			self.broadcast(f'\nMoving on to next player: {str(self._activePlayer)}')
+			await self.broadcast(f'\nMoving on to next player: {str(self._activePlayer)}')
 
 			moveOptions = self._activePlayer.hand.getAllPossibleMoves(self._board)
 			if len(moveOptions) == 0:
 				# player has no available move, he must fold his hand
-				self.broadcast(f'Player has no available move and must fold.')
+				await self.broadcast(f'Player has no available move and must fold.')
 				self._activePlayer.hand.fold()
 			else:
 				if len(moveOptions) == 1:
 					# player has only one move and therefore MUST play it
-					self.broadcast(f'Player has only one available move and therefore must play it.')
+					await self.broadcast(f'Player has only one available move and therefore must play it.')
 					moveChoice = moveOptions[0]
 					moveChoice.updateDescription()
 				else:
 					# player has several possible moves and is prompted to select one
-					moveChoice = self._activePlayer.getMoveChoiceFromPlayer(moveOptions)
+					moveChoice = await self._activePlayer.getMoveChoiceFromPlayer(moveOptions)
 
 				cardChoice = moveChoice.card
-				self.broadcast(f'Player {self._activePlayer.name} has selected the following move: {str(moveChoice)}')
+				await self.broadcast(f'Player {self._activePlayer.name} has selected the following move: {str(moveChoice)}')
 
 				if moveChoice.ID in ['OUT', 'MOVE', 'SWITCH', 'BACK', 'ENTER']:
 					# have the player discard the card from his hand
@@ -189,20 +189,20 @@ class Game:
 			if self._activePlayer.hand.size == 0:
 				self._handsFinished += 1
 
-			self.broadcast(f'End of turn for player {self._activePlayer.name}.')
-			self.broadcast(f'\nState of the board:\n{str(self._board)}')
+			await self.broadcast(f'End of turn for player {self._activePlayer.name}.')
+			await self.broadcast(f'\nState of the board:\n{str(self._board)}')
 		else:
-			self.broadcast(f'\nNext player: {self._activePlayer.name} has folded in a previous turn, moving on...')
+			await self.broadcast(f'\nNext player: {self._activePlayer.name} has folded in a previous turn, moving on...')
 
 
 		# When a player manages to fill all his/her houses:
 		if self._board.areAllHouseFilled(self._activePlayer.color):
-			self.broadcast(f'Player {self._activePlayer.name} has filled all houses!)')
+			await self.broadcast(f'Player {self._activePlayer.name} has filled all houses!)')
 
 			teammate = self.getTeammate(self._activePlayer)
 			# If the teammate's houses are all filled as well, the game is won!
 			if self._board.areAllHouseFilled(teammate.color):
-				self.broadcast(f'Players {self._activePlayer.name} and {teammate.name} win!!!')
+				await self.broadcast(f'Players {self._activePlayer.name} and {teammate.name} win!!!')
 			else:
-				self.broadcast(f'This player will now play using his/her teammate\'s pieces and attempt to win the game.')
+				await self.broadcast(f'This player will now play using his/her teammate\'s pieces and attempt to win the game.')
 				self._activePlayer.color = self.getTeammate(self._activePlayer).color
