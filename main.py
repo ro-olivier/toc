@@ -68,6 +68,18 @@ class GameSession:
             game.setPlayers([self.players[k]['object'] for k in self.players.keys()])
             game.start()
 
+    async def make_player_choose_color(self, websocket) -> str:
+        await websocket.send_text(
+            f"Choose the color you wish to play. Available colors: {', '.join(self.remaining_colors)}.")
+        while True:
+            msg = await websocket.receive_text()
+            if msg.strip() in self.remaining_colors:
+                color = msg.strip()
+                self.remaining_colors = [c for c in self.remaining_colors if c != color]
+                break
+            else:
+                await websocket.send_text("Please choose a valid color.")
+        return color
 
 @app.websocket("/toc/ws/{game_id}/{player_name}")
 async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: str):
@@ -89,15 +101,6 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     if not game.players:
         team = "0"
         await websocket.send_text("You have been assigned to team 0.")
-        await websocket.send_text(f"Choose the color you wish to play. Available colors: {', '.join(game.remaining_colors)}.")
-        while True:
-            msg = await websocket.receive_text()
-            if msg.strip() in game.remaining_colors:
-                color = msg.strip()
-                game.remaining_colors = [c for c in game.remaining_colors if c != color]
-                break
-            else:
-                await websocket.send_text("Please choose a valid color.")
     else:
         if game.team_is_full("0"):
             team = "1"
@@ -115,15 +118,8 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
                     break
                 else:
                     await websocket.send_text("Invalid team. Please enter '0' or '1'.")
-            await websocket.send_text(f"Choose the color you wish to play. Available colors: {', '.join(game.remaining_colors)}.")
-            while True:
-                msg = await websocket.receive_text()
-                if msg.strip() in game.remaining_colors:
-                    color = msg.strip()
-                    game.remaining_colors = [c for c in game.remaining_colors if c != color]
-                    break
-                else:
-                    await websocket.send_text("Please choose a valid color.")
+
+    await game.make_player_choose_color(websocket)
 
     game.players[player_name] = {
         "websocket": websocket,
