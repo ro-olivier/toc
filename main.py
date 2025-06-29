@@ -66,10 +66,11 @@ class GameSession:
             await self.broadcast("Game is starting!")
             game = Game(self)
             game.setPlayers([self.players[k]['object'] for k in self.players.keys()])
-            game.start()
+            await game.start()
 
     async def make_player_choose_color(self, websocket) -> str:
         if len(self.remaining_colors) == 1:
+            await websocket.send_text(f"The only remaining color is {self.remaining_colors[0]}, hope you like it!")
             return self.remaining_colors[0]
         else:
             await websocket.send_text(
