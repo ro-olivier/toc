@@ -5,7 +5,7 @@ from hand import Hand
 
 
 class Player:
-	def __init__(self, name : str, team : str, color : str, gameSession = None):
+	def __init__(self, name : str, team : str, color : str, gameSession = None, router = None):
 		self._name = name
 		self._team = team
 		self._color = color
@@ -14,12 +14,20 @@ class Player:
 		self._isDealer = False
 		self._piecesOnTheBoard = 0
 		self._gameSession = gameSession
+		self._router = router
 
 	def __str__(self) -> str:
 		s = f'{self._name} in team {self._team} playing {self._color}'
 		if self._hand:
 			s+= f' holding the following cards: {self._hand.allCardsString()}'
 		return s
+
+	async def send_message(self, message: str):
+		await self._router.add_input(self._name, message)
+
+	async def get_input(self, message: str):
+		await self.send_message(message)
+		await self._router.wait_for_input(self._name)
 
 	@property
 	def name(self) -> str:
@@ -54,10 +62,10 @@ class Player:
 		self._isDealer = True
 
 	async def getCardChoiceFromPlayer(self) -> Card:
-		choice = await self._hand.getCard(self._gameSession.receive_input(self._name, 'What card do you want to play?\t'))
+		choice = await self._hand.getCard(self.get_input('What card do you want to play?\t'))
 		while choice is None:
-			self._gameSession.send_text(self._name, f'Please input a number between 0 and {self._hand.size - 1} to select an available card from your hand.')
-			choice = await self._hand.getCard(self._gameSession.receive_input(self._name, 'What card do you want to play?\t'))
+			await self.send_message(f'Please input a number between 0 and {self._hand.size - 1} to select an available card from your hand.')
+			choice = await self._hand.getCard(self.get_input('What card do you want to play?\t'))
 		return choice
 
 	async def getMoveChoiceFromPlayer(self, options : list[Move]) -> Move:
@@ -68,17 +76,17 @@ class Player:
 		for index,option in enumerate(options):
 			print(f'{str(index)} -- {str(option)}')
 
-		choice = await self._gameSession.receive_input(self._name, 'What move do you want to play?\t')
+		choice = await self.get_input('What move do you want to play?\t')
 		while choice not in [str(i) for i in range(len(options))]:
-			await self._gameSession.send_text(self._name, 'Please input a number between 0 and {len(options) - 1} to select an available move.')
-			choice = await self._gameSession.receive_input(self._name, 'What move do you want to play?\t')
+			await self.send_message('Please input a number between 0 and {len(options) - 1} to select an available move.')
+			choice = await self.get_input('What move do you want to play?\t')
 		return options[int(choice)]
 
 	async def getSevenMoveFromPlayer(self, board : Board) -> None:
 		counter = 0
 		moves = []
 		board.saveState()
-		await self._gameSession.send_text(self._name, 'Print select the moves you want to do in your seven-split:')
+		await self.send_message('Print select the moves you want to do in your seven-split:')
 		# This loop will display all the 'one-move' options to the user, who will have to choose one seven times
 		while counter < 7:
 			moveOptions = board.getMoveOptions(self, Card('', '1'))
@@ -93,10 +101,10 @@ class Player:
 			# we store the move and go on seven times
 			moves.append(moveChoice)
 			counter += 1
-		await self._gameSession.send_text(self._name, f'Selected moves for seven split : {moves}')
-		confirmation = await self._gameSession.receive_input(self._name, 'Please confirm that you wish to do this seven-split this way? (Y/N) ')
+		await self.send_message(f'Selected moves for seven split : {moves}')
+		confirmation = await self.get_input('Please confirm that you wish to do this seven-split this way? (Y/N) ')
 		while confirmation not in ['Y', 'N']:
-			confirmation = await self._gameSession.receive_input(self._name, 'Please confirm that you wish to do this seven-split this way? (Y/N) ')
+			confirmation = await self.get_input('Please confirm that you wish to do this seven-split this way? (Y/N) ')
 		# we restore the board state before re-applying all the changes, but this time kicking player along the way
 		board.restoreState()
 		# if the user confirms we proceed
@@ -115,10 +123,10 @@ class Player:
 		self._hand.discardFromHand(card)
 
 	async def requestCardExchange(self) -> Card:
-		await self._gameSession.send_text(self._name, f'Player {self._name}, here are the cards in your hand: {"  ||  ".join([str(index) + " - " + str(card) for index,card in enumerate(self._hand.cards)])}')
-		cardChoice = await self._gameSession.receive_input(self._name, 'Please choose a card to give to your team-mate: ')
+		await self.send_message(f'Player {self._name}, here are the cards in your hand: {"  ||  ".join([str(index) + " - " + str(card) for index,card in enumerate(self._hand.cards)])}')
+		cardChoice = await self.get_input('Please choose a card to give to your team-mate: ')
 		while cardChoice not in [str(i) for i in range(len(self._hand.cards))]:
-			cardChoice = await self._gameSession.receive_input(self._name, 'Please choose a card to give to your team-mate: ')
+			cardChoice = await self.get_input('Please choose a valid card to give to your team-mate.')
 		return self._hand.cards[int(cardChoice)]
 
 	def switchCard(self, card1, card2) -> None:
