@@ -115,7 +115,7 @@ class Player:
 		self._hand.discardFromHand(card)
 
 	async def requestCardExchange(self) -> Card:
-		await self._gameSession.send_text(self._name, f'Player {self._name}, here are the cards in your hand: {"       ||  ".join([str(index) + " -- " + str(card) for index,card in enumerate(self._hand.cards)])}')
+		await self._gameSession.send_text(self._name, f'Player {self._name}, here are the cards in your hand: {"  ||  ".join([str(index) + " - " + str(card) for index,card in enumerate(self._hand.cards)])}')
 		cardChoice = await self._gameSession.receive_input(self._name, 'Please choose a card to give to your team-mate: ')
 		while cardChoice not in [str(i) for i in range(len(self._hand.cards))]:
 			cardChoice = await self._gameSession.receive_input(self._name, 'Please choose a card to give to your team-mate: ')

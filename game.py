@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from board import Board
@@ -92,8 +93,10 @@ class Game:
 				player.setHand(hand)
 
 	async def requestCardExchange(self, player1 : Player, player2 : Player) -> None:
-		card1 = await player1.requestCardExchange()
-		card2 = await player2.requestCardExchange()
+		card1, card2 = await asyncio.gather(
+			player1.requestCardExchange(),
+			player2.requestCardExchange()
+		)
 
 		player1.switchCard(card1, card2)
 		player2.switchCard(card2, card1)
@@ -103,8 +106,10 @@ class Game:
 		self.resetActivePlayerIndex()
 		self.drawHands(first_round)
 
-		await self.requestCardExchange(self._players[0], self.getTeammate(self._players[0]))
-		await self.requestCardExchange(self._players[1], self.getTeammate(self._players[1]))
+		await asyncio.gather(
+			self.requestCardExchange(self._players[0], self.getTeammate(self._players[0])),
+			self.requestCardExchange(self._players[1], self.getTeammate(self._players[1]))
+		)
 
 		self._handsFinished = 0
 		while self._handsFinished < self._numPlayers:
