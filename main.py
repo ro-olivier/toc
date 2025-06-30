@@ -63,7 +63,7 @@ class GameSession:
             if self.started:
                 return
             self.started = True
-            await self.broadcast("Game is starting!")
+            await self.broadcast("Four players have joined: game is starting!\n")
             game = Game(self)
             game.setPlayers([self.players[k]['object'] for k in self.players.keys()])
             await game.start()
@@ -132,6 +132,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
         "object": Player(player_name, team, color, game)
     }
 
+    await game.send_text(player_name, f'You successfully joined the game and will play in team {team} with color {color}!\n')
     await game.broadcast(f"{player_name} has joined team {team} and will play {color}.", excluded_player=player_name)
 
     if len(game.players) == 4:

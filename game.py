@@ -61,7 +61,7 @@ class Game:
 
 	def getTeammate(self, player) -> Optional[Player]:
 		for player2 in self._players:
-			if player2 == player and player2.color == player.color:
+			if player2 != player and player2.team == player.team:
 				return player2
 		return None
 
@@ -102,7 +102,7 @@ class Game:
 		player2.switchCard(card2, card1)
 
 	async def runRound(self, round_name : str, first_round : bool) -> None:
-		await self.broadcast(f'Starting {round_name} round with dealer {self.dealer}...')
+		await self.broadcast(f'Starting {round_name} round with player {self.dealer} as the dealer.')
 		self.resetActivePlayerIndex()
 		self.drawHands(first_round)
 
