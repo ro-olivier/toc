@@ -13,21 +13,34 @@ app = FastAPI()
 
 class PlayerInputRouter:
     def __init__(self):
-        self.queues = {}
+        self.input_queues = {}
+        self.output_queues = {}
 
     def register(self, player_name: str):
-        self.queues[player_name] = asyncio.Queue()
+        print(f'Registered user {player_name}')
+        self.input_queues[player_name] = asyncio.Queue()
+        self.output_queues[player_name] = asyncio.Queue()
 
     def unregister(self, player_name: str):
-        self.queues.pop(player_name, None)
+        self.input_queues.pop(player_name, None)
+        self.output_queues.pop(player_name, None)
 
     async def add_input(self, player_name: str, message: str):
-        queue = self.queues.get(player_name)
+        queue = self.input_queues.get(player_name)
         if queue:
             await queue.put(message)
 
     async def wait_for_input(self, player_name: str):
-        return await self.queues[player_name].get()
+        print(f'Waiting for input from {player_name}')
+        return await self.input_queues[player_name].get()
+
+    async def send_output(self, player_name: str, message: str):
+        queue = self.output_queues.get(player_name)
+        if queue:
+            await queue.put(message)
+
+    async def get_output(self, player_name: str):
+        return await self.output_queues[player_name].get()
 
 
 class ConnectionManager:
@@ -64,7 +77,7 @@ class GameSession:
     async def broadcast(self, message: str, excluded_player : str = None):
         for player_name in self.players.keys():
             if player_name != excluded_player:
-                await self.router.add_input(player_name, message)
+                await self.router.send_output(player_name, message)
 
     async def game_loop(self):
         async with self.lock:
@@ -78,10 +91,10 @@ class GameSession:
 
     async def make_player_choose_color(self, player_name) -> str:
         if len(self.remaining_colors) == 1:
-            await self.router.add_input(player_name,"The only remaining color is {self.remaining_colors[0]}, hope you like it!")
+            await self.router.send_output(player_name,"The only remaining color is {self.remaining_colors[0]}, hope you like it!")
             return self.remaining_colors[0]
         else:
-            await self.router.add_input(player_name,
+            await self.router.send_output(player_name,
                 f"Choose the color you wish to play. Available colors: {', '.join(self.remaining_colors)}.")
             while True:
                 msg = await self.router.wait_for_input(player_name)
@@ -90,7 +103,7 @@ class GameSession:
                     self.remaining_colors = [c for c in self.remaining_colors if c != color]
                     break
                 else:
-                    await self.router.add_input(player_name, "Please choose a valid color.")
+                    await self.router.send_output(player_name, "Please choose a valid color.")
             return color
 
 @app.websocket("/toc/ws/{game_id}/{player_name}")
@@ -98,38 +111,45 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     await websocket.accept()
     router.register(player_name)
 
+    async def output_loop():
+        while True:
+            message = await router.get_output(player_name)
+            await websocket.send_text(message)
+
+    asyncio.create_task(output_loop())
+
     if game_id not in manager.games:
-        await router.add_input(player_name,"Invalid game ID.")
+        await router.send_output(player_name,"Invalid game ID.")
         await websocket.close()
         return
 
     game = manager.games[game_id]
 
     if player_name in game.players.keys():
-        await router.add_input(player_name,"Player name already taken.")
+        await router.send_output(player_name,"Player name already taken.")
         await websocket.close()
         return
 
     if not game.players:
         team = "0"
-        await router.add_input(player_name,"You have been assigned to team 0.")
+        await router.send_output(player_name,"You have been assigned to team 0.")
     else:
         if game.team_is_full("0"):
             team = "1"
-            await router.add_input(player_name,"Team 0 is full, you have been assigned to team 1.")
+            await router.send_output(player_name,"Team 0 is full, you have been assigned to team 1.")
         elif game.team_is_full("1"):
             team = "0"
-            await router.add_input(player_name,"Team 1 is full, you have been assigned to team 0.")
+            await router.send_output(player_name,"Team 1 is full, you have been assigned to team 0.")
         else:
-            await router.add_input(player_name,"Choose your team (0 or 1):")
+            await router.send_output(player_name,"Choose your team (0 or 1):")
             while True:
                 msg = await websocket.receive_text()
                 if msg.strip() in ["0", "1"]:
                     team = msg.strip()
-                    await router.add_input(player_name,f"Successfully joined team {team}")
+                    await router.send_output(player_name,f"Successfully joined team {team}")
                     break
                 else:
-                    await router.add_input(player_name,"Invalid team. Please enter '0' or '1'.")
+                    await router.send_output(player_name,"Invalid team. Please enter '0' or '1'.")
 
     color = await game.make_player_choose_color(player_name)
 
@@ -140,7 +160,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
         "object": Player(player_name, team, color, game, router)
     }
 
-    await router.add_input(player_name, f'You successfully joined the game and will play in team {team} with color {color}!\n')
+    await router.send_output(player_name, f'You successfully joined the game and will play in team {team} with color {color}!\n')
     await game.broadcast(f"{player_name} has joined team {team} and will play {color}.", excluded_player=player_name)
 
     if len(game.players) == 4:

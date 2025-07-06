@@ -23,11 +23,11 @@ class Player:
 		return s
 
 	async def send_message(self, message: str):
-		await self._router.add_input(self._name, message)
+		await self._router.send_output(self._name, message)
 
-	async def get_input(self, message: str):
-		await self.send_message(message)
-		await self._router.wait_for_input(self._name)
+	async def get_input(self, prompt: str):
+		await self.send_message(prompt)
+		await self._router.add_input(self._name)
 
 	@property
 	def name(self) -> str:
