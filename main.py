@@ -111,6 +111,18 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     await websocket.accept()
     router.register(player_name)
 
+    async def input_loop():
+        try:
+            while True:
+                data = await websocket.receive_text()
+                await router.add_input(player_name, data)
+        except WebSocketDisconnect:
+            del game.players[player_name]
+            router.unregister(player_name)
+            await game.broadcast(f"{player_name} disconnected.")
+
+    asyncio.create_task(input_loop())
+
     async def output_loop():
         while True:
             message = await router.get_output(player_name)
@@ -166,14 +178,6 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     if len(game.players) == 4:
         await game.game_loop()
 
-    try:
-        while True:
-            data = await websocket.receive_text()
-            await router.add_input(player_name, data)
-    except WebSocketDisconnect:
-        del game.players[player_name]
-        router.unregister(player_name)
-        await game.broadcast(f"{player_name} disconnected.")
 
 router = PlayerInputRouter()
 manager = ConnectionManager()
