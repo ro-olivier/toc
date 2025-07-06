@@ -69,6 +69,11 @@ class GameSession:
         self.lock = asyncio.Lock()
         self.remaining_colors = COLORS
         self.router = msg_router
+        self.ui_queues: List = []
+
+    async def broadcast_ui(self, message: dict):
+        for q in self.ui_queues:
+            await q.put(message)
 
     def team_is_full(self, team: str):
         return sum([self.players[p]['team'] == team for p in self.players.keys()]) == 2
@@ -107,9 +112,14 @@ class GameSession:
 
 @app.websocket("/toc/ws/{game_id}/{player_name}")
 async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: str):
+    
+    game = manager.games[game_id]
+
+    ## Setting up all the WebSocket and asyncio logic 
     await websocket.accept()
     router.register(player_name)
 
+    # Player input loop
     async def input_loop():
         try:
             while True:
@@ -122,6 +132,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
     asyncio.create_task(input_loop())
 
+    # Player output loop
     async def output_loop():
         while True:
             message = await router.get_output(player_name)
@@ -129,13 +140,27 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
     asyncio.create_task(output_loop())
 
+    # IO output loop
+    async def send_updates(websocket: WebSocket, queue: asyncio.Queue):
+        while True:
+            update = await queue.get()
+            await websocket.send_json(update)
+
+    ui_queue = asyncio.Queue()
+    game.ui_queues.append(ui_queue)
+
+    sender = asyncio.create_task(send_updates(websocket, ui_queue))
+
     if game_id not in manager.games:
         await router.send_output(player_name,"Invalid game ID.")
         await websocket.close()
         return
 
-    game = manager.games[game_id]
-
+    # Finalizing game setup for each player connecting
+    ## Updating the new player's UI with current state of the board
+    await new_player.send_message_to_user({"type": "full_ui_state","players": [{"name": p, "team": game.players[p]["team"], "color": game.players[p]["color"]} for p in game.players.keys()]})
+    ##### TODO solve sync problem, cannot use new_player because object not yet created... so maybe we'll need to change constructor of Player object to allow empty color and team, and then set the value of these properties when available.
+    
     if player_name in game.players.keys():
         await router.send_output(player_name,"Player name already taken.")
         await websocket.close()
@@ -144,6 +169,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     if not game.players:
         team = "0"
         await router.send_output(player_name,"You have been assigned to team 0.")
+        position = 'top-left'
     else:
         if game.team_is_full("0"):
             team = "1"
@@ -163,16 +189,19 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
                     await router.send_output(player_name,"Invalid team. Please enter '0' or '1'.")
 
     color = await game.make_player_choose_color(player_name)
+    new_player = Player(player_name, team, color, game, router)
 
     game.players[player_name] = {
+        "name": player_name,
         "websocket": websocket,
         "team": team,
         "color": color,
-        "object": Player(player_name, team, color, game, router)
+        "object": new_player
     }
 
     await router.send_output(player_name, f'You successfully joined the game and will play in team {team} with color {color}!\n')
     await game.broadcast(f"{player_name} has joined team {team} and will play {color}.", excluded_player=player_name)
+    await game.broadcast_ui({"type": "assign-player", "name": player_name, "team": team, "color": color})
 
     if len(game.players) == 4:
         await game.game_loop()

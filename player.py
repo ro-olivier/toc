@@ -5,10 +5,11 @@ from hand import Hand
 
 
 class Player:
-	def __init__(self, name : str, team : str, color : str, gameSession = None, router = None):
+	def __init__(self, name : str, team : str, color : str, gameSession = None, router = None, position = None):
 		self._name = name
 		self._team = team
 		self._color = color
+		self._position = position
 		self._hand = None
 		self._active = False
 		self._isDealer = False
@@ -40,6 +41,13 @@ class Player:
 	@property
 	def color(self) -> str:
 		return self._color
+
+	@property
+	def position(self) -> str:
+		return self._position
+
+	def setPosition(self, position : str) -> None:
+		self._position = position
 
 	@property
 	def hand(self) -> Hand:

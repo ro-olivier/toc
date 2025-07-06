@@ -1,0 +1,82 @@
+#board {
+  position: relative;
+  width: 600px;
+  height: 600px;
+  margin: 0 auto;
+  border: 2px solid #333;
+  border-radius: 50%;
+  background-color: #fafafa;
+}
+
+.spot {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  text-align: center;
+  color: black; 
+  line-height: 30px;
+  font-size: 10px;
+  border: 1px solid #ccc;
+}
+
+.goal {
+  background-color: white;
+  border: 2px dashed black;
+  font-weight: bold;
+}
+
+.red { background-color: #f88; }
+.green { background-color: #8f8; }
+.blue { background-color: #88f; }
+.yellow { background-color: #ff8; }
+
+.out-spot { border: 2px solid #000; font-weight: bold; }
+
+.piece {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  transition: all 0.3s ease;
+  z-index: 10;
+}
+
+.player-a { background-color: crimson; }
+.player-b { background-color: darkgreen; }
+.player-c { background-color: royalblue; }
+.player-d { background-color: goldenrod; }
+
+.player-info-block {
+  position: absolute;
+  width: 120px;
+  height: 60px;
+  padding: 4px;
+  font-size: 12px;
+  text-align: center;
+  font-weight: bold;
+  background-color: #eee;
+  border-radius: 8px;
+  border: 2px solid #000;
+  transform: translate(-50%, -50%);
+}
+
+/* Adjusted positions relative to the board */
+#player-info-top-left {
+  top: 5%;
+  left: 5%;
+}
+#player-info-top-right {
+  top: 5%;
+  left: 95%;
+}
+#player-info-bottom-left {
+  top: 95%;
+  left: 5%;
+}
+#player-info-bottom-right {
+  top: 95%;
+  left: 95%;
+}
