@@ -118,7 +118,7 @@ class Game:
 		self.resetActivePlayerIndex()
 		self.drawHands(first_round)
 
-		teams = getPlayersInTeams()
+		teams = self.getPlayersInTeams()
 		team0 = teams[0]
 		team1 = teams[1]
 
