@@ -31,7 +31,6 @@ class PlayerInputRouter:
             await queue.put(message)
 
     async def wait_for_input(self, player_name: str):
-        print(f'Waiting for input from {player_name}')
         return await self.input_queues[player_name].get()
 
     async def send_output(self, player_name: str, message: str):
