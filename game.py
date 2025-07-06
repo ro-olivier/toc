@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from typing import Optional, Tuple
 
 from board import Board
 from cards import Deck
@@ -69,6 +69,17 @@ class Game:
 	def dealer(self) -> Player:
 		return self._players[0]
 
+	def getPlayersInTeams(self) -> list[Tuple[Player, Player]]:
+		seen_players = set()
+		res = []
+		for player in self._players:
+			if player in seen_players:
+				continue
+			teammate = self.getTeammate(player)
+			if teammate and teammate not in seen_players:
+				res.append((player, teammate))
+		return res
+
 	def resetActivePlayerIndex(self) -> None:
 		self._activePlayerIndex = -1
 
@@ -92,7 +103,8 @@ class Game:
 				hand = self._deck.drawHand(4, player)
 				player.setHand(hand)
 
-	async def requestCardExchange(self, player1 : Player, player2 : Player) -> None:
+	async def requestCardExchange(self, players: Tuple[Player, Player]) -> None:
+		player1, player2 = players
 		card1, card2 = await asyncio.gather(
 			player1.requestCardExchange(),
 			player2.requestCardExchange()
@@ -106,9 +118,13 @@ class Game:
 		self.resetActivePlayerIndex()
 		self.drawHands(first_round)
 
+		teams = getPlayersInTeams()
+		team0 = teams[0]
+		team1 = teams[1]
+
 		await asyncio.gather(
-			self.requestCardExchange(self._players[0], self.getTeammate(self._players[0])),
-			self.requestCardExchange(self._players[1], self.getTeammate(self._players[1]))
+			self.requestCardExchange(team0),
+			self.requestCardExchange(team1)
 		)
 
 		self._handsFinished = 0
