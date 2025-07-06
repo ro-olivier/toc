@@ -78,6 +78,8 @@ class Game:
 			teammate = self.getTeammate(player)
 			if teammate and teammate not in seen_players:
 				res.append((player, teammate))
+				seen_players.add(player)
+				seen_players.add(teammate)
 		return res
 
 	def resetActivePlayerIndex(self) -> None:
