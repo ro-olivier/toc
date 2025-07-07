@@ -50,20 +50,24 @@
 .player-d { background-color: goldenrod; }
 
 .player-info-block {
+  display: flex;
   position: absolute;
-  width: 120px;
+  min-width: 120px;
+  max-width: 200px;
   height: 60px;
   padding: 4px;
   font-size: 12px;
   text-align: center;
+  justify-content: center;
+  align-items: center;
   font-weight: bold;
   background-color: #eee;
   border-radius: 8px;
   border: 2px solid #000;
   transform: translate(-50%, -50%);
+  white-space: nowrap;
 }
 
-/* Adjusted positions relative to the board */
 #player-info-top-left {
   top: 5%;
   left: 5%;
@@ -79,4 +83,87 @@
 #player-info-bottom-right {
   top: 95%;
   left: 95%;
+}
+
+.card-box {
+  position: absolute;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 4px;
+  min-width: 240px;
+  max-width: 420px;
+  min-height: 80px;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  font-weight: bold;
+  background-color: #eee;
+  border-radius: 8px;
+  border: 2px solid #000;
+}
+
+
+#card-box-top-left {
+  top: 15%;
+  right: 100%;
+}
+
+#card-box-top-right {
+  top: 15%;
+  left: 100%;
+}
+
+#card-box-bottom-left {
+  top: 70%;
+  right: 100%;
+}
+
+#card-box-bottom-right {
+  top: 70%;
+  left: 100%;
+}
+
+.playing-card {
+  width: 50px;
+  height: 75px;
+  border-radius: 8px;
+  border: 1px solid #000;
+  background-color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Arial', sans-serif;
+  font-weight: bold;
+  box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
+  color: black;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card-value {
+  font-size: 20px;
+}
+
+.card-suit {
+  font-size: 24px;
+  margin-top: 4px;
+}
+
+.♠️, .♣️ {
+  color: black;
+}
+.♥️, .♦️ {
+  color: red;
+}
+
+.playing-card:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.2);
+}
+
+.playing-card.selected {
+  box-shadow: 0 0 12px 4px rgba(255, 255, 0, 0.6); /* soft yellow glow */
+  transform: scale(1.05);
 }

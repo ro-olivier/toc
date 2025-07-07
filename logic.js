@@ -13,6 +13,7 @@ const board = document.getElementById('board');
 
 // Input-Output / WebSocket handling
 let ws = null;
+let player_name = null;
 
 //##TODO: for now erery messages are just written into the terminal regardless of status but it will have to be displayed in a niver way, and some queries or errors may even not be displayed as text ut as interaction/animations on screen
 function log(msg) {
@@ -57,6 +58,7 @@ async function connectToGame(gameId, name) {
 
   ws.onopen = () => {
     log(`Connected to game ${gameId} as ${name}`);
+    player_name = name;
     showGameUI();
   };
 
@@ -69,11 +71,12 @@ async function connectToGame(gameId, name) {
       log(`> ${event.data}`);
       return;
     }
+    console.log(event)
 
     switch (data.type) {
       case 'assign-player':
         new_player_position = assignPlayer(data.name, data.team, data.color);
-        ws.send({'player_name': data.name, 'player_position':new_player_position});
+        ws.send({'player_name': data.name, 'player_position': new_player_position});
         break;
 
      case "full_ui_state":
@@ -82,12 +85,19 @@ async function connectToGame(gameId, name) {
         });
         break;
 
+      case "draw":
+        console.log(data);
+        data.cards.forEach(c => {
+          displayCard(data.playerId, c.value, c.suit);
+        });
+        break;
+
       case 'move':
-        placePieceOnSpot(data.playerId, data.spotIndex, getPlayerClass(data.playerId));
+        placePieceOnSpot(data.playerId, data.spotIndex);
         break;
 
       case 'goal-move':
-        placePieceOnGoalSpot(data.playerId, data.goalSpotIndex, getPlayerClass(data.playerId));
+        placePieceOnGoalSpot(data.playerId, data.goalSpotIndex);
         break;
 
       case 'log':
@@ -160,6 +170,16 @@ gameIdInput.addEventListener("input", () => {
   joinBtn.disabled = gameIdInput.value.trim() === "";
 });
 
+function sendCardSelection(player_name, rank, suit) {
+  const message = {
+    type: "card_selection",
+    name: player_name, 
+    value: rank,
+    suit: suit,
+  };
+  ws.send(JSON.stringify(message));
+}
+
 
 // User Interface handling
 const regions = ['red', 'green', 'yellow', 'blue'];
@@ -179,16 +199,16 @@ const goalElements = [];
 
 const positions = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const positionMap = {
-  'top-left':    { index: 2, el: document.getElementById('player-info-top-left') },
-  'top-right':   { index: 3, el: document.getElementById('player-info-top-right') },
-  'bottom-left': { index: 1, el: document.getElementById('player-info-bottom-left') },
-  'bottom-right':{ index: 0, el: document.getElementById('player-info-bottom-right') },
+  'top-left':    { index: 2, info_box: document.getElementById('player-info-top-left'), card_box: document.getElementById('card-box-top-left') },
+  'top-right':   { index: 3, info_box: document.getElementById('player-info-top-right'), card_box: document.getElementById('card-box-top-right') },
+  'bottom-left': { index: 1, info_box: document.getElementById('player-info-bottom-left'), card_box: document.getElementById('card-box-bottom-left') },
+  'bottom-right':{ index: 0, info_box: document.getElementById('player-info-bottom-right'), card_box: document.getElementById('card-box-bottom-right') },
 };
 
 const playerAssignments = []; // { name, team, color, position }
 const usedColors = [];
 const usedPositions = [];
-
+let selectedCard = null;
 
 function drawQuadrant(position, color) {
   const regionIndex = positionMap[position].index;
@@ -237,10 +257,8 @@ function drawQuadrant(position, color) {
   spotElements.push(...quadrantSpots);
 }
 
-
-
-
 function placePieceOnSpot(playerId, spotIndex, playerClass) {
+  playerClass = getPlayerClass(playerId)
   const old = document.querySelector(`[data-player="${playerId}"]`);
   if (old && old.parentElement) old.parentElement.removeChild(old);
 
@@ -252,7 +270,8 @@ function placePieceOnSpot(playerId, spotIndex, playerClass) {
   spot.appendChild(piece);
 }
 
-function placePieceOnGoalSpot(playerId, goalSpotIndex, playerClass) {
+function placePieceOnGoalSpot(playerId, goalSpotIndex) {
+  playerClass = getPlayerClass(playerId)
   const old = document.querySelector(`[data-player="${playerId}"]`);
   if (old && old.parentElement) old.parentElement.removeChild(old);
 
@@ -265,6 +284,11 @@ function placePieceOnGoalSpot(playerId, goalSpotIndex, playerClass) {
 }
 
 function assignPlayer(name, team, color) {
+
+  // if player is already in the playerAssignements array, don't add it again. This can happen because the full_ui uses the assignPlayer method (#TODO: refactor this?)
+  player_test = playerAssignments.find(p => p.name === name);
+  if (player_test) return;
+
   const newPlayer = { name, team, color };
 
   if (playerAssignments.length === 0) {
@@ -280,6 +304,7 @@ function assignPlayer(name, team, color) {
   }
 
   playerAssignments.push(newPlayer);
+  console.log(`Player with ID "${name}" was just pushed to playerAssignments:`, JSON.stringify(playerAssignments));
   usedColors.push(color);
   usedPositions.push(newPlayer.position);
 
@@ -311,8 +336,8 @@ function getAdjacentFreePosition(pos) {
 }
 
 function updatePlayerBlock(player) {
-  const block = positionMap[player.position].el;
-  block.innerHTML = `${player.name}<br>Team ${player.team}<br>${player.color}`;
+  const block = positionMap[player.position].info_box;
+  block.innerHTML = `${player.name}<br>Team ${player.team}`;
   block.style.backgroundColor = player.color;
 }
 
@@ -328,3 +353,43 @@ function getPlayerClass(playerId) {
   const player = playerAssignments.find(p => p.name === playerId);
   return player ? `player-${player.color[0]}` : '';
 }
+
+function displayCard(playerId, rank, suit) {
+  const player = playerAssignments.find(p => p.name === playerId);
+  if (!player) {
+    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
+    return; // or handle this gracefully
+  }
+  const block = positionMap[player.position].card_box;
+  const card = document.createElement('div');
+  card.classList.add('playing-card', suit);
+  card.innerHTML = `
+    <div class="card-value">${rank}</div>
+    <div class="card-suit">${suit}</div>
+  `;
+
+  card.addEventListener('click', () => {
+    event.stopPropagation(); // Prevent document click from firing
+    if (selectedCard === card) {
+      // Second click confirms selection
+      sendCardSelection(playerId, rank, suit);
+      card.classList.remove('selected');
+      selectedCard = null;
+    } else {
+      // First click triggers highlight
+      if (selectedCard) selectedCard.classList.remove('selected');
+      selectedCard = card;
+      card.classList.add('selected');
+    }
+  });
+
+  block.appendChild(card);
+}
+
+// Click anywhere outside of cards to cancel card selection
+document.addEventListener('click', () => {
+  if (selectedCard) {
+    selectedCard.classList.remove('selected');
+    selectedCard = null;
+  }
+});

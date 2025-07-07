@@ -58,6 +58,10 @@ class Card:
 		return self._value
 
 	@property
+	def json(self) -> dict:
+		return {"suit": self._suit, "value": self._value}
+
+	@property
 	def numValue(self) -> int:
 		if self._value in [str(i) for i in range(1, 10)]:
 			return int(self._value)
