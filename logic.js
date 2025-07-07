@@ -14,7 +14,18 @@ const board = document.getElementById('board');
 // Input-Output / WebSocket handling
 let ws = null;
 
+//##TODO: for now erery messages are just written into the terminal regardless of status but it will have to be displayed in a niver way, and some queries or errors may even not be displayed as text ut as interaction/animations on screen
 function log(msg) {
+  terminal.textContent += msg + "\n";
+  terminal.scrollTop = terminal.scrollHeight;
+}
+
+function query(msg) {
+  terminal.textContent += msg + "\n";
+  terminal.scrollTop = terminal.scrollHeight;
+}
+
+function error(msg) {
   terminal.textContent += msg + "\n";
   terminal.scrollTop = terminal.scrollHeight;
 }
@@ -65,11 +76,11 @@ async function connectToGame(gameId, name) {
         ws.send({'player_name': data.name, 'player_position':new_player_position});
         break;
 
-   case "full_ui_state":
-      msg.players.forEach(p => {
-        assignPlayer(p.name, p.team, p.color);
-      });
-      break;
+     case "full_ui_state":
+        data.players.forEach(p => {
+          assignPlayer(p.name, p.team, p.color);
+        });
+        break;
 
       case 'move':
         placePieceOnSpot(data.playerId, data.spotIndex, getPlayerClass(data.playerId));
@@ -80,7 +91,15 @@ async function connectToGame(gameId, name) {
         break;
 
       case 'log':
-        log(data.message);
+        log(data.msg);
+        break;
+
+      case 'query':
+        query(data.msg);
+        break;
+
+      case 'error':
+        error(data.msg);
         break;
 
       default:

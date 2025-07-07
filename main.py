@@ -115,11 +115,11 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     
     game = manager.games[game_id]
 
-    ## Setting up all the WebSocket and asyncio logic 
+    # Setting up all the WebSocket and asyncio logic 
     await websocket.accept()
     router.register(player_name)
 
-    # Player input loop
+    ## Player input loop
     async def input_loop():
         try:
             while True:
@@ -132,15 +132,15 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
     asyncio.create_task(input_loop())
 
-    # Player output loop
+    ## Player output loop
     async def output_loop():
         while True:
             message = await router.get_output(player_name)
-            await websocket.send_text(message)
+            await websocket.send_json(message)
 
     asyncio.create_task(output_loop())
 
-    # IO output loop
+    ## IO output loop
     async def send_updates(websocket: WebSocket, queue: asyncio.Queue):
         while True:
             update = await queue.get()
@@ -151,21 +151,27 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
     sender = asyncio.create_task(send_updates(websocket, ui_queue))
 
+    new_player = Player(player_name, '', '', '', game, router)
+    ## Handling bad game ID.
+    ##TODO: find a more graceful way to handle this: maybe we can simply ask the user for another game ID.
     if game_id not in manager.games:
-        await router.send_output(player_name,"Invalid game ID.")
+        await new_player.send_message_to_user({"type": "error", "msg": "Invalid game ID."})
         await websocket.close()
         return
 
     # Finalizing game setup for each player connecting
-    ## Updating the new player's UI with current state of the board
-    await new_player.send_message_to_user({"type": "full_ui_state","players": [{"name": p, "team": game.players[p]["team"], "color": game.players[p]["color"]} for p in game.players.keys()]})
-    ##### TODO solve sync problem, cannot use new_player because object not yet created... so maybe we'll need to change constructor of Player object to allow empty color and team, and then set the value of these properties when available.
-    
+
+    ## If username has already been chosen, we cannot proceed. 
+    ##TODO: find a more graceful way to handle this: maybe we can simply ask the user for another name.
     if player_name in game.players.keys():
-        await router.send_output(player_name,"Player name already taken.")
+        await new_player.send_message_to_user({"type": "error", "msg": "Player name already taken."})
         await websocket.close()
         return
 
+    ## Updating the new player's UI with current state of the board
+    await new_player.send_message_to_user({"type": "full_ui_state","players": [{"name": p, "team": game.players[p]["team"], "color": game.players[p]["color"]} for p in game.players.keys()]})
+
+    ## Figuring out and/or asking the player for team and color selection
     if not game.players:
         team = "0"
         await router.send_output(player_name,"You have been assigned to team 0.")
@@ -173,23 +179,26 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     else:
         if game.team_is_full("0"):
             team = "1"
-            await router.send_output(player_name,"Team 0 is full, you have been assigned to team 1.")
+            await new_player.send_message_to_user({"type": "log", "msg": "Team 0 is full, you have been assigned to team 1."})
         elif game.team_is_full("1"):
             team = "0"
-            await router.send_output(player_name,"Team 1 is full, you have been assigned to team 0.")
+            await new_player.send_message_to_user({"type": "log", "msg": "Team 1 is full, you have been assigned to team 0."})
         else:
-            await router.send_output(player_name,"Choose your team (0 or 1):")
+            await new_player.send_message_to_user({"type": "query", "msg": "Choose your team (0 or 1):"})
             while True:
                 msg = await websocket.receive_text()
                 if msg.strip() in ["0", "1"]:
                     team = msg.strip()
-                    await router.send_output(player_name,f"Successfully joined team {team}")
+                    await new_player.send_message_to_user({"type": "log", "msg": f"Successfully joined team {team}"})
                     break
                 else:
-                    await router.send_output(player_name,"Invalid team. Please enter '0' or '1'.")
+                    await new_player.send_message_to_user({"type": "error", "msg": "Invalid team. Please enter '0' or '1'."})
 
     color = await game.make_player_choose_color(player_name)
-    new_player = Player(player_name, team, color, game, router)
+
+    ## Setting the information we got into the various objects which need to be aware of the selections
+    new_player.setColor(color)
+    new_player.setTeam(team)
 
     game.players[player_name] = {
         "name": player_name,
@@ -199,10 +208,12 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
         "object": new_player
     }
 
-    await router.send_output(player_name, f'You successfully joined the game and will play in team {team} with color {color}!\n')
+    ## Broadcasting the join-info to new player, the UIs and the other players
+    await new_player.send_message_to_user({"type": "log", "msg": f"You successfully joined the game and will play in team {team} with color {color}!"})
     await game.broadcast(f"{player_name} has joined team {team} and will play {color}.", excluded_player=player_name)
     await game.broadcast_ui({"type": "assign-player", "name": player_name, "team": team, "color": color})
 
+    ## When we have 4 players, the game can start!
     if len(game.players) == 4:
         await game.game_loop()
 

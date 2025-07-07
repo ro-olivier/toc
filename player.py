@@ -5,7 +5,7 @@ from hand import Hand
 
 
 class Player:
-	def __init__(self, name : str, team : str, color : str, gameSession = None, router = None, position = None):
+	def __init__(self, name : str, team : str = None, color : str = None, position : str = None, gameSession = None, router = None):
 		self._name = name
 		self._team = team
 		self._color = color
@@ -38,9 +38,15 @@ class Player:
 	def team(self) -> str:
 		return self._team
 
+	def setTeam(self, team : str) -> None:
+		self._team = team
+
 	@property
 	def color(self) -> str:
 		return self._color
+
+	def setColor(self, color : str) -> None:
+		self._color = color
 
 	@property
 	def position(self) -> str:
