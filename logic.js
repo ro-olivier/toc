@@ -86,10 +86,13 @@ async function connectToGame(gameId, name) {
         break;
 
       case "draw":
-        console.log(data);
         data.cards.forEach(c => {
           displayCard(data.playerId, c.value, c.suit);
         });
+        break;
+
+      case "dealer":
+        toogleDealerOnPlayerBlock(data.playerId);
         break;
 
       case 'move':
@@ -335,9 +338,10 @@ function getAdjacentFreePosition(pos) {
   return candidates.find(p => !usedPositions.includes(p));
 }
 
-function updatePlayerBlock(player) {
+function updatePlayerBlock(player, isDealer = false) {
   const block = positionMap[player.position].info_box;
   block.innerHTML = `${player.name}<br>Team ${player.team}`;
+  if (isDealer) block.innerHTML += '<br><i>Dealer</i>'
   block.style.backgroundColor = player.color;
 }
 
@@ -347,6 +351,16 @@ function updateRegionColor(position, color) {
   const regionGoalSpots = goalElements.slice(regionIndex * 4, regionIndex * 4 + 4);
   regionSpots.forEach(s => s.style.backgroundColor = color);
   regionGoalSpots.forEach(s => s.style.backgroundColor = color);
+}
+
+function toogleDealerOnPlayerBlock(playerId) {
+  playerAssignments.forEach(p => {
+    if (p.name === playerId) {
+      updatePlayerBlock(p, true)
+    } else {
+      updatePlayerBlock(p)
+    }
+  });
 }
 
 function getPlayerClass(playerId) {

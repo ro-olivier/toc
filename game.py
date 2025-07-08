@@ -94,6 +94,7 @@ class Game:
 	def nextDealer(self) -> None:
 		self._players = self._players[1:] + self._players[:1]
 		self._players[0].setDealer()
+		self._players[0].send_message_to_user({"type": "dealer", "playerId": self._players[0].name})
 
 	async def drawHands(self, first_round : bool) -> None:
 		if first_round:
