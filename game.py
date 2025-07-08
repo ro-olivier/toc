@@ -113,8 +113,8 @@ class Game:
 			player2.requestCardExchange()
 		)
 
-		player1.switchCard(card1, card2)
-		player2.switchCard(card2, card1)
+		await player1.switchCard(card1, card2)
+		await player2.switchCard(card2, card1)
 
 	async def runRound(self, round_name : str, first_round : bool) -> None:
 		await self.broadcast({"type": "log", "msg": f"Starting {round_name} round with player {self.dealer} as the dealer."})

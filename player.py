@@ -3,6 +3,8 @@ from __future__ import annotations
 from cards import Card
 from hand import Hand
 
+import json
+
 
 class Player:
 	def __init__(self, name : str, team : str = None, color : str = None, position : str = None, gameSession = None, router = None):
@@ -28,8 +30,9 @@ class Player:
 
 	async def get_input_from_prompt(self, prompt: str) -> str:
 		await self.send_message_to_user({"type": "query", "msg": prompt})
+		print(f"[Player] Waiting for input from {self._name}...")
 		return await self._router.wait_for_input(self._name)
-
+		
 	@property
 	def name(self) -> str:
 		return self._name
@@ -139,12 +142,15 @@ class Player:
 
 	async def requestCardExchange(self) -> Card:
 		#await self.send_message_to_user({"type": "log", "msg": f'Player {self._name}, here are the cards in your hand: {"  ||  ".join([str(index) + " - " + str(card) for index,card in enumerate(self._hand.cards)])}'})
-		cardChoice = await self.get_input_from_prompt('Please choose a card to give to your team-mate: ')
-		##TODO: next step would be to receive and handle the data send by the user's UI during card exchange selection
-		while cardChoice not in [str(i) for i in range(len(self._hand.cards))]:
-			cardChoice = await self.get_input_from_prompt('Please choose a valid card to give to your team-mate.')
-		return self._hand.cards[int(cardChoice)]
+		cardChoice = await self.get_input_from_prompt('Please choose a card to give to your team-mate.')
+		while not cardChoice or (not 'type' in cardChoice.keys()) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
+			cardChoice = await self.get_input_from_prompt('Please choose a card to give to your team-mate.')
+		chosenCard = Card(cardChoice['suit'], cardChoice['value'])
+		print(f'Card chosen by {self._name} for card exchange: {chosenCard}')
+		return chosenCard
 
-	def switchCard(self, card1, card2) -> None:
+	async def switchCard(self, card1, card2) -> None:
 		self._hand.discardFromHand(card1)
+		await self.send_message_to_user({"type": "discard_card", "playerId": self._name, "value": card1.value, "suit": card1.suit})
 		self._hand.addToHand(card2)
+		await self.send_message_to_user({"type": "add_card", "playerId": self._name, "value": card2.value, "suit": card2.suit})

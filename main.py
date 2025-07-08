@@ -4,6 +4,7 @@ from typing import Dict
 import asyncio
 import string
 import random
+import json
 
 from game import Game
 from player import Player
@@ -17,26 +18,35 @@ class PlayerInputRouter:
         self.output_queues = {}
 
     def register(self, player_name: str):
-        print(f'Registered user {player_name}')
+        print(f'[Router] Registered user {player_name}')
         self.input_queues[player_name] = asyncio.Queue()
         self.output_queues[player_name] = asyncio.Queue()
 
     def unregister(self, player_name: str):
+        print(f'[Router] Unregistered user {player_name}')
         self.input_queues.pop(player_name, None)
         self.output_queues.pop(player_name, None)
 
     async def add_input(self, player_name: str, message: str):
+        print(f"[Router] add_input called for {player_name}: {message}")
         queue = self.input_queues.get(player_name)
         if queue:
             await queue.put(message)
+        else:
+            print(f"[Router] No input queue found for {player_name}")
 
     async def wait_for_input(self, player_name: str):
-        return await self.input_queues[player_name].get()
+        msg = await self.input_queues[player_name].get()
+        print(f"[Router] wait_for_input received {msg} of type {type(msg)}")
+        return msg
 
     async def send_output(self, player_name: str, message: str):
+        print(f"[Router] send_output called for {player_name}: {message}")
         queue = self.output_queues.get(player_name)
         if queue:
             await queue.put(message)
+        else:
+            print(f"[Router] No output queue found for {player_name}")
 
     async def get_output(self, player_name: str):
         return await self.output_queues[player_name].get()
@@ -99,9 +109,9 @@ class GameSession:
             await player.send_message_to_user({"type": "query", "msg": 
                 f"Choose the color you wish to play. Available colors: {', '.join(self.remaining_colors)}."})
             while True:
-                msg = await self.router.wait_for_input(player_name)
-                if msg.strip() in self.remaining_colors:
-                    color = msg.strip()
+                parsed_msg = await self.router.wait_for_input(player_name)
+                if parsed_msg['type'] == 'text_input' and parsed_msg['msg'].strip() in self.remaining_colors:
+                    color = parsed_msg['msg'].strip()
                     self.remaining_colors = [c for c in self.remaining_colors if c != color]
                     break
                 else:
@@ -127,11 +137,21 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
         try:
             while True:
                 data = await websocket.receive_text()
-                await router.add_input(player_name, data)
+                #print(f"[input_loop] Raw message: {data}")  # Log raw message
+                try:
+                    # Parse the JSON string into a Python dictionary
+                    parsed_data = json.loads(data)
+                    print(f"[input_loop] Received data from {player_name}: {parsed_data}")  # Now it should print the actual content
+                    await router.add_input(player_name, parsed_data)
+                except json.JSONDecodeError as e:
+                    print(f"Error decoding JSON, passing it as raw text just in case: {e}")
+                    await router.add_input(player_name, data)
         except WebSocketDisconnect:
             del game.players[player_name]
             router.unregister(player_name)
             await game.broadcast({"type": "log", "msg": f"{player_name} disconnected."})
+        except Exception as e:
+            print(f"[input_loop] Error: {e}")
 
     asyncio.create_task(input_loop())
 
@@ -180,7 +200,6 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     if not game.players:
         team = "0"
         await new_player.send_message_to_user({"type": "log", "msg": "You have been assigned to team 0."})
-        position = 'top-left'
     else:
         if game.team_is_full("0"):
             team = "1"
@@ -192,8 +211,9 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
             await new_player.send_message_to_user({"type": "query", "msg": "Choose your team (0 or 1):"})
             while True:
                 msg = await websocket.receive_text()
-                if msg.strip() in ["0", "1"]:
-                    team = msg.strip()
+                parsed_msg = json.loads(msg)
+                if parsed_msg['type'] == 'text_input' and parsed_msg['msg'].strip() in ["0", "1"]:
+                    team = parsed_msg['msg'].strip()
                     await new_player.send_message_to_user({"type": "log", "msg": f"Successfully joined team {team}"})
                     break
                 else:

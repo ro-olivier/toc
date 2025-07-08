@@ -53,9 +53,21 @@ class Card:
 	def __str__(self) -> str:
 		return f'{self._suit}{self._value}'
 
+	def __eq__(self, other) -> bool:
+		if isinstance(other, Card):
+			return self.suit == other.suit and self.value == other.value
+		return False
+
+	def __hash__(self):
+		return hash((self.suit, self.value))
+
 	@property
 	def value(self) -> str:
 		return self._value
+
+	@property
+	def suit(self) -> str:
+		return self._suit
 
 	@property
 	def json(self) -> dict:

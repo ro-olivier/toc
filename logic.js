@@ -13,7 +13,7 @@ const board = document.getElementById('board');
 
 // Input-Output / WebSocket handling
 let ws = null;
-let player_name = null;
+let local_player_name = null;
 
 //##TODO: for now erery messages are just written into the terminal regardless of status but it will have to be displayed in a niver way, and some queries or errors may even not be displayed as text ut as interaction/animations on screen
 function log(msg) {
@@ -58,7 +58,7 @@ async function connectToGame(gameId, name) {
 
   ws.onopen = () => {
     log(`Connected to game ${gameId} as ${name}`);
-    player_name = name;
+    local_player_name = name;
     showGameUI();
   };
 
@@ -71,12 +71,11 @@ async function connectToGame(gameId, name) {
       log(`> ${event.data}`);
       return;
     }
-    console.log(event)
+    console.log('[ws.oneMessage top handler] Received the following message from back-end:' + JSON.stringify(data))
 
     switch (data.type) {
       case 'assign-player':
-        new_player_position = assignPlayer(data.name, data.team, data.color);
-        ws.send({'player_name': data.name, 'player_position': new_player_position});
+        assignPlayer(data.name, data.team, data.color);
         break;
 
      case "full_ui_state":
@@ -94,6 +93,14 @@ async function connectToGame(gameId, name) {
       case "dealer":
         toogleDealerOnPlayerBlock(data.playerId);
         break;
+
+      case "add_card":
+          displayCard(data.playerId, data.value, data.suit);
+        break
+
+      case "discard_card":
+          removeCard(data.playerId, data.value, data.suit);
+        break
 
       case 'move':
         placePieceOnSpot(data.playerId, data.spotIndex);
@@ -157,10 +164,13 @@ joinBtn.addEventListener("click", async () => {
 });
 
 sendBtn.addEventListener("click", () => {
-  const message = commandInput.value.trim();
-  if (message && ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(message);
-    log(`< ${message}`);
+  const commandInputContent = commandInput.value.trim();
+  if (commandInputContent && ws && ws.readyState === WebSocket.OPEN) {
+    const message = {"id": crypto.randomUUID(), "type": "text_input", "msg": commandInputContent};
+    const message_json = JSON.stringify(message);
+    console.log('[commandInputContent click eventListener] Sending following content to back-end:' + message_json)
+    ws.send(message_json);
+    //log(`< ${message}`);
     commandInput.value = "";
   }
 });
@@ -174,13 +184,10 @@ gameIdInput.addEventListener("input", () => {
 });
 
 function sendCardSelection(player_name, rank, suit) {
-  const message = {
-    type: "card_selection",
-    name: player_name, 
-    value: rank,
-    suit: suit,
-  };
-  ws.send(JSON.stringify(message));
+  const message = {"id": crypto.randomUUID(), "type": "card_selection", "name": player_name, "value": rank, "suit": suit};
+  const message_json = JSON.stringify(message);
+  console.log('[sendCardSelection] Sending following content to back-end:' + message_json)
+  ws.send(message_json);
 }
 
 
@@ -313,8 +320,6 @@ function assignPlayer(name, team, color) {
 
   updatePlayerBlock(newPlayer);
   drawQuadrant(newPlayer.position, color);
-
-  return newPlayer.position
 }
 
 function getOppositePosition(pos) {
@@ -376,7 +381,7 @@ function displayCard(playerId, rank, suit) {
   }
   const block = positionMap[player.position].card_box;
   const card = document.createElement('div');
-  card.classList.add('playing-card', suit);
+  card.classList.add('playing-card', suit, rank);
   card.innerHTML = `
     <div class="card-value">${rank}</div>
     <div class="card-suit">${suit}</div>
@@ -386,6 +391,7 @@ function displayCard(playerId, rank, suit) {
     event.stopPropagation(); // Prevent document click from firing
     if (selectedCard === card) {
       // Second click confirms selection
+      console.log(playerId + ' sending card (click 2) selection to backend : ' + rank + ' - ' + suit);
       sendCardSelection(playerId, rank, suit);
       card.classList.remove('selected');
       selectedCard = null;
@@ -393,11 +399,24 @@ function displayCard(playerId, rank, suit) {
       // First click triggers highlight
       if (selectedCard) selectedCard.classList.remove('selected');
       selectedCard = card;
+      console.log(playerId + ' selection card ' + rank + ' - ' + suit + ' for card selection (click 1)');
       card.classList.add('selected');
     }
   });
 
   block.appendChild(card);
+}
+
+function removeCard(playerId, rank, suit) {
+  const player = playerAssignments.find(p => p.name === playerId);
+  if (!player) {
+    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
+    return; // or handle this gracefully
+  }
+  const block = positionMap[player.position].card_box;
+  for (card of block.children) {
+    if (card.classList.contains(rank) && card.classList.contains(suit)) block.removeChild(card);
+  }
 }
 
 // Click anywhere outside of cards to cancel card selection
