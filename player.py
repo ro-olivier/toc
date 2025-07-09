@@ -141,7 +141,6 @@ class Player:
 		self._hand.discardFromHand(card)
 
 	async def requestCardExchange(self) -> Card:
-		#await self.send_message_to_user({"type": "log", "msg": f'Player {self._name}, here are the cards in your hand: {"  ||  ".join([str(index) + " - " + str(card) for index,card in enumerate(self._hand.cards)])}'})
 		cardChoice = await self.get_input_from_prompt('Please choose a card to give to your team-mate.')
 		while not cardChoice or (not 'type' in cardChoice.keys()) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
 			cardChoice = await self.get_input_from_prompt('Please choose a card to give to your team-mate.')
