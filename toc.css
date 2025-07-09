@@ -124,7 +124,7 @@
   left: 100%;
 }
 
-.playing-card {
+.card-container {
   width: 50px;
   height: 75px;
   border-radius: 8px;
@@ -140,6 +140,7 @@
   color: black;
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
+  perspective: 1000px;
 }
 
 .card-value {
@@ -158,12 +159,56 @@
   color: red;
 }
 
-.playing-card:hover {
+.card-container:hover {
   transform: scale(1.05);
   box-shadow: 0 0 8px rgba(0, 0, 0, 0.2);
 }
 
-.playing-card.selected {
+.card-container.selected {
   box-shadow: 0 0 12px 4px rgba(255, 255, 0, 0.6); /* soft yellow glow */
   transform: scale(1.05);
+}
+
+.card {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.8s ease;
+}
+
+.card-container.flip .card {
+  transform: rotateY(180deg);
+}
+
+.card-front,
+.card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+}
+
+.card-front {
+  background: white;
+  font-size: 2rem;
+  align-items: center;
+  justify-content: center;
+  transform: rotateY(180deg);
+}
+
+.card-back {
+  align-items: center;
+  justify-content: center;
+  transform: rotateY(0deg);
+}
+
+.card-back img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }

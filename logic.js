@@ -94,12 +94,8 @@ async function connectToGame(gameId, name) {
         toogleDealerOnPlayerBlock(data.playerId);
         break;
 
-      case "add_card":
-          displayCard(data.playerId, data.value, data.suit);
-        break
-
-      case "discard_card":
-          removeCard(data.playerId, data.value, data.suit);
+      case "receive_card_from_friend":
+          replaceCard(data.playerId, data.value, data.suit);
         break
 
       case 'move':
@@ -380,31 +376,109 @@ function displayCard(playerId, rank, suit) {
     return; // or handle this gracefully
   }
   const block = positionMap[player.position].card_box;
+  const cardContainer = document.createElement('div');
+  cardContainer.className = 'card-container';
+
   const card = document.createElement('div');
-  card.classList.add('playing-card', suit, rank);
-  card.innerHTML = `
+  card.className = 'card';
+
+  const cardFront = document.createElement('div');
+  cardFront.className = 'card-front';
+  cardFront.innerHTML = `
     <div class="card-value">${rank}</div>
     <div class="card-suit">${suit}</div>
   `;
 
-  card.addEventListener('click', () => {
+  const cardBack = document.createElement('div');
+  cardBack.className = 'card-back';
+
+  const backImg = document.createElement('img');
+  backImg.src = 'assets/card.jpg';
+  cardBack.appendChild(backImg);
+
+  card.appendChild(cardFront);
+  card.appendChild(cardBack);
+  cardContainer.appendChild(card);
+
+  cardContainer.addEventListener('click', switchCardClickListener);
+  cardContainer.rank = rank;
+  cardContainer.suit = suit;
+  cardContainer.playerId = playerId;
+
+  block.appendChild(cardContainer);
+  dealHand(block);
+}
+
+function switchCardClickListener(event) {
+    rank = event.currentTarget.rank;
+    suit = event.currentTarget.suit;
+    playerId = event.currentTarget.playerId;
+    cardContainer = event.currentTarget;
+
+    console.log('clicked card ' + rank + ' - ' + suit);
+    console.log(selectedCard);
+    console.log(cardContainer);
     event.stopPropagation(); // Prevent document click from firing
-    if (selectedCard === card) {
+    if (selectedCard === event.currentTarget) {
       // Second click confirms selection
       console.log(playerId + ' sending card (click 2) selection to backend : ' + rank + ' - ' + suit);
       sendCardSelection(playerId, rank, suit);
-      card.classList.remove('selected');
+      cardContainer.classList.remove('selected');
+      cardContainer.classList.remove('flip');
+      window.flipped_card = cardContainer // storing that for later when we receive the new card from the team-mate
       selectedCard = null;
+      console.log(event.currentTarget.parentElement);
+      // we loop over all cards and remove the switchCardClickListener event listener now that the switch has been triggered. Instead we register a clickCardClickListener which will handle normal card selection when players will select moves.
+      event.currentTarget.parentElement.querySelectorAll('.card-container').forEach(c => {
+          c.removeEventListener('click', switchCardClickListener);
+          c.addEventListener('click', clickCardClickListener);
+          c.rank = rank;
+          c.suit = suit;
+          c.playerId = playerId;
+      });
+
     } else {
       // First click triggers highlight
       if (selectedCard) selectedCard.classList.remove('selected');
-      selectedCard = card;
+      selectedCard = cardContainer;
       console.log(playerId + ' selection card ' + rank + ' - ' + suit + ' for card selection (click 1)');
-      card.classList.add('selected');
+      cardContainer.classList.add('selected');
     }
-  });
+  }
 
-  block.appendChild(card);
+  function clickCardClickListener(event) {
+    //this seem to trigger for any block within the card container, and not the card container itself... is it because of event bubbling of something like that? yes no, maybe I don't know
+    console.log(event);
+  }
+
+function dealHand(cardBox) {
+  cardBox.querySelectorAll(".card-container").forEach((item, i) => {
+    setTimeout(() => {
+      item.classList.add('flip');
+    }, 250 * i);
+  });
+}
+
+function replaceCard(playerId, rank, suit) {
+  // way simpler than to actually look for the card based on the previous values, which would need to be passed by the back-end, which is ugly
+  const cardContainer = window.flipped_card;
+  window.flipped_card = null;
+  const cardFront = cardContainer.querySelector('.card-front');
+  cardFront.innerHTML = `
+    <div class="card-value">${rank}</div>
+    <div class="card-suit">${suit}</div>
+  `;
+  setTimeout(100);
+  requestAnimationFrame(() => {
+    cardContainer.classList.add('flip');
+  }); //TODO: for some reason this animation either doesn't trigger, or it's done so fast that it looks like it's appearing instead of turning...
+  
+  cardContainer.addEventListener('click', switchCardClickListener);
+  cardContainer.rank = rank;
+  cardContainer.suit = suit;
+  cardContainer.playerId = playerId;
+
+
 }
 
 function removeCard(playerId, rank, suit) {
@@ -426,3 +500,35 @@ document.addEventListener('click', () => {
     selectedCard = null;
   }
 });
+
+
+function simulate(gameId) {
+
+  // player 3
+  const wsUrl3 = `wss://${window.location.host}/toc/ws/${gameId}/p3`;
+  try {
+    ws3 = new WebSocket(wsUrl3);
+  } catch (err) {
+    showError("Failed to construct WebSocket URL for player 3.");
+  }
+
+  ws3.onopen = () => {
+    log(`Simulated p3 joined game ${gameId}.`);
+    ws3.send(JSON.stringify({"id":"b7874d18-b2d3-47c3-92b6-a621aa4f1471","type":"text_input","msg":"green"}));
+  };
+    
+
+
+  // player4
+  const wsUrl4 = `wss://${window.location.host}/toc/ws/${gameId}/p4`;
+  try {
+    ws4 = new WebSocket(wsUrl4);
+  } catch (err) {
+    showError("Failed to construct WebSocket URL for player 4.");
+  }
+
+  ws4.onopen = () => {
+    log(`Simulated p4 joined game ${gameId}.`);
+  };
+
+}

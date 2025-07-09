@@ -150,6 +150,5 @@ class Player:
 
 	async def switchCard(self, card1, card2) -> None:
 		self._hand.discardFromHand(card1)
-		await self.send_message_to_user({"type": "discard_card", "playerId": self._name, "value": card1.value, "suit": card1.suit})
 		self._hand.addToHand(card2)
-		await self.send_message_to_user({"type": "add_card", "playerId": self._name, "value": card2.value, "suit": card2.suit})
+		await self.send_message_to_user({"type": "receive_card_from_friend", "playerId": self._name, "value": card2.value, "suit": card2.suit})
