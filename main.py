@@ -142,7 +142,21 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
                     # Parse the JSON string into a Python dictionary
                     parsed_data = json.loads(data)
                     print(f"[input_loop] Received data from {player_name}: {parsed_data}")  # Now it should print the actual content
-                    await router.add_input(player_name, parsed_data)
+
+                    if parsed_data['type'] == 'debug':
+                        print('[input loop] Received DEBUG command from {player_name}!!')
+                        if parsed_data['msg'] == 'simulate_card_exchange_players3and4':
+                            print('DEBUG : simulating card exchange between player 3 and 4')
+                            p3_name = list(game.players.keys())[2]
+                            p4_name = list(game.players.keys())[3]
+                            p3_card = game.players[p3_name]['object'].hand.cards[0]
+                            p4_card = game.players[p4_name]['object'].hand.cards[0]
+                            cmd3 = json.loads(f'{{"type":"card_selection","name":"{p3_name}","value":"{p3_card.value}","suit":"{p3_card.suit}"}}')
+                            cmd4 = json.loads(f'{{"type":"card_selection","name":"{p4_name}","value":"{p4_card.value}","suit":"{p4_card.suit}"}}')
+                            await router.add_input(p3_name, cmd3)
+                            await router.add_input(p4_name, cmd4)
+                    else:
+                        await router.add_input(player_name, parsed_data)
                 except json.JSONDecodeError as e:
                     print(f"Error decoding JSON, passing it as raw text just in case: {e}")
                     await router.add_input(player_name, data)

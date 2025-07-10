@@ -80,7 +80,7 @@ async function connectToGame(gameId, name) {
         assignPlayer(data.name, data.team, data.color);
         break;
 
-     case "full_ui_state":
+      case "full_ui_state":
         data.players.forEach(p => {
           assignPlayer(p.name, p.team, p.color);
         });
@@ -164,16 +164,27 @@ joinBtn.addEventListener("click", async () => {
 sendBtn.addEventListener("click", () => {
   const commandInputContent = commandInput.value.trim();
   // simulation only, not for production
-  if (commandInputContent == 'simulate') {
-    simulate();
-  } else {
-    if (commandInputContent && ws && ws.readyState === WebSocket.OPEN) {
-      const message = {"id": crypto.randomUUID(), "type": "text_input", "msg": commandInputContent};
-      const message_json = JSON.stringify(message);
-      console.log('[commandInputContent click eventListener] Sending following content to back-end:' + message_json)
-      ws.send(message_json);
-      //log(`< ${message}`);
-      commandInput.value = "";
+  if (commandInputContent) {
+    switch (commandInputContent) {
+      case 'simulate':
+        simulate();
+        break;
+      case 'simulate2':
+        const message = {"id": crypto.randomUUID(), "type": "debug", "msg": "simulate_card_exchange_players3and4"};
+        const message_json = JSON.stringify(message);
+        console.log('[commandInputContent click eventListener] Sending DEBUG command to back-end:' + message_json);
+        ws.send(message_json);
+        break;
+      default:
+        if (commandInputContent && ws && ws.readyState === WebSocket.OPEN) {
+          const message = {"id": crypto.randomUUID(), "type": "text_input", "msg": commandInputContent};
+          const message_json = JSON.stringify(message);
+          console.log('[commandInputContent click eventListener] Sending following content to back-end:' + message_json);
+          ws.send(message_json);
+          //log(`< ${message}`);
+          commandInput.value = "";
+        }
+        break;
     }
   }
 });
@@ -189,7 +200,7 @@ gameIdInput.addEventListener("input", () => {
 function sendCardSelection(player_name, rank, suit) {
   const message = {"id": crypto.randomUUID(), "type": "card_selection", "name": player_name, "value": rank, "suit": suit};
   const message_json = JSON.stringify(message);
-  console.log('[sendCardSelection] Sending following content to back-end:' + message_json)
+  console.log('[sendCardSelection] Sending following content to back-end:' + message_json);
   ws.send(message_json);
 }
 
@@ -271,7 +282,7 @@ function drawQuadrant(position, color) {
 }
 
 function placePieceOnSpot(playerId, spotIndex, playerClass) {
-  playerClass = getPlayerClass(playerId)
+  playerClass = getPlayerClass(playerId);
   const old = document.querySelector(`[data-player="${playerId}"]`);
   if (old && old.parentElement) old.parentElement.removeChild(old);
 
@@ -284,7 +295,7 @@ function placePieceOnSpot(playerId, spotIndex, playerClass) {
 }
 
 function placePieceOnGoalSpot(playerId, goalSpotIndex) {
-  playerClass = getPlayerClass(playerId)
+  playerClass = getPlayerClass(playerId);
   const old = document.querySelector(`[data-player="${playerId}"]`);
   if (old && old.parentElement) old.parentElement.removeChild(old);
 
@@ -370,9 +381,9 @@ function updateRegionColor(position, color) {
 function toogleDealerOnPlayerBlock(playerId) {
   playerAssignments.forEach(p => {
     if (p.name === playerId) {
-      updatePlayerBlock(p, true)
+      updatePlayerBlock(p, true);
     } else {
-      updatePlayerBlock(p)
+      updatePlayerBlock(p);
     }
   });
 }
@@ -428,18 +439,14 @@ function switchCardClickListener(event) {
     playerId = event.currentTarget.playerId;
     cardContainer = event.currentTarget;
 
-    console.log('clicked card ' + rank + ' - ' + suit);
-    console.log(selectedCard);
-    console.log(cardContainer);
     event.stopPropagation(); // Prevent document click from firing
     if (selectedCard === event.currentTarget) {
       // Second click confirms selection
-      console.log(playerId + ' sending card (click 2) selection to backend : ' + rank + ' - ' + suit);
+      //console.log(playerId + ' sending card (click 2) selection to backend : ' + rank + ' - ' + suit);
       cardContainer.classList.remove('selected');
       cardContainer.classList.remove('flip');
       window.flipped_card = cardContainer // storing that for later when we receive the new card from the team-mate
       selectedCard = null;
-      console.log(event.currentTarget.parentElement);
       // we loop over all cards and remove the switchCardClickListener event listener now that the switch has been triggered. Instead we register a clickCardClickListener which will handle normal card selection when players will select moves.
       event.currentTarget.parentElement.querySelectorAll('.card-container').forEach(c => {
           c.removeEventListener('click', switchCardClickListener);
@@ -458,7 +465,7 @@ function switchCardClickListener(event) {
       // First click triggers highlight
       if (selectedCard) selectedCard.classList.remove('selected');
       selectedCard = cardContainer;
-      console.log(playerId + ' selection card ' + rank + ' - ' + suit + ' for card selection (click 1)');
+      //console.log(playerId + ' selection card ' + rank + ' - ' + suit + ' for card selection (click 1)');
       cardContainer.classList.add('selected');
     }
   }
