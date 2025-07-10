@@ -14,6 +14,7 @@ const board = document.getElementById('board');
 // Input-Output / WebSocket handling
 let ws = null;
 let local_player_name = null;
+let local_game_Id = null;
 
 //##TODO: for now erery messages are just written into the terminal regardless of status but it will have to be displayed in a niver way, and some queries or errors may even not be displayed as text ut as interaction/animations on screen
 function log(msg) {
@@ -59,6 +60,7 @@ async function connectToGame(gameId, name) {
   ws.onopen = () => {
     log(`Connected to game ${gameId} as ${name}`);
     local_player_name = name;
+    local_game_Id = gameId;
     showGameUI();
   };
 
@@ -422,7 +424,6 @@ function switchCardClickListener(event) {
     if (selectedCard === event.currentTarget) {
       // Second click confirms selection
       console.log(playerId + ' sending card (click 2) selection to backend : ' + rank + ' - ' + suit);
-      sendCardSelection(playerId, rank, suit);
       cardContainer.classList.remove('selected');
       cardContainer.classList.remove('flip');
       window.flipped_card = cardContainer // storing that for later when we receive the new card from the team-mate
@@ -436,6 +437,11 @@ function switchCardClickListener(event) {
           c.suit = suit;
           c.playerId = playerId;
       });
+      // only triggering the WS call to replace the card after twice the amount of time it takes for the front-to-back flip animation to execute, to make sure we do play the animation
+      setTimeout(() => {
+        sendCardSelection(playerId, rank, suit);
+      }, 500);
+      
 
     } else {
       // First click triggers highlight
@@ -471,7 +477,7 @@ function replaceCard(playerId, rank, suit) {
   setTimeout(100);
   requestAnimationFrame(() => {
     cardContainer.classList.add('flip');
-  }); //TODO: for some reason this animation either doesn't trigger, or it's done so fast that it looks like it's appearing instead of turning...
+  });
   
   cardContainer.addEventListener('click', switchCardClickListener);
   cardContainer.rank = rank;
@@ -502,7 +508,7 @@ document.addEventListener('click', () => {
 });
 
 
-function simulate(gameId) {
+function simulate(gameId = local_game_Id) {
 
   // player 3
   const wsUrl3 = `wss://${window.location.host}/toc/ws/${gameId}/p3`;
