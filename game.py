@@ -91,10 +91,10 @@ class Game:
 		self._players = players
 		self._players[0].setDealer()
 
-	def nextDealer(self) -> None:
+	async def nextDealer(self) -> None:
 		self._players = self._players[1:] + self._players[:1]
 		self._players[0].setDealer()
-		self._players[0].send_message_to_user({"type": "dealer", "playerId": self._players[0].name})
+		await self.broadcast({"type": "dealer", "playerId": self._players[0].name})
 
 	async def drawHands(self, first_round : bool) -> None:
 		if first_round:
@@ -137,6 +137,9 @@ class Game:
 
 	async def start(self) -> None:
 		self._isStarted = True
+
+		self._players[0].setDealer()
+		await self.broadcast({"type": "dealer", "playerId": self._players[0].name})
 
 		while not self._isFinished:
 			await self.runRound('First', first_round = True)
