@@ -163,13 +163,18 @@ joinBtn.addEventListener("click", async () => {
 
 sendBtn.addEventListener("click", () => {
   const commandInputContent = commandInput.value.trim();
-  if (commandInputContent && ws && ws.readyState === WebSocket.OPEN) {
-    const message = {"id": crypto.randomUUID(), "type": "text_input", "msg": commandInputContent};
-    const message_json = JSON.stringify(message);
-    console.log('[commandInputContent click eventListener] Sending following content to back-end:' + message_json)
-    ws.send(message_json);
-    //log(`< ${message}`);
-    commandInput.value = "";
+  // simulation only, not for production
+  if (commandInputContent == 'simulate') {
+    simulate();
+  } else {
+    if (commandInputContent && ws && ws.readyState === WebSocket.OPEN) {
+      const message = {"id": crypto.randomUUID(), "type": "text_input", "msg": commandInputContent};
+      const message_json = JSON.stringify(message);
+      console.log('[commandInputContent click eventListener] Sending following content to back-end:' + message_json)
+      ws.send(message_json);
+      //log(`< ${message}`);
+      commandInput.value = "";
+    }
   }
 });
 

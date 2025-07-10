@@ -87,7 +87,6 @@
 
 .card-box {
   position: absolute;
-  display: flex;
   flex-wrap: nowrap;
   gap: 6px;
   padding: 4px;
@@ -107,21 +106,25 @@
 #card-box-top-left {
   top: 15%;
   right: 100%;
+  display: none;
 }
 
 #card-box-top-right {
   top: 15%;
   left: 100%;
+  display: none;
 }
 
 #card-box-bottom-left {
   top: 70%;
   right: 100%;
+  display: none;
 }
 
 #card-box-bottom-right {
   top: 70%;
   left: 100%;
+  display: none;
 }
 
 .card-container {
