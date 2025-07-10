@@ -317,6 +317,7 @@ function assignPlayer(name, team, color) {
   usedPositions.push(newPlayer.position);
 
   updatePlayerBlock(newPlayer);
+  if (name == local_player_name) displayPlayerCardBlock(newPlayer);
   drawQuadrant(newPlayer.position, color);
 }
 
@@ -346,6 +347,11 @@ function updatePlayerBlock(player, isDealer = false) {
   block.innerHTML = `${player.name}<br>Team ${player.team}`;
   if (isDealer) block.innerHTML += '<br><i>Dealer</i>'
   block.style.backgroundColor = player.color;
+}
+
+function displayPlayerCardBlock(player) {
+  const block = positionMap[player.position].card_box;
+  block.style.display = 'flex';
 }
 
 function updateRegionColor(position, color) {
@@ -478,7 +484,7 @@ function replaceCard(playerId, rank, suit) {
   requestAnimationFrame(() => {
     cardContainer.classList.add('flip');
   });
-  
+
   cardContainer.addEventListener('click', switchCardClickListener);
   cardContainer.rank = rank;
   cardContainer.suit = suit;
