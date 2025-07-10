@@ -5,6 +5,7 @@ import asyncio
 import string
 import random
 import json
+from time import sleep
 
 from game import Game
 from player import Player
@@ -80,8 +81,9 @@ class GameSession:
         self.remaining_colors = COLORS
         self.router = msg_router
         self.ui_queues: List = []
+        self.order: List = []
 
-    def team_is_full(self, team: str):
+    def team_is_full(self, team: str) -> bool:
         return sum([self.players[p]['team'] == team for p in self.players.keys()]) == 2
 
     async def broadcast(self, message: Dict, excluded_player : str = None):
@@ -97,7 +99,8 @@ class GameSession:
             self.started = True
             await self.broadcast({"type": "log", "msg": "Four players have joined: game is starting!"})
             game = Game(self)
-            game.setPlayers([self.players[k]['object'] for k in self.players.keys()])
+            # players are set in the order defined by the array passed by the UI
+            game.setPlayers([self.players[p_name]['object'] for p_name in self.order])
             await game.start()
 
     async def make_player_choose_color(self, player_name) -> str:
@@ -155,6 +158,11 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
                             cmd4 = json.loads(f'{{"type":"card_selection","name":"{p4_name}","value":"{p4_card.value}","suit":"{p4_card.suit}"}}')
                             await router.add_input(p3_name, cmd3)
                             await router.add_input(p4_name, cmd4)
+                    elif parsed_data['type'] == 'everybody_is_here':
+                            # We're dealing with the special message at the end of the game setup phase where the front-end of player 4 is giving the back-end the order in which the players have decided to play. This data is used to update the order in which items are in the game.players array.
+                        if len(game.order) == 0: # we only need to update the game.order once, and we don't want this check to be mutualized with the parsed_data type check otherwise multiple msg will reach the router and this will break the card exchange process which comes after
+                            game.order = parsed_data['order']
+                            await try_notify_order_ready(game, orderIsSet_condition)
                     else:
                         await router.add_input(player_name, parsed_data)
                 except json.JSONDecodeError as e:
@@ -252,13 +260,23 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     await game.broadcast({"type": "log", "msg": f"{player_name} has joined team {team} and will play {color}."}, excluded_player=player_name)
     await game.broadcast({"type": "assign-player", "name": player_name, "team": team, "color": color})
 
-    ## When we have 4 players, the game can start!
+    ## When we have 4 players, the game can start if the game.order variable has been set!
     if len(game.players) == 4:
+        ## We wait for the lock on the game.order to be lifted because this ws message will (most likely) come later than the check on len(game.players)
+        async with orderIsSet_condition:
+            await orderIsSet_condition.wait_for(lambda: len(game.order) == 4)
         await game.game_loop()
 
 
 router = PlayerInputRouter()
 manager = ConnectionManager()
+orderIsSet_condition = asyncio.Condition()
+
+# Helper function for the lock on game.order at the beginning of the game
+async def try_notify_order_ready(game, condition):
+    async with condition:
+        if len(game.order) == 4:
+            condition.notify_all()
 
 @app.get("/toc")
 async def root():

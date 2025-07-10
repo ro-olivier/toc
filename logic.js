@@ -329,6 +329,22 @@ function assignPlayer(name, team, color) {
 
   playerAssignments.push(newPlayer);
   console.log(`Player with ID "${name}" was just pushed to playerAssignments:`, JSON.stringify(playerAssignments));
+  // If 4 players have joined, the front-end needs to give the back-end the order in which the players where "seated" at the table so that the back-end can manage who plays and when / in what order. 
+  // We could duplicate the seating order logic in the backend (or have the backend manage it entirely) but this is simplier that way and having the front-end do it is not that big of a risk because if a malicious user tries to mess up with this it's going to be immediately obvious to the other team since the order in which the back-end will make the users play won't match the order in which they are seated.
+  if (playerAssignments.length === 4) {
+
+    // We get players based on where they are positioned in clock-wise order starting from top-left
+    p1 = playerAssignments.find(p => p.position === 'top-left');
+    p2 = playerAssignments.find(p => p.position === 'top-right');
+    p3 = playerAssignments.find(p => p.position === 'bottom-right');
+    p4 = playerAssignments.find(p => p.position === 'bottom-left');
+    
+    const message = {"id": crypto.randomUUID(), "type": "everybody_is_here", "order": [p1.name, p2.name, p3.name, p4.name]};
+    const message_json = JSON.stringify(message);
+    console.log('[sendCardSelection] Sending following content to back-end:' + message_json);
+    ws.send(message_json);
+  }
+
   usedColors.push(color);
   usedPositions.push(newPlayer.position);
 

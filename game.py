@@ -86,7 +86,7 @@ class Game:
 		self._activePlayerIndex = -1
 
 	def setPlayers(self, players : list[Player]) -> None:
-		# self._players is an ordered array, where the first element is always the dealer
+		# self._players is an ordered array, where the first element is always the dealer and where the players are always positioned in the order in which they play
 		self._numPlayers = len(players)
 		self._players = players
 		self._players[0].setDealer()
