@@ -211,7 +211,8 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
         }
 
     ## Figuring out and/or asking the player for team and color selection
-    if not game.players:
+    if len(game.players) == 1:
+        # If we're dealing with the first player in the game, we can assign him/her to team 0 without loss of generality.
         team = "0"
         await new_player.send_message_to_user({"type": "log", "msg": "You have been assigned to team 0."})
     else:
