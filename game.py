@@ -163,6 +163,7 @@ class Game:
 			if len(moveOptions) == 0:
 				# player has no available move, he must fold his hand
 				await self.broadcast({"type": "log", "msg": f"Player has no available move and must fold."})
+				self._deck.discardCards(self._activePlayer.hand)
 				self._activePlayer.hand.fold()
 			else:
 				if len(moveOptions) == 1:
@@ -181,7 +182,7 @@ class Game:
 					# have the player discard the card from his hand
 					self._activePlayer.discard(cardChoice)
 					# and put the card in the discard pile of the deck
-					cardChoice.discard()
+					self._deck.discardCard(cardChoice)
 
 					origin = self._board.getSpot(moveChoice.originSpot.color, moveChoice.originSpot.number)
 					target = self._board.getSpot(moveChoice.targetSpot.color, moveChoice.targetSpot.number)

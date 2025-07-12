@@ -80,11 +80,12 @@ class Player:
 		self._isDealer = True
 
 	async def getCardChoiceFromPlayer(self) -> Card:
-		choice = await self._hand.getCard(self.get_input_from_prompt('What card do you want to play?'))
-		while choice is None:
-			await self.send_message_to_user({"type": "log", "msg": f'Please input a number between 0 and {self._hand.size - 1} to select an available card from your hand.'})
-			choice = await self._hand.getCard(self.get_input_from_prompt('What card do you want to play?'))
-		return choice
+		cardChoice = await self.get_input_from_prompt('What card do you want to play?')
+		while not cardChoice or (not 'type' in cardChoice.keys()) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
+			cardChoice = await self.get_input_from_prompt('What card do you want to play?')
+		chosenCard = Card(cardChoice['suit'], cardChoice['value'])
+		print(f'Card chosen by {self._name} for his/her next move: {chosenCard}')
+		return chosenCard
 
 	async def getMoveChoiceFromPlayer(self, options : list[Move]) -> Move:
 		##debug##print(f'{[repr(move) for move in options]}')

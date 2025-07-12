@@ -31,6 +31,13 @@ class Deck:
 	def discardPile(self) -> list[Card]:
 		return self._discardPile
 
+	def discardCard(self, card : Card) -> None:
+		self._discardPile.append(card)
+
+	def discardCards(self, hand : List[Card]) -> None:
+		for card in hand.cards:
+			self._discardPile.append(card)
+
 	def reset(self, players) -> None:
 		player_index = 0
 		temp_hands = []
@@ -89,6 +96,3 @@ class Card:
 			return 11
 		else:
 			return 0
-
-	def discard(self) -> None:
-		self._deck.discardPile.append(self)

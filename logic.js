@@ -341,7 +341,7 @@ function assignPlayer(name, team, color) {
     
     const message = {"id": crypto.randomUUID(), "type": "everybody_is_here", "order": [p1.name, p2.name, p3.name, p4.name]};
     const message_json = JSON.stringify(message);
-    console.log('[sendCardSelection] Sending following content to back-end:' + message_json);
+    console.log('[assignPlayer - everybody_is_here] Sending following content to back-end:' + message_json);
     ws.send(message_json);
   }
 
@@ -487,8 +487,33 @@ function switchCardClickListener(event) {
   }
 
   function clickCardClickListener(event) {
-    //this seem to trigger for any block within the card container, and not the card container itself... is it because of event bubbling of something like that? yes no, maybe I don't know
-    console.log(event);
+    // This triggers when any block within the card is clicked, so the event.currentTarget can be the card-suit, card-value or card-front containers.
+    // It is fine, we are just going to go up one container if we're hitting on the card-suit or card-value
+    if (event.currentTarget.classList.contains('card-value') || event.currentTarget.classList.contains('card-suit')) {
+      target = event.currentTarget.parentElement;
+    } else {
+      target = event.currentTarget;
+    }
+
+    rank = target.rank;
+    suit = target.suit;
+    playerId = target.playerId;
+    console.log(selectedCard)
+    console.log(target)
+
+    if (selectedCard === target) {
+      // Second click confirms selection
+      target.classList.remove('selected');
+      target.classList.remove('flip');
+      selectedCard = null;
+      sendCardSelection(playerId, rank, suit);
+
+    } else {
+      // First click triggers highlight
+      if (selectedCard) selectedCard.classList.remove('selected');
+      selectedCard = target;
+      target.classList.add('selected');
+    }
   }
 
 function dealHand(cardBox) {

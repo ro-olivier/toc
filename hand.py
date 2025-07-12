@@ -51,8 +51,6 @@ class Hand:
 			return True
 
 	def fold(self) -> None:
-		for index, card in enumerate(self._cards):
-			card.discard()
 		self._cards = []
 
 	def discardFromHand(self, card) -> None:
