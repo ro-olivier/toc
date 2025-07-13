@@ -87,17 +87,14 @@ async function connectToGame(gameId, name) {
         break;
 
       case "draw":
-        data.cards.forEach((c, i) => {
-          setTimeout(() => {
-            displayCard(data.playerId, c.value, c.suit);
-          }, 250 * i);
-        });
-        // When we receive the draw order, in each UI we also need to display the (hidden) cards of the other players
+        // When we receive the draw order, first thing to do is display the (hidden) cards of the players
         playerAssignments.forEach(p => {
-          if (p.name !== data.playerId) {
-            displayHiddenCards(p, data.cards.length);
-          }
+          displayHiddenCards(p, data.cards.length);
         });
+        // Then, for the player who's UI this is, we adding the values to the cards, adding the listener and flipping the cards to show them
+        setTimeout(() => {
+          setupPlayerCards(data.playerId, data.cards);
+        }, 1500);
         break;
 
       case "dealer":
@@ -438,47 +435,38 @@ function getPlayerClass(playerId) {
   return player ? `player-${player.color[0]}` : '';
 }
 
-function displayCard(playerId, rank, suit) {
+function setupPlayerCards(playerId, cards) {
   const player = playerAssignments.find(p => p.name === playerId);
   if (!player) {
     console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
     return; // or handle this gracefully
   }
-  const block = positionMap[player.position].card_box;
-  const cardContainer = document.createElement('div');
-  cardContainer.className = 'card-container';
+  positionMap[player.position].card_box.querySelectorAll('.card-container').forEach((cardContainer, i) => {
 
-  const card = document.createElement('div');
-  card.className = 'card';
+    cardBlock = cardContainer.querySelector('.card');
 
-  const cardFront = document.createElement('div');
-  cardFront.className = 'card-front';
-  cardFront.innerHTML = `
-    <div class="card-value">${rank}</div>
-    <div class="card-suit">${suit}</div>
-  `;
+    const rank = cards[i].value
+    const suit = cards[i].suit
 
-  const cardBack = document.createElement('div');
-  cardBack.className = 'card-back';
+    const cardFront = document.createElement('div');
+    cardFront.className = 'card-front';
+    cardFront.innerHTML = `
+      <div class="card-value">${rank}</div>
+      <div class="card-suit">${suit}</div>
+    `;
 
-  const backImg = document.createElement('img');
-  backImg.src = 'assets/card.jpg';
-  cardBack.appendChild(backImg);
+    cardBlock.appendChild(cardFront);
 
-  card.appendChild(cardFront);
-  card.appendChild(cardBack);
-  cardContainer.appendChild(card);
+    cardContainer.addEventListener('click', switchCardClickListener);
+    cardContainer.rank = rank;
+    cardContainer.suit = suit;
+    cardContainer.playerId = playerId;
 
-  cardContainer.addEventListener('click', switchCardClickListener);
-  cardContainer.rank = rank;
-  cardContainer.suit = suit;
-  cardContainer.playerId = playerId;
+    setTimeout(() => {
+      cardContainer.classList.add('flip');
+    }, 250 * i);
+  });
 
-  block.appendChild(cardContainer);
-
-  setTimeout(() => {
-    cardContainer.classList.add('flip');
-  }, 250);
 }
 
 function switchCardClickListener(event) {
@@ -597,17 +585,17 @@ function foldAllCardsOfPlayer(playerId) {
     return; // or handle this gracefully
   }
   const block = positionMap[player.position].card_box;
-  block.querySelectorAll(".card-container").forEach((item, i) => {
+  block.querySelectorAll(".card-container").forEach((cardContainer, i) => {
     setTimeout(() => {
       setTimeout(100);
       requestAnimationFrame(() => {
         cardContainer.classList.remove('flip');
       });
       setTimeout(() => {
-        block.removeChild(item);
+        block.removeChild(cardContainer);
       }, 350 * i);
     }, 250 * i);
-    item.removeEventListener('click', clickCardClickListener);
+    cardContainer.removeEventListener('click', clickCardClickListener);
   });
 }
 
