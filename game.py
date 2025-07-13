@@ -162,7 +162,7 @@ class Game:
 			moveOptions = self._activePlayer.hand.getAllPossibleMoves(self._board)
 			if len(moveOptions) == 0:
 				# player has no available move, he must fold his hand
-				await self.broadcast({"type": "log", "msg": f"Player has no available move and must fold."})
+				await self.broadcast({"type": "fold", "playerId": self._activePlayer.name, "msg": f"Player has no available move and must fold."})
 				self._deck.discardCards(self._activePlayer.hand)
 				await self._activePlayer.foldHand()
 			else:

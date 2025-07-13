@@ -87,8 +87,16 @@ async function connectToGame(gameId, name) {
         break;
 
       case "draw":
-        data.cards.forEach(c => {
-          displayCard(data.playerId, c.value, c.suit);
+        data.cards.forEach((c, i) => {
+          setTimeout(() => {
+            displayCard(data.playerId, c.value, c.suit);
+          }, 250 * i);
+        });
+        // When we receive the draw order, in each UI we also need to display the (hidden) cards of the other players
+        playerAssignments.forEach(p => {
+          if (p.name !== data.playerId) {
+            displayHiddenCards(p, data.cards.length);
+          }
         });
         break;
 
@@ -110,6 +118,7 @@ async function connectToGame(gameId, name) {
 
       case 'fold':
         foldAllCardsOfPlayer(data.playerId);
+        log(data.msg);
         break;
 
       case 'log':
@@ -363,7 +372,7 @@ function assignPlayer(name, team, color) {
   usedPositions.push(newPlayer.position);
 
   updatePlayerBlock(newPlayer);
-  if (name == local_player_name) positionMap[newPlayer.position].card_box.style.display = 'flex';
+  positionMap[newPlayer.position].card_box.style.display = 'flex';
   drawQuadrant(newPlayer.position, color);
 }
 
@@ -466,7 +475,10 @@ function displayCard(playerId, rank, suit) {
   cardContainer.playerId = playerId;
 
   block.appendChild(cardContainer);
-  dealHand(block);
+
+  setTimeout(() => {
+    cardContainer.classList.add('flip');
+  }, 250);
 }
 
 function switchCardClickListener(event) {
@@ -553,12 +565,29 @@ function switchCardClickListener(event) {
     }
   }
 
-function dealHand(cardBox) {
-  cardBox.querySelectorAll(".card-container").forEach((item, i) => {
+function displayHiddenCards(player, number_of_cards) {
+  const block = positionMap[player.position].card_box;
+
+  for (let i = 0; i < number_of_cards; i++) {
     setTimeout(() => {
-      item.classList.add('flip');
+      const cardContainer = document.createElement('div');
+      cardContainer.className = 'card-container';
+
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      const cardBack = document.createElement('div');
+      cardBack.className = 'card-back';
+
+      const backImg = document.createElement('img');
+      backImg.src = 'assets/card.jpg';
+
+      cardBack.appendChild(backImg);
+      card.appendChild(cardBack);
+      cardContainer.appendChild(card);
+      block.appendChild(cardContainer);
     }, 250 * i);
-  });
+  }
 }
 
 function foldAllCardsOfPlayer(playerId) {
@@ -570,7 +599,13 @@ function foldAllCardsOfPlayer(playerId) {
   const block = positionMap[player.position].card_box;
   block.querySelectorAll(".card-container").forEach((item, i) => {
     setTimeout(() => {
-      niceCardFold(block, item);
+      setTimeout(100);
+      requestAnimationFrame(() => {
+        cardContainer.classList.remove('flip');
+      });
+      setTimeout(() => {
+        block.removeChild(item);
+      }, 350 * i);
     }, 250 * i);
     item.removeEventListener('click', clickCardClickListener);
   });
@@ -609,13 +644,6 @@ function removeCard(playerId, value, suit) {
     t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
     if (t_suit === suit && t_value === value) block.removeChild(cardContainer);
   }
-}
-
-function niceCardFold(block, cardContainer) {
-  setTimeout(100);
-  requestAnimationFrame(() => {
-      cardContainer.classList.remove('flip');
-  });
 }
 
 // Click anywhere outside of cards to cancel card selection
