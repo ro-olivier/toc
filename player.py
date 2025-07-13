@@ -21,8 +21,10 @@ class Player:
 
 	def __str__(self) -> str:
 		s = f'{self._name} in team {self._team} playing {self._color}'
-		if self._hand:
-			s+= f' holding the following cards: {self._hand.allCardsString()}'
+		# Commenting out this bit since we probably don't want to keep broadcasting this to all players... 
+		# Not sure this will be useful again at some point, I'm keeping it just in case
+		#if self._hand:
+		#	s+= f' holding the following cards: {self._hand.allCardsString()}'
 		return s
 
 	async def send_message_to_user(self, message: str) -> None:
@@ -79,6 +81,10 @@ class Player:
 	def setDealer(self) -> None:
 		self._isDealer = True
 
+	async def foldHand(self) -> None:
+		 self._hand.fold()
+		 await self.send_message_to_user({"type": "fold", "playerId": self._name})
+
 	async def getCardChoiceFromPlayer(self) -> Card:
 		cardChoice = await self.get_input_from_prompt('What card do you want to play?')
 		while not cardChoice or (not 'type' in cardChoice.keys()) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
@@ -89,17 +95,29 @@ class Player:
 
 	async def getMoveChoiceFromPlayer(self, options : list[Move]) -> Move:
 		##debug##print(f'{[repr(move) for move in options]}')
+
+		##TODO : re-engineering required here: player will actually select a card, not a move, because it doesn't make sense from a human perspective
+
 		for move in options:
 			move.updateDescription()
 
-		for index,option in enumerate(options):
-			print(f'{str(index)} -- {str(option)}')
-
-		choice = await self.get_input_from_prompt('What move do you want to play?')
-		while choice not in [str(i) for i in range(len(options))]:
-			await self.send_message_to_user({"type": "log", "msg": f'Please input a number between 0 and {len(options) - 1} to select an available move.'})
-			choice = await self.get_input_from_prompt('What move do you want to play?')
-		return options[int(choice)]
+		cardChoice = await self.getCardChoiceFromPlayer()
+		moveChoice = None
+		while not moveChoice:
+			possibleMoves = [move for move in options if move.card == cardChoice]
+			if len(possibleMoves) == 0:
+				await self.send_message_to_user({"type": "log", "msg": f'You cannot play that card right now!'})
+			elif len(possibleMoves) == 1:
+				moveChoice = possibleMoves[0]
+			else:
+				await self.send_message_to_user({"type": "log", "msg": f'You can make more than one move with this card!'})
+				choice = await self.get_input_from_prompt('What move do you want to play?')
+				while choice not in [str(i) for i in range(len(options))]:
+					await self.send_message_to_user({"type": "log", "msg": f'Please input a number between 0 and {len(options) - 1} to select an available move.'})
+					choice = await self.get_input_from_prompt('What move do you want to play?')
+				moveChoice = choice
+			
+		return moveChoice
 
 	async def getSevenMoveFromPlayer(self, board : Board) -> None:
 		counter = 0

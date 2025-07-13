@@ -68,6 +68,10 @@
   white-space: nowrap;
 }
 
+.player-info-block.active {
+  box-shadow: 0 0 12px 4px rgba(255, 255, 0, 0.6); /* soft yellow glow */
+}
+
 #player-info-top-left {
   top: 5%;
   left: 5%;

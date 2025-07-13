@@ -97,7 +97,7 @@ async function connectToGame(gameId, name) {
         break;
 
       case "receive_card_from_friend":
-          replaceCard(data.playerId, data.value, data.suit);
+        replaceCard(data.playerId, data.value, data.suit);
         break
 
       case 'move':
@@ -108,7 +108,21 @@ async function connectToGame(gameId, name) {
         placePieceOnGoalSpot(data.playerId, data.goalSpotIndex);
         break;
 
+      case 'fold':
+        foldAllCardsOfPlayer(data.playerId);
+        break;
+
       case 'log':
+        log(data.msg);
+        break;
+
+      case 'forced-play':
+        removeCard(data.playerId, data.value, data.suit);
+        log(data.msg);
+        break;
+
+      case 'next-player':
+        displayActivePlayer(data.playerId);
         log(data.msg);
         break;
 
@@ -349,7 +363,7 @@ function assignPlayer(name, team, color) {
   usedPositions.push(newPlayer.position);
 
   updatePlayerBlock(newPlayer);
-  if (name == local_player_name) displayPlayerCardBlock(newPlayer);
+  if (name == local_player_name) positionMap[newPlayer.position].card_box.style.display = 'flex';
   drawQuadrant(newPlayer.position, color);
 }
 
@@ -381,11 +395,6 @@ function updatePlayerBlock(player, isDealer = false) {
   block.style.backgroundColor = player.color;
 }
 
-function displayPlayerCardBlock(player) {
-  const block = positionMap[player.position].card_box;
-  block.style.display = 'flex';
-}
-
 function updateRegionColor(position, color) {
   const regionIndex = positionMap[position].index;
   const regionSpots = spotElements.slice(regionIndex * 17, regionIndex * 17 + 17);
@@ -400,6 +409,17 @@ function toogleDealerOnPlayerBlock(playerId) {
       updatePlayerBlock(p, true);
     } else {
       updatePlayerBlock(p);
+    }
+  });
+}
+
+function displayActivePlayer(playerId) {
+  playerAssignments.forEach(p => {
+    const block = positionMap[p.position].info_box;
+    if (p.name === playerId) {
+      block.classList.add('active');
+    } else {
+      block.classList.remove('active');
     }
   });
 }
@@ -489,30 +509,47 @@ function switchCardClickListener(event) {
   function clickCardClickListener(event) {
     // This triggers when any block within the card is clicked, so the event.currentTarget can be the card-suit, card-value or card-front containers.
     // It is fine, we are just going to go up one container if we're hitting on the card-suit or card-value
-    if (event.currentTarget.classList.contains('card-value') || event.currentTarget.classList.contains('card-suit')) {
-      target = event.currentTarget.parentElement;
-    } else {
-      target = event.currentTarget;
+    event.stopPropagation(); // Prevent document click from firing
+    itemClass = event.currentTarget.classList[0];
+    switch (itemClass) {
+
+    case 'card-value', 'card-suit':
+      cardContainer = event.currentTarget.parentElement.parentElement.parentElement;
+      break;
+    
+    case 'card-front':
+      cardContainer = event.currentTarget.parentElement.parentElement;
+      break;
+
+    case 'card':
+      cardContainer = event.currentTarget.parentElement;
+      break
+
+    case 'card-container', 'flip', 'selected':
+      cardContainer = event.currentTarget
+      break
     }
 
-    rank = target.rank;
-    suit = target.suit;
-    playerId = target.playerId;
+    t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit');
+    t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value');
+    playerId = event.currentTarget.playerId;
+    console.log(cardContainer)
+    console.log(event.currentTarget)
     console.log(selectedCard)
-    console.log(target)
 
-    if (selectedCard === target) {
+    if (selectedCard === cardContainer) {
       // Second click confirms selection
-      target.classList.remove('selected');
-      target.classList.remove('flip');
+      cardContainer.classList.remove('selected');
+      cardContainer.classList.remove('flip');
       selectedCard = null;
-      sendCardSelection(playerId, rank, suit);
-
+      sendCardSelection(playerId, t_value, t_suit);
+      removeCard(playerId, t_value, t_suit);
     } else {
       // First click triggers highlight
       if (selectedCard) selectedCard.classList.remove('selected');
-      selectedCard = target;
-      target.classList.add('selected');
+      selectedCard = cardContainer;
+      console.log('update the selectedCard: ' + selectedCard)
+      cardContainer.classList.add('selected');
     }
   }
 
@@ -524,8 +561,23 @@ function dealHand(cardBox) {
   });
 }
 
+function foldAllCardsOfPlayer(playerId) {
+  const player = playerAssignments.find(p => p.name === playerId);
+  if (!player) {
+    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
+    return; // or handle this gracefully
+  }
+  const block = positionMap[player.position].card_box;
+  block.querySelectorAll(".card-container").forEach((item, i) => {
+    setTimeout(() => {
+      niceCardFold(block, item);
+    }, 250 * i);
+    item.removeEventListener('click', clickCardClickListener);
+  });
+}
+
 function replaceCard(playerId, rank, suit) {
-  // way simpler than to actually look for the card based on the previous values, which would need to be passed by the back-end, which is ugly
+  // Getting the info of which card to replace is tricky, this way is much simpler than to actually look for the card based on the previous values, which would need to be passed by the back-end, which is ugly.
   const cardContainer = window.flipped_card;
   window.flipped_card = null;
   const cardFront = cardContainer.querySelector('.card-front');
@@ -543,19 +595,27 @@ function replaceCard(playerId, rank, suit) {
   cardContainer.suit = suit;
   cardContainer.playerId = playerId;
 
-
 }
 
-function removeCard(playerId, rank, suit) {
+function removeCard(playerId, value, suit) {
   const player = playerAssignments.find(p => p.name === playerId);
   if (!player) {
     console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
     return; // or handle this gracefully
   }
   const block = positionMap[player.position].card_box;
-  for (card of block.children) {
-    if (card.classList.contains(rank) && card.classList.contains(suit)) block.removeChild(card);
+  for (cardContainer of block.children) {
+    t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit').innerHTML;
+    t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
+    if (t_suit === suit && t_value === value) block.removeChild(cardContainer);
   }
+}
+
+function niceCardFold(block, cardContainer) {
+  setTimeout(100);
+  requestAnimationFrame(() => {
+      cardContainer.classList.remove('flip');
+  });
 }
 
 // Click anywhere outside of cards to cancel card selection

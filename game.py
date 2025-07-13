@@ -157,20 +157,20 @@ class Game:
 		self._activePlayer = self._players[self._activePlayerIndex]
 
 		if self._activePlayer.hand.size > 0:
-			await self.broadcast({"type": "log", "msg": f"Moving on to next player: {str(self._activePlayer)}"})
+			await self.broadcast({"type": "next-player", "playerId": self._activePlayer.name, "msg": f"Moving on to next player: {str(self._activePlayer)}"})
 
 			moveOptions = self._activePlayer.hand.getAllPossibleMoves(self._board)
 			if len(moveOptions) == 0:
 				# player has no available move, he must fold his hand
 				await self.broadcast({"type": "log", "msg": f"Player has no available move and must fold."})
 				self._deck.discardCards(self._activePlayer.hand)
-				self._activePlayer.hand.fold()
+				await self._activePlayer.foldHand()
 			else:
 				if len(moveOptions) == 1:
 					# player has only one move and therefore MUST play it
-					await self.broadcast({"type": "log", "msg": f"Player has only one available move and therefore must play it."})
 					moveChoice = moveOptions[0]
 					moveChoice.updateDescription()
+					await self._activePlayer.send_message_to_user({"type": "forced-play", "msg": f"You only have one available move and therefore must play it.", "playerId": self._activePlayer.name, "value": moveChoice.card.value, "suit": moveChoice.card.suit})
 				else:
 					# player has several possible moves and is prompted to select one
 					moveChoice = await self._activePlayer.getMoveChoiceFromPlayer(moveOptions)
