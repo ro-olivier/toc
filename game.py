@@ -117,7 +117,7 @@ class Game:
 		await player2.switchCard(card2, card1)
 
 	async def runRound(self, round_name : str, first_round : bool) -> None:
-		await self.broadcast({"type": "log", "msg": f"Starting {round_name} round with player {self.dealer} as the dealer."})
+		await self.broadcast({"type": "log", "msg": f"Starting {round_name} round with player {self.dealer} as the dealer.\n"})
 		self.resetActivePlayerIndex()
 		await self.drawHands(first_round)
 
@@ -217,10 +217,10 @@ class Game:
 			if self._activePlayer.hand.size == 0:
 				self._handsFinished += 1
 
-			await self.broadcast({"type": "log", "msg": f"End of turn for player {self._activePlayer.name}."})
+			await self.broadcast({"type": "log", "msg": f"End of turn for player {self._activePlayer.name}.\n"})
 			#await self.broadcast(f'\nState of the board:\n{str(self._board)}')
 		else:
-			await self.broadcast({"type": "log", "msg": f"Next player: {self._activePlayer.name} has folded in a previous turn, moving on..."})
+			await self.broadcast({"type": "log", "msg": f"Next player: {self._activePlayer.name} has folded in a previous turn, moving on...\n"})
 
 
 		# When a player manages to fill all his/her houses:

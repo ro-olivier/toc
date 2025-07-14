@@ -83,7 +83,6 @@ class Player:
 
 	async def foldHand(self) -> None:
 		 self._hand.fold()
-		 await self.send_message_to_user({"type": "fold", "playerId": self._name})
 
 	async def getCardChoiceFromPlayer(self) -> Card:
 		cardChoice = await self.get_input_from_prompt('What card do you want to play?')
@@ -123,7 +122,7 @@ class Player:
 		counter = 0
 		moves = []
 		board.saveState()
-		await self.send_message_to_user({"type": "log", "msg": 'Print select the moves you want to do in your seven-split:'})
+		await self.send_message_to_user({"type": "log", "msg": 'Please select the moves you want to do in your seven-split:'})
 		# This loop will display all the 'one-move' options to the user, who will have to choose one seven times
 		while counter < 7:
 			moveOptions = board.getMoveOptions(self, Card('', '1'))
@@ -171,3 +170,4 @@ class Player:
 		self._hand.discardFromHand(card1)
 		self._hand.addToHand(card2)
 		await self.send_message_to_user({"type": "receive_card_from_friend", "playerId": self._name, "value": card2.value, "suit": card2.suit})
+		await self.send_message_to_user({"type": "log", "msg": f"Successfully given {card1.suit}{card1.value} to your team-mate who has given you {card2.suit}{card2.value} in exchange. Round will start as soon as the other team exchanges cards.\n"})

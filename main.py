@@ -97,7 +97,7 @@ class GameSession:
             if self.started:
                 return
             self.started = True
-            await self.broadcast({"type": "log", "msg": "Four players have joined: game is starting!"})
+            await self.broadcast({"type": "log", "msg": "Four players have joined: game is starting!\n"})
             game = Game(self)
             # players are set in the order defined by the array passed by the UI
             game.setPlayers([self.players[p_name]['object'] for p_name in self.order])
@@ -256,8 +256,8 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
 
     ## Broadcasting the join-info to new player, the UIs and the other players
-    await new_player.send_message_to_user({"type": "log", "msg": f"You successfully joined the game and will play in team {team} with color {color}!"})
-    await game.broadcast({"type": "log", "msg": f"{player_name} has joined team {team} and will play {color}."}, excluded_player=player_name)
+    await new_player.send_message_to_user({"type": "log", "msg": f"You successfully joined the game and will play in team {team} with color {color}!\n"})
+    await game.broadcast({"type": "log", "msg": f"{player_name} has joined team {team} and will play {color}.\n"}, excluded_player=player_name)
     await game.broadcast({"type": "assign-player", "name": player_name, "team": team, "color": color})
 
     ## When we have 4 players, the game can start if the game.order variable has been set!
