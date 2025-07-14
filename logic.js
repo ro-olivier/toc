@@ -586,16 +586,13 @@ function foldAllCardsOfPlayer(playerId) {
   }
   const block = positionMap[player.position].card_box;
   block.querySelectorAll(".card-container").forEach((cardContainer, i) => {
-    setTimeout(() => {
-      setTimeout(100);
-      requestAnimationFrame(() => {
-        cardContainer.classList.remove('flip');
-      });
-      setTimeout(() => {
-        block.removeChild(cardContainer);
-      }, 350 * i);
-    }, 250 * i);
+    setTimeout(100);
+    requestAnimationFrame(() => {
+      cardContainer.classList.remove('flip');
+    });
+    block.removeChild(cardContainer);
     cardContainer.removeEventListener('click', clickCardClickListener);
+    block.style.display = 'none';
   });
 }
 
