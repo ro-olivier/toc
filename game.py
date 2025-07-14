@@ -176,7 +176,7 @@ class Game:
 					moveChoice = await self._activePlayer.getMoveChoiceFromPlayer(moveOptions)
 
 				cardChoice = moveChoice.card
-				await self.broadcast({"type": "log", "msg": f"Player {self._activePlayer.name} has selected the following move: {str(moveChoice)}"})
+				await self.broadcast({"type": "play", "msg": f"Player {self._activePlayer.name} has selected the following move: {str(moveChoice)}", "playerId": self._activePlayer.name, "value": moveChoice.card.value, "suit": moveChoice.card.suit, "origin": str(moveChoice.originSpot), "target": str(moveChoice.targetSpot)})
 
 				if moveChoice.ID in ['OUT', 'MOVE', 'SWITCH', 'BACK', 'ENTER']:
 					# have the player discard the card from his hand

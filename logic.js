@@ -132,6 +132,12 @@ async function connectToGame(gameId, name) {
         log(data.msg);
         break;
 
+      case 'play':
+        removeCard(data.playerId, data.value, data.suit);
+        playMoveOnBoard(data.playerId, data.origin, data.target);
+        log(data.msg);
+        break;
+
       case 'query':
         query(data.msg);
         break;
@@ -348,7 +354,6 @@ function assignPlayer(name, team, color) {
   }
 
   playerAssignments.push(newPlayer);
-  console.log(`Player with ID "${name}" was just pushed to playerAssignments:`, JSON.stringify(playerAssignments));
   // If 4 players have joined, the front-end needs to give the back-end the order in which the players where "seated" at the table so that the back-end can manage who plays and when / in what order. 
   // We could duplicate the seating order logic in the backend (or have the backend manage it entirely) but this is simplier that way and having the front-end do it is not that big of a risk because if a malicious user tries to mess up with this it's going to be immediately obvious to the other team since the order in which the back-end will make the users play won't match the order in which they are seated.
   if (playerAssignments.length === 4) {
@@ -470,15 +475,14 @@ function setupPlayerCards(playerId, cards) {
 }
 
 function switchCardClickListener(event) {
-    rank = event.currentTarget.rank;
-    suit = event.currentTarget.suit;
-    playerId = event.currentTarget.playerId;
-    cardContainer = event.currentTarget;
+    const rank = event.currentTarget.rank;
+    const suit = event.currentTarget.suit;
+    const playerId = event.currentTarget.playerId;
+    const cardContainer = event.currentTarget;
 
     event.stopPropagation(); // Prevent document click from firing
     if (selectedCard === event.currentTarget) {
       // Second click confirms selection
-      //console.log(playerId + ' sending card (click 2) selection to backend : ' + rank + ' - ' + suit);
       cardContainer.classList.remove('selected');
       cardContainer.classList.remove('flip');
       window.flipped_card = cardContainer // storing that for later when we receive the new card from the team-mate
@@ -487,9 +491,8 @@ function switchCardClickListener(event) {
       event.currentTarget.parentElement.querySelectorAll('.card-container').forEach(c => {
           c.removeEventListener('click', switchCardClickListener);
           c.addEventListener('click', clickCardClickListener);
-          c.rank = rank;
-          c.suit = suit;
           c.playerId = playerId;
+          console.log('[switchCardClickListener] Removed switchCardClickListener and added clickCardClickListener.')
       });
       // only triggering the WS call to replace the card after twice the amount of time it takes for the front-to-back flip animation to execute, to make sure we do play the animation
       setTimeout(() => {
@@ -501,7 +504,6 @@ function switchCardClickListener(event) {
       // First click triggers highlight
       if (selectedCard) selectedCard.classList.remove('selected');
       selectedCard = cardContainer;
-      //console.log(playerId + ' selection card ' + rank + ' - ' + suit + ' for card selection (click 1)');
       cardContainer.classList.add('selected');
     }
   }
@@ -510,32 +512,32 @@ function switchCardClickListener(event) {
     // This triggers when any block within the card is clicked, so the event.currentTarget can be the card-suit, card-value or card-front containers.
     // It is fine, we are just going to go up one container if we're hitting on the card-suit or card-value
     event.stopPropagation(); // Prevent document click from firing
-    itemClass = event.currentTarget.classList[0];
-    switch (itemClass) {
 
-    case 'card-value', 'card-suit':
-      cardContainer = event.currentTarget.parentElement.parentElement.parentElement;
+    switch (event.currentTarget.classList[0]) {
+
+    case 'card-value':
+    case 'card-suit':
+      var cardContainer = event.currentTarget.parentElement.parentElement.parentElement;
       break;
     
     case 'card-front':
-      cardContainer = event.currentTarget.parentElement.parentElement;
+      var cardContainer = event.currentTarget.parentElement.parentElement;
       break;
 
     case 'card':
-      cardContainer = event.currentTarget.parentElement;
-      break
+      var cardContainer = event.currentTarget.parentElement;
+      break;
 
-    case 'card-container', 'flip', 'selected':
-      cardContainer = event.currentTarget
-      break
+    case 'card-container':
+    case 'flip':
+    case 'selected':
+      var cardContainer = event.currentTarget
+      break;
     }
 
-    t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit');
-    t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value');
-    playerId = event.currentTarget.playerId;
-    console.log(cardContainer)
-    console.log(event.currentTarget)
-    console.log(selectedCard)
+    const t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit').innerHTML;
+    const t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
+    const playerId = event.currentTarget.playerId;
 
     if (selectedCard === cardContainer) {
       // Second click confirms selection
@@ -546,9 +548,8 @@ function switchCardClickListener(event) {
       removeCard(playerId, t_value, t_suit);
     } else {
       // First click triggers highlight
-      if (selectedCard) selectedCard.classList.remove('selected');
+      if (selectedCard) selectedCard.classList.add('selected');
       selectedCard = cardContainer;
-      console.log('update the selectedCard: ' + selectedCard)
       cardContainer.classList.add('selected');
     }
   }
@@ -624,11 +625,21 @@ function removeCard(playerId, value, suit) {
     return; // or handle this gracefully
   }
   const block = positionMap[player.position].card_box;
-  for (cardContainer of block.children) {
-    t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit').innerHTML;
-    t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
-    if (t_suit === suit && t_value === value) block.removeChild(cardContainer);
+
+  // If the code is running the player own's UI then we remove the actual card, but for other players we remove any card (because other player's UI don't know the card value so we don't really care what card we remove).
+  if (playerId !== local_player_name) {
+    block.removeChild(block.children[0]);
+  } else {
+      for (cardContainer of block.children) {
+      t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit').innerHTML;
+      t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
+      if (t_suit === suit && t_value === value) block.removeChild(cardContainer);
+    }
   }
+}
+
+function playMoveOnBoard(playerId, origin, target) {
+  console.log(`Must animate board to show player ${playerId} moving a piece from ${origin} to ${target}`);
 }
 
 // Click anywhere outside of cards to cancel card selection
