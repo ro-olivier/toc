@@ -13,15 +13,22 @@ from params import *
 
 app = FastAPI()
 
+class DuplicateNameError(Exception):
+    pass
+
 class PlayerInputRouter:
     def __init__(self):
         self.input_queues = {}
         self.output_queues = {}
 
     def register(self, player_name: str):
-        print(f'[Router] Registered user {player_name}')
-        self.input_queues[player_name] = asyncio.Queue()
-        self.output_queues[player_name] = asyncio.Queue()
+        if player_name in self.input_queues:
+            print(f'[Router] Attempted to re-registered a user with name {player_name}!')
+            raise DuplicateNameError
+        else:
+            print(f'[Router] Registered user {player_name}')
+            self.input_queues[player_name] = asyncio.Queue()
+            self.output_queues[player_name] = asyncio.Queue()
 
     def unregister(self, player_name: str):
         print(f'[Router] Unregistered user {player_name}')
@@ -124,16 +131,24 @@ class GameSession:
 @app.websocket("/toc/ws/{game_id}/{player_name}")
 async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: str):
 
+    game = manager.games.get(game_id)    
     # Setting up all the WebSocket and asyncio logic 
     await websocket.accept()
 
-    game = manager.games.get(game_id)
     if not game:
-        await websocket.send_json({"type": "error", "msg": "Invalid game ID."})
-        await websocket.close()
+        print('Closing with 4001 code')
+        await websocket.close(code=4001)
         return
 
-    router.register(player_name)
+    try:
+        router.register(player_name)
+    except DuplicateNameError:
+        ## If username has already been chosen, we cannot proceed.
+        print('Closing with 4002 code')
+        await websocket.close(code=4002)
+        return
+
+    await websocket.send_json({"type": "ready"})
 
     ## Player input loop
     async def input_loop():
@@ -197,14 +212,10 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
     sender = asyncio.create_task(send_updates(websocket, ui_queue))
 
     # Finalizing game setup for each player connecting
-
+    
+    ## We're checking the player doesn't exist already, just in case
     new_player = game.players.get(player_name)
-    ## If username has already been chosen, we cannot proceed. 
-    if new_player:
-        await websocket.send_json({"type": "error", "msg": "Player name already taken."})
-        await websocket.close()
-        return
-    else:
+    if not new_player:
         ## First creating the new_player object and updating the new player's UI with current state of the board
         new_player = Player(player_name, '', '', '', game, router)
         await new_player.send_message_to_user({"type": "full_ui_state","players": [{"name": p, "team": game.players[p]["team"], "color": game.players[p]["color"]} for p in game.players.keys()]})

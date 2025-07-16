@@ -53,16 +53,10 @@ async function connectToGame(gameId, name) {
   try {
     ws = new WebSocket(wsUrl);
   } catch (err) {
+    console.error(err);
     showError("Failed to construct WebSocket URL.");
     return;
   }
-
-  ws.onopen = () => {
-    log(`Connected to game ${gameId} as ${name}`);
-    local_player_name = name;
-    local_game_Id = gameId;
-    showGameUI();
-  };
 
   ws.onmessage = (event) => {
     let data;
@@ -76,6 +70,13 @@ async function connectToGame(gameId, name) {
     console.log('[ws.oneMessage top handler] Received the following message from back-end:' + JSON.stringify(data))
 
     switch (data.type) {
+      case 'ready':
+        log(`Connected to game ${gameId} as ${name}`);
+        local_player_name = name;
+        local_game_Id = gameId;
+        showGameUI();
+        break;
+      
       case 'assign-player':
         assignPlayer(data.name, data.team, data.color);
         break;
@@ -150,9 +151,26 @@ async function connectToGame(gameId, name) {
         log(`Unknown message: ${event.data}`);
     }
   };
-  ws.onclose = () => log("WebSocket connection closed.");
+  
+  ws.onclose = (event) => {
+
+    switch (event.code) {
+      case 4001:
+        showError("Invalid game ID.");
+        break;
+      case 4002:
+        showError("Player name already taken.");
+        break;
+      case 1006:
+        showError("Could not connect to server.");
+        break;
+      default:
+        showError(`Connection closed (code ${event.code}).`);
+    }
+  };
+
   ws.onerror = () => {
-    showError("Failed to join game. Game ID might be invalid.");
+    showError("WebSocket Error!");
   };
 }
 
