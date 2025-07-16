@@ -170,7 +170,7 @@ class Game:
 					# player has only one move and therefore MUST play it
 					moveChoice = moveOptions[0]
 					moveChoice.updateDescription()
-					await self._activePlayer.send_message_to_user({"type": "forced-play", "msg": f"You only have one available move and therefore must play it.", "playerId": self._activePlayer.name, "value": moveChoice.card.value, "suit": moveChoice.card.suit})
+					await self._activePlayer.send_message_to_user({"type": "forced-play", "msg": f"You only have one available move and therefore must play it.", "playerId": self._activePlayer.name, "value": moveChoice.card.value, "suit": moveChoice.card.suit, "origin": str(moveChoice.originSpot), "target": str(moveChoice.targetSpot)})
 				else:
 					# player has several possible moves and is prompted to select one
 					moveChoice = await self._activePlayer.getMoveChoiceFromPlayer(moveOptions)

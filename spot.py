@@ -13,7 +13,7 @@ class Spot:
 		self._occupant = None
 
 	def __str__(self) -> str:
-		return self._color+'-'+str(self._number)
+		return 'spot-'+self._color+'-'+str(self._number)
 
 	@property
 	def color(self) -> str:

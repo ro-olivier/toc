@@ -112,10 +112,6 @@ async function connectToGame(gameId, name) {
         placePieceOnSpot(data.playerId, data.spotIndex);
         break;
 
-      case 'goal-move':
-        placePieceOnGoalSpot(data.playerId, data.goalSpotIndex);
-        break;
-
       case 'fold':
         foldAllCardsOfPlayer(data.playerId);
         log(data.msg);
@@ -126,7 +122,6 @@ async function connectToGame(gameId, name) {
         break;
 
       case 'forced-play':
-        removeCard(data.playerId, data.value, data.suit);
         log(data.msg);
         break;
 
@@ -137,7 +132,7 @@ async function connectToGame(gameId, name) {
 
       case 'play':
         removeCard(data.playerId, data.value, data.suit);
-        playMoveOnBoard(data.playerId, data.origin, data.target);
+        movePieceFromSpotToSpot(data.playerId, data.origin, data.target);
         log(data.msg);
         break;
 
@@ -266,11 +261,11 @@ const radius = 250;
 const centerX = 300;
 const centerY = 300;
 
-const goalLabels = ['T', 'O', 'C', '!'];
-const goalDistance = 40;
+const houseLabels = ['T', 'O', 'C', '!'];
+const houseDistance = 40;
 
 const spotElements = [];
-const goalElements = [];
+const houseElements = [];
 
 const positions = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const positionMap = {
@@ -290,7 +285,7 @@ function drawQuadrant(position, color) {
   const angleOffset = (regionIndex / 4) * 2 * Math.PI;
 
   const quadrantSpots = [];
-  const quadrantGoals = [];
+  const quadrantHouses = [];
 
   for (let i = 0; i < 17; i++) {
     const angle = angleOffset + (i / 68) * 2 * Math.PI; // 68 = total spots in circle
@@ -303,24 +298,26 @@ function drawQuadrant(position, color) {
     spot.style.top = `${y}px`;
     spot.innerText = i + 1;
     spot.id = `spot-${color}-${i}`;
+    spot.color = `${color}`
+    spot.index = `${i}`
 
     if (i === 0) {
       spot.classList.add('out-spot');
 
       for (let j = 0; j < 4; j++) {
-        const innerRadius = radius - goalDistance * (j + 1);
+        const innerRadius = radius - houseDistance * (j + 1);
         const gx = centerX + innerRadius * Math.cos(angle) - 15;
         const gy = centerY + innerRadius * Math.sin(angle) - 15;
 
-        const goalSpot = document.createElement('div');
-        goalSpot.className = `spot goal ${color}`;
-        goalSpot.style.left = `${gx}px`;
-        goalSpot.style.top = `${gy}px`;
-        goalSpot.innerText = goalLabels[j];
-        goalSpot.id = `goal-${color}-${j}`;
+        const houseSpot = document.createElement('div');
+        houseSpot.className = `spot house ${color}`;
+        houseSpot.style.left = `${gx}px`;
+        houseSpot.style.top = `${gy}px`;
+        houseSpot.innerText = houseLabels[j];
+        houseSpot.id = `house-${color}-${j}`;
 
-        board.appendChild(goalSpot);
-        goalElements.push(goalSpot);
+        board.appendChild(houseSpot);
+        houseElements.push(houseSpot);
       }
     }
 
@@ -332,30 +329,25 @@ function drawQuadrant(position, color) {
   spotElements.push(...quadrantSpots);
 }
 
-function placePieceOnSpot(playerId, spotIndex, playerClass) {
-  playerClass = getPlayerClass(playerId);
-  const old = document.querySelector(`[data-player="${playerId}"]`);
-  if (old && old.parentElement) old.parentElement.removeChild(old);
+function movePieceFromSpotToSpot(playerId, originSpot, targetSpot) {
+  const playerClass = getPlayerClass(playerId);
 
+  if (originSpot !== targetSpot) {
+    // This is the case when the move played is anything other than an "OUT" move, in which case we have to remove a piece from a previous spot before adding it to the new spot
+    const origin_spot =  document.getElementById(originSpot);
+    const old = origin_spot.querySelector(`[data-player="${playerId}"]`);
+    if (old && old.parentElement) { // this test is almost certainly unnecessary, but just in case, ...we don't want to go change the content of other spots on the board
+      old.parentElement.innerHTML = parseInt(origin_spot.index) + 1; // reseting the value inside the spot
+    }
+  }
+
+  const target_spot = document.getElementById(targetSpot);
   const piece = document.createElement('div');
   piece.classList.add('piece', playerClass);
   piece.dataset.player = playerId;
-
-  const spot = spotElements[spotIndex];
-  spot.appendChild(piece);
-}
-
-function placePieceOnGoalSpot(playerId, goalSpotIndex) {
-  playerClass = getPlayerClass(playerId);
-  const old = document.querySelector(`[data-player="${playerId}"]`);
-  if (old && old.parentElement) old.parentElement.removeChild(old);
-
-  const piece = document.createElement('div');
-  piece.classList.add('piece', playerClass);
-  piece.dataset.player = playerId;
-
-  const spot = goalElements[goalSpotIndex];
-  spot.appendChild(piece);
+  
+  target_spot.innerHTML = '';
+  target_spot.appendChild(piece);
 }
 
 function assignPlayer(name, team, color) {
@@ -428,15 +420,16 @@ function updatePlayerBlock(player, isDealer = false) {
   const block = positionMap[player.position].info_box;
   block.innerHTML = `${player.name}<br>Team ${player.team}`;
   if (isDealer) block.innerHTML += '<br><i>Dealer</i>'
-  block.style.backgroundColor = player.color;
+  const playerClass = getPlayerClass(player.name);
+  block.classList.add(playerClass);
 }
 
 function updateRegionColor(position, color) {
   const regionIndex = positionMap[position].index;
   const regionSpots = spotElements.slice(regionIndex * 17, regionIndex * 17 + 17);
-  const regionGoalSpots = goalElements.slice(regionIndex * 4, regionIndex * 4 + 4);
-  regionSpots.forEach(s => s.style.backgroundColor = color);
-  regionGoalSpots.forEach(s => s.style.backgroundColor = color);
+  const regionHouseSpots = houseElements.slice(regionIndex * 4, regionIndex * 4 + 4);
+  regionSpots.forEach(s => s.classList.add(color));
+  regionHouseSpots.forEach(s => s.classList.add(color));
 }
 
 function toogleDealerOnPlayerBlock(playerId) {
@@ -469,7 +462,7 @@ function displayNoActivePlayers() {
 
 function getPlayerClass(playerId) {
   const player = playerAssignments.find(p => p.name === playerId);
-  return player ? `player-${player.color[0]}` : '';
+  return player ? `player-${player.color}` : '';
 }
 
 function setupPlayerCards(playerId, cards) {
