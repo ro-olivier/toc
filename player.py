@@ -95,21 +95,21 @@ class Player:
 	async def getMoveChoiceFromPlayer(self, options : list[Move]) -> Move:
 		##debug##print(f'{[repr(move) for move in options]}')
 
-		##TODO : re-engineering required here: player will actually select a card, not a move, because it doesn't make sense from a human perspective
-
 		for move in options:
 			move.updateDescription()
 
 		cardChoice = await self.getCardChoiceFromPlayer()
 		moveChoice = None
+		## TODO: investigate infinite loop when a player played a not-speacil card with only a 7 remaining, which seem to have triggered an infinite loop (which I didn't screenshot unfortunately...)
 		while not moveChoice:
 			possibleMoves = [move for move in options if move.card == cardChoice]
 			if len(possibleMoves) == 0:
-				await self.send_message_to_user({"type": "log", "msg": f'You cannot play that card right now!'})
+				await self.send_message_to_user({"type": "reject-card-selection", "playerId": self._name, "msg": f'You cannot play that card right now!'})
+				cardChoice = await self.getCardChoiceFromPlayer()
 			elif len(possibleMoves) == 1:
 				moveChoice = possibleMoves[0]
 			else:
-				await self.send_message_to_user({"type": "log", "msg": f'You can make more than one move with this card!'})
+				await self.send_message_to_user({"type": "reject-card-selection", "playerId": self._name, "msg": f'You can make more than one move with this card!'})
 				choice = await self.get_input_from_prompt('What move do you want to play?')
 				while choice not in [str(i) for i in range(len(options))]:
 					await self.send_message_to_user({"type": "log", "msg": f'Please input a number between 0 and {len(options) - 1} to select an available move.'})

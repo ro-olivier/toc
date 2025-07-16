@@ -141,6 +141,11 @@ async function connectToGame(gameId, name) {
         log(data.msg);
         break;
 
+      case 'reject-card-selection':
+        log(data.msg);
+        showAllCardUp(data.playerId);
+        break;
+
       case 'query':
         query(data.msg);
         break;
@@ -572,7 +577,6 @@ function switchCardClickListener(event) {
       cardContainer.classList.remove('flip');
       selectedCard = null;
       sendCardSelection(playerId, t_value, t_suit);
-      removeCard(playerId, t_value, t_suit);
     } else {
       // First click triggers highlight
       if (selectedCard) selectedCard.classList.add('selected');
@@ -604,6 +608,18 @@ function displayHiddenCards(player, number_of_cards) {
       block.appendChild(cardContainer);
     }, 250 * i);
   }
+}
+
+function showAllCardUp(playerId) {
+  const player = playerAssignments.find(p => p.name === playerId);
+  if (!player) {
+    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
+    return; // or handle this gracefully
+  }
+  const block = positionMap[player.position].card_box;
+  block.querySelectorAll(".card-container").forEach(cardContainer => {
+    cardContainer.classList.add('flip');
+  });
 }
 
 function foldAllCardsOfPlayer(playerId) {
