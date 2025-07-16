@@ -97,6 +97,8 @@ async function connectToGame(gameId, name) {
           setupPlayerCards(data.playerId, data.cards);
         }, 1500);
         break;
+        // Just after a draw the players must exchange cards, and while this happens, no player is "active" in the sense that nobody has a card to play, so we switch that off
+        displayNoActivePlayers();
 
       case "dealer":
         toogleDealerOnPlayerBlock(data.playerId);
@@ -450,6 +452,13 @@ function displayActivePlayer(playerId) {
     } else {
       block.classList.remove('active');
     }
+  });
+}
+
+function displayNoActivePlayers() {
+  playerAssignments.forEach(p => {
+    const block = positionMap[p.position].info_box;
+    block.classList.remove('active');
   });
 }
 
