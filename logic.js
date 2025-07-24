@@ -392,6 +392,7 @@ function assignPlayer(name, team, color) {
 
   updatePlayerBlock(newPlayer);
   positionMap[newPlayer.position].card_box.style.display = 'flex';
+  positionMap[newPlayer.position].info_box.style.display = 'flex';
   drawQuadrant(newPlayer.position, color);
 }
 

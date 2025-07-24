@@ -48,7 +48,6 @@
 }
 
 .player-info-block {
-  display: flex;
   position: absolute;
   min-width: 120px;
   max-width: 200px;
@@ -72,18 +71,22 @@
 #player-info-top-left {
   top: 5%;
   left: 5%;
+  display: none;
 }
 #player-info-top-right {
   top: 5%;
   left: 95%;
+  display: none;
 }
 #player-info-bottom-left {
   top: 95%;
   left: 5%;
+  display: none;
 }
 #player-info-bottom-right {
   top: 95%;
   left: 95%;
+  display: none;
 }
 
 .card-box {
