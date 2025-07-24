@@ -12,12 +12,13 @@ class Player:
 		self._team = team
 		self._color = color
 		self._position = position
-		self._hand = None
+		self._hand = Hand(player = self)
 		self._active = False
 		self._isDealer = False
 		self._piecesOnTheBoard = 0
 		self._gameSession = gameSession
 		self._router = router
+		self.board = None
 
 	def __str__(self) -> str:
 		s = f'{self._name} in team {self._team} playing {self._color}'
@@ -74,9 +75,16 @@ class Player:
 	def removeAPieceFromTheBoard(self) -> None:
 		self._piecesOnTheBoard -= 1
 
+	def setBoard(self, board) -> None:
+		self._board = board
+
 	async def setHand(self, hand : Hand) -> None:
 		self._hand = hand
 		await self.send_message_to_user({"type": "draw", "playerId": self._name, "cards": [c.json for c in self._hand.cards]})
+		await self.send_message_to_user({"type": "reveal", "playerId": self._name, "cards": [c.json for c in self._hand.cards]})
+
+	async def sendHandAgain(self) -> None:
+		await self.send_message_to_user({"type": "reveal", "playerId": self._name, "cards": [c.json for c in self._hand.cards]})
 
 	def setDealer(self) -> None:
 		self._isDealer = True
@@ -109,12 +117,61 @@ class Player:
 			elif len(possibleMoves) == 1:
 				moveChoice = possibleMoves[0]
 			else:
-				await self.send_message_to_user({"type": "reject-card-selection", "playerId": self._name, "msg": f'You can make more than one move with this card!'})
-				choice = await self.get_input_from_prompt('What move do you want to play?')
-				while choice not in [str(i) for i in range(len(options))]:
-					await self.send_message_to_user({"type": "log", "msg": f'Please input a number between 0 and {len(options) - 1} to select an available move.'})
-					choice = await self.get_input_from_prompt('What move do you want to play?')
-				moveChoice = choice
+				## if the player has chosen a 4 we need to ask him to choose the origin and the direction
+				if cardChoice.value == '4':
+					data = await self.get_input_from_prompt("Please select the origin and target pieces for this move.")
+					origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
+					target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
+					## We must test if the returned data is valid by checking that the origin spot is indeed a piece from the player occupied spots
+					## and that the target is indeed 4 or -4 from the origin
+					while not ((origin in self._board.getAllPiecesOfPlayer(self._name)) and (target == self._board.getSpotFromDistance(origin, 4) or target == self._board.getSpotFromDistance(origin, -4))):
+						data = await self.get_input_from_prompt("Please select the origin and target pieces for this move.")
+						origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
+						target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
+					if target == self._board.getSpotFromDistance(origin, 4):
+						moveChoice = Move('MOVE', origin, target, chosenCard, self._name)
+					else:
+						moveChoice = Move('BACK', origin, target, chosenCard, self._name)
+						
+				## if the player has chosen a J we need to ask him to choose the origin and target
+				elif cardChoice == 'J':
+					data = await self.get_input_from_prompt("Please choose which piece you want to move and choose if you want to move forward or backward")
+					origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
+					target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
+					## We must test if the returned data is valid by checking that the origin spot is indeed a piece from the player occupied spots
+					## and that the target piece is from the other player's occupied spots
+					while not ((origin in self._board.getAllPiecesOfPlayer(self._name)) and (target in self._board.getAllPiecesOfOtherPlayer(self._name))):
+						data = await self.get_input_from_prompt("Please select the origin and target pieces for this move.")
+						origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
+						target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
+					moveChoice = Move('SWITCH', origin, target, chosenCard, self._name)
+
+				## if the player has chosen an A we need to ask him to if he wants to move by 1 or by 11
+				##TODO OR IF HE WANTS TO GO OUT if it's a valid move!
+				elif cardChoice == 'A':
+					data = await self.get_input_from_prompt("Please choose which piece you want to move and whether you want to move by 1 or by 11")
+					origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
+					target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
+					## We must test if the returned data is valid by checking that the origin spot is indeed a piece from the player occupied spots
+					## and that the target piece is from the other player's occupied spots
+					while not ((origin in self._board.getAllPiecesOfPlayer(self._name)) and (target == self._board.getSpotFromDistance(origin, 1) or target == self._board.getSpotFromDistance(origin, 11))):
+						data = await self.get_input_from_prompt("Please select the origin and target pieces for this move.")
+						origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
+						target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
+					moveChoice = Move('MOVE', origin, target, chosenCard, self._name)
+
+				## if the player has chosen a K we need to ask him to if he wants to move by 13 or to go out (if valid move)
+
+				## if the player has chosen a 7 we need to ask him to do his seven-split selection
+
+				else:
+					data = await self.get_input_from_prompt('What move do you want to play?')
+					origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
+					while origin in self._board.getAllPiecesOfPlayer(self._name):
+						data = await self.get_input_from_prompt('What move do you want to play?')
+						origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
+						target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
+					moveChoice = Move('MOVE', origin, target, chosenCard, self._name)
 			
 		return moveChoice
 

@@ -2,13 +2,11 @@ from __future__ import annotations
 
 
 class Hand:
-	def __init__(self, cards : list[Card], player : Player):
-		if len(cards) in [4, 5]:
-			self._player = player
-			self._cards = cards
-		else:
-			raise Exception(f'Cannot create a hand of less than 4 cards or more than 5 cards...')
-		self._remainingCards = len(self._cards)
+	def __init__(self, player : Player, cards : list[Card] = None):
+		self._player = player
+		self._cards = cards
+		if cards:
+			self._remainingCards = len(self._cards)
 
 	def __str__(self) -> str:
 		if len(self._cards) == 0:
@@ -32,7 +30,10 @@ class Hand:
 
 	@property
 	def size(self) -> int:
-		return len(self._cards)
+		if self._cards:
+			return len(self._cards)
+		else:
+			return 0
 
 	@property
 	def cards(self) -> list[Card]:

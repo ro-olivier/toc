@@ -82,12 +82,21 @@ class Board:
 		##debug##print(f'returning : {result}')
 		return result
 
+	def getAllPiecesOfPlayer(self, player) -> list[Spot]:
+		return getOccupiedSpotsOnTheBoard(player)
+
 	def getOtherPiecesOnTheBoard(self, player) -> list[Spot]:
 		result = []
 		for spot in self._spots:
 			if spot.occupant != player and spot.isOccupied:
 				result.append(spot)
 		return result
+
+	def getAllPiecesOfOtherPlayer(self, player) -> list[Spot]:
+		return getOtherPiecesOnTheBoard(player)
+
+	def getAllPiecesOnTheBoard(self) -> list[Spot]:
+		return [{"spotIndex": str(house), "playerId": house.occupant.name} for house in self._houses if house.isOccupied] + [{"spotIndex": str(spot), "playerId": spot.occupant.name} for spot in self._spots if spot.isOccupied]
 
 	def getSpotFromDistance(self, originSpot : Spot, distance : int) -> Spot:
 		targetIndex = self._spots.index(originSpot) + distance

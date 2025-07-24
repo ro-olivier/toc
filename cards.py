@@ -25,7 +25,7 @@ class Deck:
 				self._cards = remaining_cards
 				temp.append(picked_card)
 			self._player = player
-			return Hand(temp, player)
+			return Hand(player, temp)
 
 	@property
 	def discardPile(self) -> list[Card]:

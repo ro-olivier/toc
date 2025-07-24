@@ -16,6 +16,13 @@ let ws = null;
 let local_player_name = null;
 let local_game_Id = null;
 
+let stored_player_name = window.localStorage.getItem("session_player_name");
+let stored_game_id = window.localStorage.getItem("session_game_ID")
+
+nameInput.value = stored_player_name !== null ? stored_player_name : '';
+gameIdInput.value = stored_game_id !== null ? stored_game_id : '';
+joinBtn.disabled = (stored_player_name && stored_game_id) !== null ? false : true;
+
 //##TODO: for now erery messages are just written into the terminal regardless of status but it will have to be displayed in a niver way, and some queries or errors may even not be displayed as text ut as interaction/animations on screen
 function log(msg) {
   terminal.textContent += msg + "\n";
@@ -47,7 +54,7 @@ function clearError() {
   errorMsg.classList.add("hidden");
 }
 
-async function connectToGame(gameId, name) {
+async function connectToGame(gameId, name, rejoin = false) {
   clearError();
   const wsUrl = `wss://${window.location.host}/toc/ws/${gameId}/${name}`;
   try {
@@ -57,6 +64,9 @@ async function connectToGame(gameId, name) {
     showError("Failed to construct WebSocket URL.");
     return;
   }
+
+  window.localStorage.setItem("session_player_name", name);
+  window.localStorage.setItem("session_game_ID", gameId);
 
   ws.onmessage = (event) => {
     let data;
@@ -84,21 +94,31 @@ async function connectToGame(gameId, name) {
       case "full_ui_state":
         data.players.forEach(p => {
           assignPlayer(p.name, p.team, p.color);
+          if (p.number_of_cards == 0) {
+            hideCardBlock(p.name); 
+          } else {
+            displayHiddenCards(p.name, p.number_of_cards);
+          }
         });
+        data.pieces.forEach(piece => {
+          placePieceOnSpot(piece.playerId, piece.spotIndex);
+        })
+        displayActivePlayer(data.active_player);
         break;
 
       case "draw":
-        // When we receive the draw order, first thing to do is display the (hidden) cards of the players
+        // When we receive the draw order, we only display the (hidden) cards of the players unless they are already displayed
         playerAssignments.forEach(p => {
-          displayHiddenCards(p, data.cards.length);
+          displayHiddenCards(p.name, data.cards.length);
         });
-        // Then, for the player who's UI this is, we adding the values to the cards, adding the listener and flipping the cards to show them
+        break;
+
+      case "reveal":
+        // When we receive the reveal order, the card of the player whose UI this is are revealed (to him only)
         setTimeout(() => {
           setupPlayerCards(data.playerId, data.cards);
         }, 1500);
         break;
-        // Just after a draw the players must exchange cards, and while this happens, no player is "active" in the sense that nobody has a card to play, so we switch that off
-        displayNoActivePlayers();
 
       case "dealer":
         toogleDealerOnPlayerBlock(data.playerId);
@@ -329,6 +349,10 @@ function drawQuadrant(position, color) {
   spotElements.push(...quadrantSpots);
 }
 
+function placePieceOnSpot(playerId, targetSpot) {
+  movePieceFromSpotToSpot(playerId, targetSpot, targetSpot);
+}
+
 function movePieceFromSpotToSpot(playerId, originSpot, targetSpot) {
   const playerClass = getPlayerClass(playerId);
 
@@ -394,6 +418,15 @@ function assignPlayer(name, team, color) {
   positionMap[newPlayer.position].card_box.style.display = 'flex';
   positionMap[newPlayer.position].info_box.style.display = 'flex';
   drawQuadrant(newPlayer.position, color);
+}
+
+function hideCardBlock(playerId) {
+  const player = playerAssignments.find(p => p.name === playerId);
+  if (!player) {
+    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
+    return; // or handle this gracefully
+  }
+  positionMap[player.position].card_box.style.display = 'none';
 }
 
 function getOppositePosition(pos) {
@@ -579,10 +612,16 @@ function switchCardClickListener(event) {
     }
   }
 
-function displayHiddenCards(player, number_of_cards) {
+function displayHiddenCards(playerId, number_of_cards) {
+  const player = playerAssignments.find(p => p.name === playerId);
+  if (!player) {
+    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
+    return; // or handle this gracefully
+  }
   const block = positionMap[player.position].card_box;
-
+  
   for (let i = 0; i < number_of_cards; i++) {
+    block.style.display = 'flex';
     setTimeout(() => {
       const cardContainer = document.createElement('div');
       cardContainer.className = 'card-container';

@@ -59,6 +59,10 @@ class Game:
 	def players(self) -> list[Player]:
 		return self._players
 
+	@property
+	def activePlayer(self) -> Player:
+		return self._activePlayer
+
 	def getTeammate(self, player) -> Optional[Player]:
 		for player2 in self._players:
 			if player2 != player and player2.team == player.team:
@@ -90,6 +94,8 @@ class Game:
 		self._numPlayers = len(players)
 		self._players = players
 		self._players[0].setDealer()
+		for player in self._players:
+			player.setBoard(self._board) 
 
 	async def nextDealer(self) -> None:
 		self._players = self._players[1:] + self._players[:1]
