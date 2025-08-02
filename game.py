@@ -10,9 +10,9 @@ from player import Player
 
 
 class Game:
-	def __init__(self, gameSession : GameSession):
+	def __init__(self, gameSession : GameSession, colors : List):
 		self._gameSession = gameSession
-		self._board = Board()
+		self._board = Board(colors)
 		self._deck = Deck()
 		self._isStarted = False
 		self._isFinished = False

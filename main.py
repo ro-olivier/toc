@@ -102,7 +102,7 @@ class GameSession:
                 active_player_name = self.game.activePlayer.name
             else:
                 active_player_name = ""
-                
+
             return {"type": "full_ui_state", "players": [{"name": p, "team": self.players[p]["team"], "color": self.players[p]["color"], "number_of_cards": self.players[p]["object"].hand.size} for p in self.players], "pieces": self.game.board.getAllPiecesOnTheBoard(), "active_player": active_player_name}
         else:
             return {"type": "full_ui_state", "players": [{"name": p, "team": self.players[p]["team"], "color": self.players[p]["color"], "number_of_cards": self.players[p]["object"].hand.size} for p in self.players], "pieces": [], "active_player": ""}
@@ -123,11 +123,10 @@ class GameSession:
                 return
             self.started = True
             await self.broadcast({"type": "log", "msg": "Four players have joined: game is starting!\n"})
-            game = Game(self)
-            self.game = game
+            self.game = Game(self, [self.players[p_name]['color'] for p_name in self.order])
             # players are set in the order defined by the array passed by the UI
-            game.setPlayers([self.players[p_name]['object'] for p_name in self.order])
-            await game.start()
+            self.game.setPlayers([self.players[p_name]['object'] for p_name in self.order])
+            await self.game.start()
 
     async def make_player_choose_color(self, player_name) -> str:
         player = self.players[player_name]['object']
@@ -191,7 +190,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
                     print(f"[input_loop] Received data from {player_name}: {parsed_data}")  # Now it should print the actual content
 
                     if parsed_data['type'] == 'debug':
-                        print('[input loop] Received DEBUG command from {player_name}!!')
+                        print(f'[input loop] Received DEBUG command from {player_name}!!')
                         if parsed_data['msg'] == 'simulate_card_exchange_players3and4':
                             print('DEBUG : simulating card exchange between player 3 and 4')
                             p3_name = list(gameSession.players.keys())[2]
@@ -202,6 +201,10 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
                             cmd4 = json.loads(f'{{"type":"card_selection","name":"{p4_name}","value":"{p4_card.value}","suit":"{p4_card.suit}"}}')
                             await router.add_input(p3_name, cmd3)
                             await router.add_input(p4_name, cmd4)
+                        if parsed_data['msg'] == 'force-play':
+                            print('DEBUG : Forcing the current player to play the first available move')
+                            await gameSession.game.activePlayer.forceRandomMove()
+
                     elif parsed_data['type'] == 'everybody_is_here':
                             # We're dealing with the special message at the end of the game setup phase where the front-end of player 4 is giving the back-end the order in which the players have decided to play. This data is used to update the order in which items are in the game.players array.
                         if len(gameSession.order) == 0: # we only need to update the game.order once, and we don't want this check to be mutualized with the parsed_data type check otherwise multiple msg will reach the router and this will break the card exchange process which comes after

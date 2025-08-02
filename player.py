@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 from cards import Card
 from hand import Hand
 
@@ -228,3 +230,8 @@ class Player:
 		self._hand.addToHand(card2)
 		await self.send_message_to_user({"type": "receive_card_from_friend", "playerId": self._name, "value": card2.value, "suit": card2.suit})
 		await self.send_message_to_user({"type": "log", "msg": f"Successfully given {card1.suit}{card1.value} to your team-mate who has given you {card2.suit}{card2.value} in exchange. Round will start as soon as the other team exchanges cards.\n"})
+
+	async def forceRandomMove(self) -> None:
+		r = random.choice(self.hand.cards)
+		cmd = json.loads(f'{{"type":"card_selection","name":"{self.name}","value":"{r.value}","suit":"{r.suit}"}}')
+		await self._router.add_input(self.name, cmd)

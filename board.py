@@ -9,17 +9,20 @@ from params import *
 
 
 class Board:
-	def __init__(self):
+	def __init__(self, colors : List):
 		self._savedState = None
 		self._spots = []
-		for color in COLORS:
+		self._colors = colors
+		for color in colors:
 			for i in range(SPOTS_PER_REGION):
 				self._spots.append(Spot(color, i))
 
 		self._houses = []
-		for color in COLORS:
+		for color in colors:
 			for i in range(SPOTS_PER_HOUSE):
 				self._houses.append(House(color, i))
+
+		print(f'Created the board with the following ordered colors: {colors}')
 
 	def __str__(self) -> str:
 		s = ''
@@ -35,18 +38,18 @@ class Board:
 		return s
 
 	def getHousesByColor(self, color : str) -> list[House]:
-		colorIndex = COLORS.index(color)
+		colorIndex = self._colors.index(color)
 		return self._houses[colorIndex * SPOTS_PER_HOUSE: (colorIndex + 1) * SPOTS_PER_HOUSE]
 
 	def areAllHouseFilled(self, color : str) -> bool:
 		return all([house.isOccupied for house in self.getHousesByColor(color)])
 
 	def getPreviousColor(self, color : str) -> str:
-		colorIndex = COLORS.index(color)
+		colorIndex = self._colors.index(color)
 		if colorIndex == 0:
-			return COLORS[-1]
+			return self._colors[-1]
 		else:
-			return COLORS[colorIndex - 1]
+			return self._colors[colorIndex - 1]
 
 	def saveState(self) -> None:
 		# This method used by the Player.getSevenMoveFromPlayer() to store the state of the board while the player is doing the "seven split".
@@ -61,10 +64,10 @@ class Board:
 		self._houses = self._savedState['Houses']
 
 	def getSpot(self, color : str, number : int) -> Spot:
-		return self._spots[COLORS.index(color)*SPOTS_PER_REGION + number]
+		return self._spots[self._colors.index(color)*SPOTS_PER_REGION + number]
 
 	def getHouse(self, color : str, number : int) -> Spot:
-		return self._houses[COLORS.index(color)*SPOTS_PER_HOUSE + number]
+		return self._houses[self._colors.index(color)*SPOTS_PER_HOUSE + number]
 
 	def getFirstSpot(self, color : str) -> Optional[Spot]:
 		for spot in self._spots:
@@ -120,7 +123,7 @@ class Board:
 			targetIndex -= SPOTS_PER_REGION * len(COLORS)
 			##debug##print(f'targetIndex is >= than SPOTS_PER_REGION * len(COLORS) = {SPOTS_PER_REGION * len(COLORS)}, so correcting its value to {targetIndex}')
 
-		playerColorIndex = COLORS.index(player.color)
+		playerColorIndex = self._colors.index(player.color)
 		firstHouseIndex = (playerColorIndex * SPOTS_PER_REGION)
 		##debug##print(f'firstHouseIndex = {firstHouseIndex}')
 		if targetIndex in range(firstHouseIndex, firstHouseIndex + SPOTS_PER_HOUSE):

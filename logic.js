@@ -236,15 +236,21 @@ sendBtn.addEventListener("click", () => {
         simulate();
         break;
       case 'simulate2':
-        const message = {"id": crypto.randomUUID(), "type": "debug", "msg": "simulate_card_exchange_players3and4"};
-        const message_json = JSON.stringify(message);
+        message = {"id": crypto.randomUUID(), "type": "debug", "msg": "simulate_card_exchange_players3and4"};
+        message_json = JSON.stringify(message);
+        console.log('[commandInputContent click eventListener] Sending DEBUG command to back-end:' + message_json);
+        ws.send(message_json);
+        break;
+      case 'force':
+        message = {"id": crypto.randomUUID(), "type": "debug", "msg": "force-play"};
+        message_json = JSON.stringify(message);
         console.log('[commandInputContent click eventListener] Sending DEBUG command to back-end:' + message_json);
         ws.send(message_json);
         break;
       default:
         if (commandInputContent && ws && ws.readyState === WebSocket.OPEN) {
-          const message = {"id": crypto.randomUUID(), "type": "text_input", "msg": commandInputContent};
-          const message_json = JSON.stringify(message);
+          message = {"id": crypto.randomUUID(), "type": "text_input", "msg": commandInputContent};
+          message_json = JSON.stringify(message);
           console.log('[commandInputContent click eventListener] Sending following content to back-end:' + message_json);
           ws.send(message_json);
           //log(`< ${message}`);
@@ -316,7 +322,7 @@ function drawQuadrant(position, color) {
     spot.className = `spot ${color}`;
     spot.style.left = `${x}px`;
     spot.style.top = `${y}px`;
-    spot.innerText = i + 1;
+    spot.innerText = (i == 0) ? '' : i;
     spot.id = `spot-${color}-${i}`;
     spot.color = `${color}`
     spot.index = `${i}`
@@ -361,7 +367,7 @@ function movePieceFromSpotToSpot(playerId, originSpot, targetSpot) {
     const origin_spot =  document.getElementById(originSpot);
     const old = origin_spot.querySelector(`[data-player="${playerId}"]`);
     if (old && old.parentElement) { // this test is almost certainly unnecessary, but just in case, ...we don't want to go change the content of other spots on the board
-      old.parentElement.innerHTML = parseInt(origin_spot.index) + 1; // reseting the value inside the spot
+      old.parentElement.innerHTML = (parseInt(origin_spot.index) % 17) == 0 ? '' : parseInt(origin_spot.index); // reseting the value inside the spot
     }
   }
 
