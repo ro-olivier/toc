@@ -66,8 +66,16 @@ class Board:
 	def getSpot(self, color : str, number : int) -> Spot:
 		return self._spots[self._colors.index(color)*SPOTS_PER_REGION + number]
 
+	def getSpotById(self, spotId : str) -> Spot:
+		spot = [spot for spot in self._spots if str(spot) == spotId][0]
+		return spot
+
 	def getHouse(self, color : str, number : int) -> Spot:
 		return self._houses[self._colors.index(color)*SPOTS_PER_HOUSE + number]
+
+	def getHouseById(self, houseId : str) -> Spot:
+		house = [house for house in self._houses if str(house) == houseId][0]
+		return house
 
 	def getFirstSpot(self, color : str) -> Optional[Spot]:
 		for spot in self._spots:
@@ -80,13 +88,10 @@ class Board:
 		##debug##print(f'Call to getOccupiedSpotsOnTheBoard with requested with current self._spots = {[str(spot) + ' - Occupied ? ' + str(spot.isOccupied) + ' by ' + str(spot.occupant) for spot in self._spots]}')
 		for spot in self._spots:
 			if not spot.occupant is None:
-				if spot.occupant.name == player.name:
+				if spot.occupant.name == player:
 					result.append(spot)
 		##debug##print(f'returning : {result}')
 		return result
-
-	def getAllPiecesOfPlayer(self, player) -> list[Spot]:
-		return getOccupiedSpotsOnTheBoard(player)
 
 	def getOtherPiecesOnTheBoard(self, player) -> list[Spot]:
 		result = []
@@ -201,7 +206,7 @@ class Board:
 			if self.isMoveValid(potentialMove):
 				options.append(potentialMove)
 
-			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player)
+			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player.name)
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
@@ -229,7 +234,7 @@ class Board:
 			if self.isMoveValid(potentialMove):
 				options.append(potentialMove)
 
-			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player)
+			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player.name)
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
@@ -245,7 +250,7 @@ class Board:
 
 		# player wants to play a J : player can only switch two pieces together
 		elif card.value == 'J':
-			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player)
+			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player.name)
 			otherPiecesOnTheBoard = self.getOtherPiecesOnTheBoard(player)
 			if len(occupiedSpotsOnTheBoard) > 0 and len(otherPiecesOnTheBoard) > 0:
 				# player has at least a piece on the board, and there is at least one other piece on the board belonging to another player
@@ -257,7 +262,7 @@ class Board:
 
 		# player wants to play a 4 : player can either move 4 or -4
 		elif card.value == '4':
-			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player)
+			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player.name)
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:
@@ -282,7 +287,7 @@ class Board:
 
 		#special card which cannot be played by a player but is used by the Player.getSevenMoveFromPlayer() method to get options for "one-step" moves during a seven split.
 		elif card.value == '1':
-			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player)
+			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player.name)
 			##debug##print(f'in call getMoveOptions, when asking move for a 1 (in seven-split) : occupiedSpotsOnTheBoard = {occupiedSpotsOnTheBoard}')
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
@@ -302,7 +307,7 @@ class Board:
 
 		# player is playing any other card, only possible move is to go forward
 		else:
-			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player)
+			occupiedSpotsOnTheBoard = self.getOccupiedSpotsOnTheBoard(player.name)
 			if len(occupiedSpotsOnTheBoard) > 0:
 				# player has at least a piece on the board, may be able to move them
 				for piece in occupiedSpotsOnTheBoard:

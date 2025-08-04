@@ -119,63 +119,43 @@ class Player:
 			elif len(possibleMoves) == 1:
 				moveChoice = possibleMoves[0]
 			else:
-				## if the player has chosen a 4 we need to ask him to choose the origin and the direction
-				if cardChoice.value == '4':
-					data = await self.get_input_from_prompt("Please select the origin and target pieces for this move.")
-					origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
-					target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
-					## We must test if the returned data is valid by checking that the origin spot is indeed a piece from the player occupied spots
-					## and that the target is indeed 4 or -4 from the origin
-					while not ((origin in self._board.getAllPiecesOfPlayer(self._name)) and (target == self._board.getSpotFromDistance(origin, 4) or target == self._board.getSpotFromDistance(origin, -4))):
-						data = await self.get_input_from_prompt("Please select the origin and target pieces for this move.")
-						origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
-						target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
-					if target == self._board.getSpotFromDistance(origin, 4):
-						moveChoice = Move('MOVE', origin, target, chosenCard, self._name)
-					else:
-						moveChoice = Move('BACK', origin, target, chosenCard, self._name)
-						
-				## if the player has chosen a J we need to ask him to choose the origin and target
-				elif cardChoice == 'J':
-					data = await self.get_input_from_prompt("Please choose which piece you want to move and choose if you want to move forward or backward")
-					origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
-					target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
-					## We must test if the returned data is valid by checking that the origin spot is indeed a piece from the player occupied spots
-					## and that the target piece is from the other player's occupied spots
-					while not ((origin in self._board.getAllPiecesOfPlayer(self._name)) and (target in self._board.getAllPiecesOfOtherPlayer(self._name))):
-						data = await self.get_input_from_prompt("Please select the origin and target pieces for this move.")
-						origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
-						target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
-					moveChoice = Move('SWITCH', origin, target, chosenCard, self._name)
 
-				## if the player has chosen an A we need to ask him to if he wants to move by 1 or by 11
-				##TODO OR IF HE WANTS TO GO OUT if it's a valid move!
-				elif cardChoice == 'A':
-					data = await self.get_input_from_prompt("Please choose which piece you want to move and whether you want to move by 1 or by 11")
-					origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
-					target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
-					## We must test if the returned data is valid by checking that the origin spot is indeed a piece from the player occupied spots
-					## and that the target piece is from the other player's occupied spots
-					while not ((origin in self._board.getAllPiecesOfPlayer(self._name)) and (target == self._board.getSpotFromDistance(origin, 1) or target == self._board.getSpotFromDistance(origin, 11))):
-						data = await self.get_input_from_prompt("Please select the origin and target pieces for this move.")
-						origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
-						target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
-					moveChoice = Move('MOVE', origin, target, chosenCard, self._name)
-
-				## if the player has chosen a K we need to ask him to if he wants to move by 13 or to go out (if valid move)
-
-				## if the player has chosen a 7 we need to ask him to do his seven-split selection
-
+				possibleOrigins = list(set([str(move.originSpot) for move in possibleMoves if move.card == cardChoice]))
+				if len(possibleOrigins) == 1: # There could be one single origin, but several targets (for example an A being played with only one piece out and no more pieces to take out), and so here we may skip asking the player to choose the origin
+					origin = possibleOrigins[0]
 				else:
-					data = await self.get_input_from_prompt('What move do you want to play?')
-					origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
-					while origin in self._board.getAllPiecesOfPlayer(self._name):
-						data = await self.get_input_from_prompt('What move do you want to play?')
-						origin = self._board.getSpot(data.originSpot.color, data.originSpot.index)
-						target = self._board.getSpot(data.targetSpot.color, data.targetSpot.index)
-					moveChoice = Move('MOVE', origin, target, chosenCard, self._name)
+					origin = await self.getOriginChoiceFromPlayer(possibleOrigins)
+					while not origin:
+						origin = await self.getOriginChoiceFromPlayer(possibleOrigins)
+
+				possibleTargets = [str(move.targetSpot) for move in possibleMoves if move.originSpot == origin and move.card == cardChoice]
+				if len(possibleTargets) == 1: # There could be only one possible target for several moves from different origins (for example you have two pieces seperated by 4 spots and you have only a 4 and an 8 to play), and se here we may skip asking the player to choose the target
+					origin = possibleTargets[0]
+				else:
+					target = await self.getTargetChoiceFromPlayer(possibleTargets)
+					while not target:
+						target = await self.getTargetChoiceFromPlayer(possibleTargets)
+
+				moveChoice = [move for move in possibleMoves if move.originSpot == origin and move.card == cardChoice and move.targetSpot == target][0]
 			
 		return moveChoice
+
+	async def getOriginChoiceFromPlayer(self, possibleOrigins) -> Spot:
+		await self.send_message_to_user({"type": "query-origin", "msg": 'What piece do you want to play this card on?', "originOptions": possibleOrigins})
+		spotChoice = await self.get_input_from_prompt("What piece do you want to play this card on?")
+		while not spotChoice or (not 'type' in spotChoice.keys()) or (spotChoice['type'] != 'spot_selection') or (not (self._board.getSpotById(spotChoice['result']) in self._board.getOccupiedSpotsOnTheBoard(self._name) or (self._board.getSpotById(spotChoice['result']) == self._board.getFirstSpot(self._color)))):
+			data = await self.get_input_from_prompt("What piece do you want to play this card on?")
+		origin = self._board.getSpotById(spotChoice['result'])	
+		return origin
+
+
+	async def getTargetChoiceFromPlayer(self, possibleTargets) -> Spot:
+		await self.send_message_to_user({"type": "query-target", "msg": 'Where do you want to move this piece?', "targetOptions": possibleTargets})
+		spotChoice = await self.get_input_from_prompt("Where do you want to move this piece?")
+		while not spotChoice or  (not 'type' in spotChoice.keys()) or (spotChoice['type'] != 'spot_selection') or not (self._board.getSpotById(spotChoice['result'])):
+			spotChoice = await self.get_input_from_prompt("Where do you want to move this piece?")
+		target = self._board.getSpotById(spotChoice['result'])
+		return target
 
 	async def getSevenMoveFromPlayer(self, board : Board) -> None:
 		counter = 0
@@ -233,5 +213,7 @@ class Player:
 
 	async def forceRandomMove(self) -> None:
 		r = random.choice(self.hand.cards)
+		while r.value in ['J', '4', '7']:
+			r = random.choice(self.hand.cards)
 		cmd = json.loads(f'{{"type":"card_selection","name":"{self.name}","value":"{r.value}","suit":"{r.suit}"}}')
 		await self._router.add_input(self.name, cmd)

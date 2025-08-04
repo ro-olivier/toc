@@ -4,7 +4,8 @@ import asyncio
 from typing import Optional, Tuple
 
 from board import Board
-from cards import Deck
+from cards import Deck, Card
+from hand import Hand
 from params import *
 from player import Player
 
@@ -104,9 +105,14 @@ class Game:
 
 	async def drawHands(self, first_round : bool) -> None:
 		if first_round:
-			for player in self._players:
+
+			await self._players[0].setHand(Hand(self._players[0], [Card("♥️", "A", self._deck), Card("♥️", "K", self._deck), Card("♥️", "Q", self._deck), Card("♥️", "T", self._deck), Card("♥️", "9", self._deck)]))
+
+			for player in self._players[1:]:
 				hand = self._deck.drawHand(5, player)
 				await player.setHand(hand)
+
+
 		else:
 			for player in self._players:
 				hand = self._deck.drawHand(4, player)

@@ -161,6 +161,16 @@ async function connectToGame(gameId, name, rejoin = false) {
         showAllCardUp(data.playerId);
         break;
 
+      case 'query-origin':
+        //log(data.msg);
+        requestSpotSelection(data.playerId, data.originOptions);
+        break;
+
+      case 'query-target':
+        //log(data.msg);
+        requestSpotSelection(data.playerId, data.targetOptions);
+        break;
+
       case 'query':
         query(data.msg);
         break;
@@ -273,6 +283,13 @@ function sendCardSelection(player_name, rank, suit) {
   const message = {"id": crypto.randomUUID(), "type": "card_selection", "name": player_name, "value": rank, "suit": suit};
   const message_json = JSON.stringify(message);
   console.log('[sendCardSelection] Sending following content to back-end:' + message_json);
+  ws.send(message_json);
+}
+
+function sendSpotSelection(player_name, spot) {
+  const message = {"id": crypto.randomUUID(), "type": "spot_selection", "name": player_name, "result": spot};
+  const message_json = JSON.stringify(message);
+  console.log('[sendSpotSelection] Sending following content to back-end:' + message_json);
   ws.send(message_json);
 }
 
@@ -720,10 +737,6 @@ function removeCard(playerId, value, suit) {
   }
 }
 
-function playMoveOnBoard(playerId, origin, target) {
-  console.log(`Must animate board to show player ${playerId} moving a piece from ${origin} to ${target}`);
-}
-
 // Click anywhere outside of cards to cancel card selection
 document.addEventListener('click', () => {
   if (selectedCard) {
@@ -731,6 +744,29 @@ document.addEventListener('click', () => {
     selectedCard = null;
   }
 });
+
+function requestSpotSelection(playerId, spotOptions) {
+
+  spotOptions.forEach((option) => {
+    piece = document.getElementById(option)
+    piece.classList.add('glow');
+    piece.addEventListener('click', () => {
+
+      event.stopPropagation(); // Prevent document click from firing
+      removeGlowOnEverySpot();
+      sendSpotSelection(playerId, event.currentTarget.id);
+      
+
+    });
+  });
+
+}
+
+function removeGlowOnEverySpot() {
+  document.querySelectorAll('.glow').forEach((spot) => {
+    spot.classList.remove('glow');
+  });
+}
 
 
 function simulate(gameId = local_game_Id) {

@@ -47,6 +47,29 @@
   z-index: 10;
 }
 
+.glow {
+  animation: pulseGlow 1.5s infinite;
+  box-shadow: 0 0 0px #000000;
+}
+
+@keyframes pulseGlow {
+  0% {
+    box-shadow: 0 0 0px #000000;
+  }
+  25% {
+    box-shadow: 0 0 6px #000000;
+  }
+  50% {
+    box-shadow: 0 0 12px #000000;
+  }
+  75% {
+    box-shadow: 0 0 6px #000000;
+  }
+  100% {
+    box-shadow: 0 0 0px #000000;
+  }
+}
+
 .player-info-block {
   position: absolute;
   min-width: 120px;
