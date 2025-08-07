@@ -95,6 +95,7 @@ class Player:
 		 self._hand.fold()
 
 	async def getCardChoiceFromPlayer(self) -> Card:
+		await self.send_message_to_user({"type": "query-card", "msg": 'What card do you want to play?'})
 		cardChoice = await self.get_input_from_prompt('What card do you want to play?')
 		while not cardChoice or (not 'type' in cardChoice.keys()) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
 			cardChoice = await self.get_input_from_prompt('What card do you want to play?')
@@ -114,7 +115,7 @@ class Player:
 		while not moveChoice:
 			possibleMoves = [move for move in options if move.card == cardChoice]
 			if len(possibleMoves) == 0:
-				await self.send_message_to_user({"type": "reject-card-selection", "playerId": self._name, "msg": f'You cannot play that card right now!'})
+				await self.send_message_to_user({"type": "reject-card-selection", "msg": f'You cannot play that card right now!'})
 				cardChoice = await self.getCardChoiceFromPlayer()
 			elif len(possibleMoves) == 1:
 				moveChoice = possibleMoves[0]
@@ -128,15 +129,23 @@ class Player:
 					while not origin:
 						origin = await self.getOriginChoiceFromPlayer(possibleOrigins)
 
-				possibleTargets = [str(move.targetSpot) for move in possibleMoves if move.originSpot == origin and move.card == cardChoice]
+				possibleTargets = [move.targetSpot for move in possibleMoves if move.originSpot == origin and move.card == cardChoice]
 				if len(possibleTargets) == 1: # There could be only one possible target for several moves from different origins (for example you have two pieces seperated by 4 spots and you have only a 4 and an 8 to play), and se here we may skip asking the player to choose the target
-					origin = possibleTargets[0]
+					target = possibleTargets[0]
 				else:
 					target = await self.getTargetChoiceFromPlayer(possibleTargets)
 					while not target:
 						target = await self.getTargetChoiceFromPlayer(possibleTargets)
 
-				moveChoice = [move for move in possibleMoves if move.originSpot == origin and move.card == cardChoice and move.targetSpot == target][0]
+				print('[getMoveChoiceFromPlayer] Possible moves:')
+				for m in possibleMoves:
+					print(f'[getMoveChoiceFromPlayer] {str(m)} ---- origin: {m.originSpot} {id(m.originSpot)}, target: {m.targetSpot} {id(m.targetSpot)}, card: {m.card} {id(m.card)}')
+				print(f'[getMoveChoiceFromPlayer] selected originSpot: {str(origin)} - {id(origin)}')
+				print(f'[getMoveChoiceFromPlayer] selected targetSpot: {str(target)} - {id(target)}')
+				print(f'[getMoveChoiceFromPlayer] selected card: {str(cardChoice)} - {id(cardChoice)}')
+				result = [move for move in possibleMoves if move.originSpot == origin and move.card == cardChoice and move.targetSpot == target]
+				print([str(r) for r in result])
+				moveChoice = result[0]
 			
 		return moveChoice
 
@@ -145,7 +154,7 @@ class Player:
 		spotChoice = await self.get_input_from_prompt("What piece do you want to play this card on?")
 		while not spotChoice or (not 'type' in spotChoice.keys()) or (spotChoice['type'] != 'spot_selection') or (not (self._board.getSpotById(spotChoice['result']) in self._board.getOccupiedSpotsOnTheBoard(self._name) or (self._board.getSpotById(spotChoice['result']) == self._board.getFirstSpot(self._color)))):
 			data = await self.get_input_from_prompt("What piece do you want to play this card on?")
-		origin = self._board.getSpotById(spotChoice['result'])	
+		origin = self._board.getSpotById(spotChoice['result'])
 		return origin
 
 
@@ -208,7 +217,7 @@ class Player:
 	async def switchCard(self, card1, card2) -> None:
 		self._hand.discardFromHand(card1)
 		self._hand.addToHand(card2)
-		await self.send_message_to_user({"type": "receive_card_from_friend", "playerId": self._name, "value": card2.value, "suit": card2.suit})
+		await self.send_message_to_user({"type": "receive-card-from-friend", "value": card2.value, "suit": card2.suit})
 		await self.send_message_to_user({"type": "log", "msg": f"Successfully given {card1.suit}{card1.value} to your team-mate who has given you {card2.suit}{card2.value} in exchange. Round will start as soon as the other team exchanges cards.\n"})
 
 	async def forceRandomMove(self) -> None:

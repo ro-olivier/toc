@@ -67,7 +67,9 @@ class Board:
 		return self._spots[self._colors.index(color)*SPOTS_PER_REGION + number]
 
 	def getSpotById(self, spotId : str) -> Spot:
-		spot = [spot for spot in self._spots if str(spot) == spotId][0]
+		res = [spot for spot in self._spots if str(spot) == spotId]
+		spot = res[0]
+		print(f'[getSpotById] called with spotId = {spotId}, result is {id(spot)} (len(res) was {len(res)})')
 		return spot
 
 	def getHouse(self, color : str, number : int) -> Spot:
