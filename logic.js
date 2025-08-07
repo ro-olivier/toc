@@ -124,8 +124,8 @@ async function connectToGame(gameId, name, rejoin = false) {
         toogleDealerOnPlayerBlock(data.playerId);
         break;
 
-      case "receive_card_from_friend":
-        replaceCard(data.playerId, data.value, data.suit);
+      case "receive-card-from-friend":
+        replaceCard(data.value, data.suit);
         break
 
       case 'move':
@@ -158,17 +158,22 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case 'reject-card-selection':
         log(data.msg);
-        showAllCardUp(data.playerId);
+        showAllCardUp();
         break;
 
       case 'query-origin':
         //log(data.msg);
-        requestSpotSelection(data.playerId, data.originOptions);
+        requestSpotSelection(data.originOptions);
         break;
 
       case 'query-target':
         //log(data.msg);
-        requestSpotSelection(data.playerId, data.targetOptions);
+        requestSpotSelection(data.targetOptions);
+        break;
+
+      case 'query-card':
+        //log(data.msg);
+        requestCardSelection();
         break;
 
       case 'query':
@@ -569,12 +574,10 @@ function switchCardClickListener(event) {
       cardContainer.classList.remove('flip');
       window.flipped_card = cardContainer // storing that for later when we receive the new card from the team-mate
       selectedCard = null;
-      // we loop over all cards and remove the switchCardClickListener event listener now that the switch has been triggered. Instead we register a clickCardClickListener which will handle normal card selection when players will select moves.
+      // we loop over all cards and remove the switchCardClickListener event listener now that the switch has been triggered.
       event.currentTarget.parentElement.querySelectorAll('.card-container').forEach(c => {
           c.removeEventListener('click', switchCardClickListener);
-          c.addEventListener('click', clickCardClickListener);
-          c.playerId = playerId;
-          console.log('[switchCardClickListener] Removed switchCardClickListener and added clickCardClickListener.')
+          console.log('[switchCardClickListener] Removed switchCardClickListener.');
       });
       // only triggering the WS call to replace the card after twice the amount of time it takes for the front-to-back flip animation to execute, to make sure we do play the animation
       setTimeout(() => {
@@ -619,14 +622,13 @@ function switchCardClickListener(event) {
 
     const t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit').innerHTML;
     const t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
-    const playerId = event.currentTarget.playerId;
 
     if (selectedCard === cardContainer) {
       // Second click confirms selection
       cardContainer.classList.remove('selected');
       cardContainer.classList.remove('flip');
       selectedCard = null;
-      sendCardSelection(playerId, t_value, t_suit);
+      sendCardSelection(local_player_name, t_value, t_suit);
     } else {
       // First click triggers highlight
       if (selectedCard) selectedCard.classList.add('selected');
@@ -666,8 +668,8 @@ function displayHiddenCards(playerId, number_of_cards) {
   }
 }
 
-function showAllCardUp(playerId) {
-  const player = playerAssignments.find(p => p.name === playerId);
+function showAllCardUp() {
+  const player = playerAssignments.find(p => p.name === local_player_name);
   if (!player) {
     console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
     return; // or handle this gracefully
@@ -696,7 +698,7 @@ function foldAllCardsOfPlayer(playerId) {
   });
 }
 
-function replaceCard(playerId, rank, suit) {
+function replaceCard(rank, suit) {
   // Getting the info of which card to replace is tricky, this way is much simpler than to actually look for the card based on the previous values, which would need to be passed by the back-end, which is ugly.
   const cardContainer = window.flipped_card;
   window.flipped_card = null;
@@ -709,12 +711,6 @@ function replaceCard(playerId, rank, suit) {
   requestAnimationFrame(() => {
     cardContainer.classList.add('flip');
   });
-
-  cardContainer.addEventListener('click', switchCardClickListener);
-  cardContainer.rank = rank;
-  cardContainer.suit = suit;
-  cardContainer.playerId = playerId;
-
 }
 
 function removeCard(playerId, value, suit) {
@@ -745,7 +741,7 @@ document.addEventListener('click', () => {
   }
 });
 
-function requestSpotSelection(playerId, spotOptions) {
+function requestSpotSelection(spotOptions) {
 
   spotOptions.forEach((option) => {
     piece = document.getElementById(option)
@@ -754,12 +750,27 @@ function requestSpotSelection(playerId, spotOptions) {
 
       event.stopPropagation(); // Prevent document click from firing
       removeGlowOnEverySpot();
-      sendSpotSelection(playerId, event.currentTarget.id);
+      sendSpotSelection(local_player_name, event.currentTarget.id);
       
 
     });
   });
 
+}
+
+function requestCardSelection() {
+  const player = playerAssignments.find(p => p.name === local_player_name);
+  if (!player) {
+    console.warn(`No player found with ID "${local_player_name}"`, JSON.stringify(playerAssignments));
+    return; // or handle this gracefully
+  }
+  const block = positionMap[player.position].card_box;
+
+  block.querySelectorAll('.card-container').forEach(c => {
+    c.addEventListener('click', clickCardClickListener);
+    console.log('[requestCardSelection] Added clickCardClickListener.');
+  });
+          
 }
 
 function removeGlowOnEverySpot() {
