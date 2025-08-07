@@ -168,9 +168,6 @@
   font-weight: bold;
   box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
   color: black;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-  perspective: 1000px;
 }
 
 .card-value {
@@ -189,7 +186,13 @@
   color: red;
 }
 
-.card-container:hover {
+.card-container.hover-effect {
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  perspective: 1000px;
+}
+
+.card-container.hover-effect:hover {
   transform: scale(1.05);
   box-shadow: 0 0 8px rgba(0, 0, 0, 0.2);
 }

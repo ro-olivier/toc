@@ -535,6 +535,8 @@ function setupPlayerCards(playerId, cards) {
   }
   positionMap[player.position].card_box.querySelectorAll('.card-container').forEach((cardContainer, i) => {
 
+    cardContainer.classList.add('hover-effect');
+
     cardBlock = cardContainer.querySelector('.card');
 
     const rank = cards[i].value
