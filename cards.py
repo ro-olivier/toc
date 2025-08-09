@@ -61,11 +61,21 @@ class Card:
 		return f'{self._suit}{self._value}'
 
 	def __eq__(self, other) -> bool:
+		#print('Call to Card.__eq__')
 		if isinstance(other, Card):
+		#	print('The other is indeed a Card')
+		#	print(f'self.suit = {self.suit}')
+		#	print(f'self.value = {self.value}')
+		#	print(f'other.suit = {other.suit}')
+		#	print(f'other.value = {other.value}')
+		#	print(f'result = {self.suit == other.suit and self.value == other.value}')
+			
 			return self.suit == other.suit and self.value == other.value
 		return False
 
 	def __hash__(self):
+		#print('Call to Card.__hash__')
+		#print(f'result = {hash((self.suit, self.value))}')
 		return hash((self.suit, self.value))
 
 	@property

@@ -110,10 +110,14 @@ class Player:
 			move.updateDescription()
 
 		cardChoice = await self.getCardChoiceFromPlayer()
+		print(f'[getMoveChoiceFromPlayer] selected card: {str(cardChoice)} - {id(cardChoice)} - {type(cardChoice)}')
 		moveChoice = None
 		## TODO: investigate infinite loop when a player played a not-speacil card with only a 7 remaining, which seem to have triggered an infinite loop (which I didn't screenshot unfortunately...)
 		while not moveChoice:
 			possibleMoves = [move for move in options if move.card == cardChoice]
+			print('[getMoveChoiceFromPlayer] Possible moves:')
+			for m in possibleMoves:
+				print(f'[getMoveChoiceFromPlayer] {str(m)} ---- origin: {m.originSpot} {id(m.originSpot)}, target: {m.targetSpot} {id(m.targetSpot)}, card: {m.card} {id(m.card)}')
 			if len(possibleMoves) == 0:
 				await self.send_message_to_user({"type": "reject-card-selection", "msg": f'You cannot play that card right now!'})
 				cardChoice = await self.getCardChoiceFromPlayer()
@@ -121,7 +125,7 @@ class Player:
 				moveChoice = possibleMoves[0]
 			else:
 
-				possibleOrigins = list(set([str(move.originSpot) for move in possibleMoves if move.card == cardChoice]))
+				possibleOrigins = list(set([move.originSpot for move in possibleMoves if move.card == cardChoice]))
 				if len(possibleOrigins) == 1: # There could be one single origin, but several targets (for example an A being played with only one piece out and no more pieces to take out), and so here we may skip asking the player to choose the origin
 					origin = possibleOrigins[0]
 				else:
@@ -129,7 +133,11 @@ class Player:
 					while not origin:
 						origin = await self.getOriginChoiceFromPlayer(possibleOrigins)
 
-				possibleTargets = [move.targetSpot for move in possibleMoves if move.originSpot == origin and move.card == cardChoice]
+				print(f'[getMoveChoiceFromPlayer] selected originSpot: {str(origin)} - {id(origin)} - {type(origin)}')
+
+				possibleTargets = list(set([move.targetSpot for move in possibleMoves if move.originSpot == origin and move.card == cardChoice]))
+
+				print([str(move.targetSpot) for move in possibleMoves if move.originSpot == origin and move.card == cardChoice])
 				if len(possibleTargets) == 1: # There could be only one possible target for several moves from different origins (for example you have two pieces seperated by 4 spots and you have only a 4 and an 8 to play), and se here we may skip asking the player to choose the target
 					target = possibleTargets[0]
 				else:
@@ -137,12 +145,7 @@ class Player:
 					while not target:
 						target = await self.getTargetChoiceFromPlayer(possibleTargets)
 
-				print('[getMoveChoiceFromPlayer] Possible moves:')
-				for m in possibleMoves:
-					print(f'[getMoveChoiceFromPlayer] {str(m)} ---- origin: {m.originSpot} {id(m.originSpot)}, target: {m.targetSpot} {id(m.targetSpot)}, card: {m.card} {id(m.card)}')
-				print(f'[getMoveChoiceFromPlayer] selected originSpot: {str(origin)} - {id(origin)}')
-				print(f'[getMoveChoiceFromPlayer] selected targetSpot: {str(target)} - {id(target)}')
-				print(f'[getMoveChoiceFromPlayer] selected card: {str(cardChoice)} - {id(cardChoice)}')
+				print(f'[getMoveChoiceFromPlayer] selected targetSpot: {str(target)} - {id(target)} - {type(target)}')
 				result = [move for move in possibleMoves if move.originSpot == origin and move.card == cardChoice and move.targetSpot == target]
 				print([str(r) for r in result])
 				moveChoice = result[0]
@@ -150,7 +153,7 @@ class Player:
 		return moveChoice
 
 	async def getOriginChoiceFromPlayer(self, possibleOrigins) -> Spot:
-		await self.send_message_to_user({"type": "query-origin", "msg": 'What piece do you want to play this card on?', "originOptions": possibleOrigins})
+		await self.send_message_to_user({"type": "query-origin", "msg": 'What piece do you want to play this card on?', "originOptions": [str(o) for o in possibleOrigins]})
 		spotChoice = await self.get_input_from_prompt("What piece do you want to play this card on?")
 		while not spotChoice or (not 'type' in spotChoice.keys()) or (spotChoice['type'] != 'spot_selection') or (not (self._board.getSpotById(spotChoice['result']) in self._board.getOccupiedSpotsOnTheBoard(self._name) or (self._board.getSpotById(spotChoice['result']) == self._board.getFirstSpot(self._color)))):
 			data = await self.get_input_from_prompt("What piece do you want to play this card on?")
@@ -159,7 +162,7 @@ class Player:
 
 
 	async def getTargetChoiceFromPlayer(self, possibleTargets) -> Spot:
-		await self.send_message_to_user({"type": "query-target", "msg": 'Where do you want to move this piece?', "targetOptions": possibleTargets})
+		await self.send_message_to_user({"type": "query-target", "msg": 'Where do you want to move this piece?', "targetOptions": [str(t) for t in possibleTargets]})
 		spotChoice = await self.get_input_from_prompt("Where do you want to move this piece?")
 		while not spotChoice or  (not 'type' in spotChoice.keys()) or (spotChoice['type'] != 'spot_selection') or not (self._board.getSpotById(spotChoice['result'])):
 			spotChoice = await self.get_input_from_prompt("Where do you want to move this piece?")

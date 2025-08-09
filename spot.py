@@ -15,6 +15,14 @@ class Spot:
 	def __str__(self) -> str:
 		return 'spot-'+self._color+'-'+str(self._number)
 
+	def __eq__(self, other) -> bool:
+		if isinstance(other, Spot):
+			return str(self) == str(other)
+		return False
+
+	def __hash__(self):
+		return hash(str(self))
+
 	@property
 	def color(self) -> str:
 		return self._color

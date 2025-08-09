@@ -106,7 +106,7 @@ class Game:
 	async def drawHands(self, first_round : bool) -> None:
 		if first_round:
 
-			await self._players[0].setHand(Hand(self._players[0], [Card("♥️", "A", self._deck), Card("♥️", "K", self._deck), Card("♥️", "Q", self._deck), Card("♥️", "T", self._deck), Card("♥️", "9", self._deck)]))
+			await self._players[0].setHand(Hand(self._players[0], [Card("♥️", "A", self._deck), Card("♥️", "K", self._deck), Card("♥️", "Q", self._deck), Card("♥️", "T", self._deck), Card("♥️", "J", self._deck)]))
 
 			for player in self._players[1:]:
 				hand = self._deck.drawHand(5, player)
