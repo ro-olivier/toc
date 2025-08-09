@@ -10,11 +10,12 @@ const gameScreen = document.getElementById("game-screen");
 const errorMsg = document.getElementById("error-msg");
 const board = document.getElementById('board');
 
-
-// Input-Output / WebSocket handling
 let ws = null;
 let local_player_name = null;
 let local_game_Id = null;
+let local_player = null;
+let local_card_box = null;
+let local_info_box = null;
 
 let stored_player_name = window.localStorage.getItem("session_player_name");
 let stored_game_id = window.localStorage.getItem("session_game_ID")
@@ -23,7 +24,8 @@ nameInput.value = stored_player_name !== null ? stored_player_name : '';
 gameIdInput.value = stored_game_id !== null ? stored_game_id : '';
 joinBtn.disabled = (stored_player_name && stored_game_id) !== null ? false : true;
 
-//##TODO: for now erery messages are just written into the terminal regardless of status but it will have to be displayed in a niver way, and some queries or errors may even not be displayed as text ut as interaction/animations on screen
+
+////// Input-Output / WebSocket handling //////
 function log(msg) {
   terminal.textContent += msg + "\n";
   terminal.scrollTop = terminal.scrollHeight;
@@ -299,7 +301,7 @@ function sendSpotSelection(player_name, spot) {
 }
 
 
-// User Interface handling
+////// User Interface handling //////
 const regions = ['red', 'green', 'yellow', 'blue'];
 const totalRegions = 4;
 const spotsPerRegion = 17;
@@ -328,6 +330,16 @@ const usedColors = [];
 const usedPositions = [];
 let selectedCard = null;
 
+// Click anywhere outside of cards to cancel card selection
+document.addEventListener('click', () => {
+  if (selectedCard) {
+    selectedCard.classList.remove('selected');
+    selectedCard = null;
+  }
+});
+
+
+//// Board and pieces drawing and update functions ////
 function drawQuadrant(position, color) {
   const regionIndex = positionMap[position].index;
   const angleOffset = (regionIndex / 4) * 2 * Math.PI;
@@ -402,9 +414,17 @@ function movePieceFromSpotToSpot(playerId, originSpot, targetSpot) {
   target_spot.appendChild(piece);
 }
 
-function assignPlayer(name, team, color) {
+function removeGlowOnEverySpot() {
+  document.querySelectorAll('.glow').forEach((spot) => {
+    spot.classList.remove('glow');
+  });
+}
 
-  // if player is already in the playerAssignements array, don't add it again. This can happen because the full_ui uses the assignPlayer method (#TODO: refactor this?)
+
+//// Player-sits-down-at-the-table function //// 
+function assignPlayer(name, team, color) {
+  // if the player is already in the playerAssignements array, we don't add it again. 
+  // This can happen because the full_ui uses the assignPlayer method (#TODO: refactor this?)
   player_test = playerAssignments.find(p => p.name === name);
   if (player_test) return;
 
@@ -446,15 +466,30 @@ function assignPlayer(name, team, color) {
   positionMap[newPlayer.position].card_box.style.display = 'flex';
   positionMap[newPlayer.position].info_box.style.display = 'flex';
   drawQuadrant(newPlayer.position, color);
+
+  // Setting a few short-hands for cleaner code
+  local_player = playerAssignments.find(p => p.name === local_player_name);
+  if (!local_player) {
+    console.warn(`Error setting up the local_player var, no player found with ID "${local_player_name}"`, JSON.stringify(playerAssignments));
+  }
+  local_card_box = positionMap[local_player.position].card_box
+  local_info_box = positionMap[local_player.position].info_box
 }
 
-function hideCardBlock(playerId) {
+
+//// Helper functions ////
+function getPlayerFromId(playerId) {
   const player = playerAssignments.find(p => p.name === playerId);
   if (!player) {
-    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
+    console.warn(`[getPlayerFromId] No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
     return; // or handle this gracefully
   }
-  positionMap[player.position].card_box.style.display = 'none';
+  return player
+}
+
+function getCardBoxFromId(playerId) {
+  const player = getPlayerFromId(playerId);
+  return positionMap[player.position].card_box;
 }
 
 function getOppositePosition(pos) {
@@ -476,6 +511,18 @@ function getAdjacentFreePosition(pos) {
   };
   const candidates = adjacency[pos];
   return candidates.find(p => !usedPositions.includes(p));
+}
+
+function getPlayerClass(playerId) {
+  const player = getPlayerFromId(playerId);
+  return player ? `player-${player.color}` : '';
+}
+
+
+//// Simple UI update functions ////
+function hideCardBlock(playerId) {
+  const player = getPlayerFromId(playerId);
+  positionMap[player.position].card_box.style.display = 'none';
 }
 
 function updatePlayerBlock(player, isDealer = false) {
@@ -522,18 +569,11 @@ function displayNoActivePlayers() {
   });
 }
 
-function getPlayerClass(playerId) {
-  const player = playerAssignments.find(p => p.name === playerId);
-  return player ? `player-${player.color}` : '';
-}
 
+//// Card UI update functions ////
 function setupPlayerCards(playerId, cards) {
-  const player = playerAssignments.find(p => p.name === playerId);
-  if (!player) {
-    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
-    return; // or handle this gracefully
-  }
-  positionMap[player.position].card_box.querySelectorAll('.card-container').forEach((cardContainer, i) => {
+  const cardBox = getCardBoxFromId(playerId)
+  cardBox.querySelectorAll('.card-container').forEach((cardContainer, i) => {
 
     cardContainer.classList.add('hover-effect');
 
@@ -560,9 +600,85 @@ function setupPlayerCards(playerId, cards) {
       cardContainer.classList.add('flip');
     }, 250 * i);
   });
-
 }
 
+function displayHiddenCards(playerId, number_of_cards) {
+  const block = getCardBoxFromId(playerId);
+  
+  for (let i = 0; i < number_of_cards; i++) {
+    block.style.display = 'flex';
+    setTimeout(() => {
+      const cardContainer = document.createElement('div');
+      cardContainer.className = 'card-container';
+
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      const cardBack = document.createElement('div');
+      cardBack.className = 'card-back';
+
+      const backImg = document.createElement('img');
+      backImg.src = 'assets/card.jpg';
+
+      cardBack.appendChild(backImg);
+      card.appendChild(cardBack);
+      cardContainer.appendChild(card);
+      block.appendChild(cardContainer);
+    }, 250 * i);
+  }
+}
+
+function showAllCardUp() {
+  local_card_box.querySelectorAll(".card-container").forEach(cardContainer => {
+    cardContainer.classList.add('flip');
+  });
+}
+
+function foldAllCardsOfPlayer(playerId) {
+  const block = getCardBoxFromId(playerId);
+  block.querySelectorAll(".card-container").forEach((cardContainer, i) => {
+    setTimeout(100);
+    requestAnimationFrame(() => {
+      cardContainer.classList.remove('flip');
+    });
+    block.removeChild(cardContainer);
+    cardContainer.removeEventListener('click', clickCardClickListener);
+    block.style.display = 'none';
+  });
+}
+
+function replaceCard(rank, suit) {
+  // Getting the info of which card to replace is tricky, this way is much simpler than to actually look for the card based on the previous values, which would need to be passed by the back-end, which is ugly.
+  const cardContainer = window.flipped_card;
+  window.flipped_card = null;
+  const cardFront = cardContainer.querySelector('.card-front');
+  cardFront.innerHTML = `
+    <div class="card-value">${rank}</div>
+    <div class="card-suit">${suit}</div>
+  `;
+  setTimeout(100);
+  requestAnimationFrame(() => {
+    cardContainer.classList.add('flip');
+  });
+}
+
+function removeCard(playerId, value, suit) {
+  const block = getCardBoxFromId(playerId);
+
+  // If the code is running the player own's UI then we remove the actual card, but for other players we remove any card (because other player's UI don't know the card value so we don't really care what card we remove).
+  if (playerId !== local_player_name) {
+    block.removeChild(block.children[0]);
+  } else {
+      for (cardContainer of block.children) {
+      t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit').innerHTML;
+      t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
+      if (t_suit === suit && t_value === value) block.removeChild(cardContainer);
+    }
+  }
+}
+
+
+//// Listeners and interaction functions ////
 function switchCardClickListener(event) {
     const rank = event.currentTarget.rank;
     const suit = event.currentTarget.suit;
@@ -585,7 +701,6 @@ function switchCardClickListener(event) {
       setTimeout(() => {
         sendCardSelection(playerId, rank, suit);
       }, 500);
-      
 
     } else {
       // First click triggers highlight
@@ -639,149 +754,27 @@ function switchCardClickListener(event) {
     }
   }
 
-function displayHiddenCards(playerId, number_of_cards) {
-  const player = playerAssignments.find(p => p.name === playerId);
-  if (!player) {
-    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
-    return; // or handle this gracefully
-  }
-  const block = positionMap[player.position].card_box;
-  
-  for (let i = 0; i < number_of_cards; i++) {
-    block.style.display = 'flex';
-    setTimeout(() => {
-      const cardContainer = document.createElement('div');
-      cardContainer.className = 'card-container';
-
-      const card = document.createElement('div');
-      card.className = 'card';
-
-      const cardBack = document.createElement('div');
-      cardBack.className = 'card-back';
-
-      const backImg = document.createElement('img');
-      backImg.src = 'assets/card.jpg';
-
-      cardBack.appendChild(backImg);
-      card.appendChild(cardBack);
-      cardContainer.appendChild(card);
-      block.appendChild(cardContainer);
-    }, 250 * i);
-  }
-}
-
-function showAllCardUp() {
-  const player = playerAssignments.find(p => p.name === local_player_name);
-  if (!player) {
-    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
-    return; // or handle this gracefully
-  }
-  const block = positionMap[player.position].card_box;
-  block.querySelectorAll(".card-container").forEach(cardContainer => {
-    cardContainer.classList.add('flip');
-  });
-}
-
-function foldAllCardsOfPlayer(playerId) {
-  const player = playerAssignments.find(p => p.name === playerId);
-  if (!player) {
-    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
-    return; // or handle this gracefully
-  }
-  const block = positionMap[player.position].card_box;
-  block.querySelectorAll(".card-container").forEach((cardContainer, i) => {
-    setTimeout(100);
-    requestAnimationFrame(() => {
-      cardContainer.classList.remove('flip');
-    });
-    block.removeChild(cardContainer);
-    cardContainer.removeEventListener('click', clickCardClickListener);
-    block.style.display = 'none';
-  });
-}
-
-function replaceCard(rank, suit) {
-  // Getting the info of which card to replace is tricky, this way is much simpler than to actually look for the card based on the previous values, which would need to be passed by the back-end, which is ugly.
-  const cardContainer = window.flipped_card;
-  window.flipped_card = null;
-  const cardFront = cardContainer.querySelector('.card-front');
-  cardFront.innerHTML = `
-    <div class="card-value">${rank}</div>
-    <div class="card-suit">${suit}</div>
-  `;
-  setTimeout(100);
-  requestAnimationFrame(() => {
-    cardContainer.classList.add('flip');
-  });
-}
-
-function removeCard(playerId, value, suit) {
-  const player = playerAssignments.find(p => p.name === playerId);
-  if (!player) {
-    console.warn(`No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
-    return; // or handle this gracefully
-  }
-  const block = positionMap[player.position].card_box;
-
-  // If the code is running the player own's UI then we remove the actual card, but for other players we remove any card (because other player's UI don't know the card value so we don't really care what card we remove).
-  if (playerId !== local_player_name) {
-    block.removeChild(block.children[0]);
-  } else {
-      for (cardContainer of block.children) {
-      t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit').innerHTML;
-      t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
-      if (t_suit === suit && t_value === value) block.removeChild(cardContainer);
-    }
-  }
-}
-
-// Click anywhere outside of cards to cancel card selection
-document.addEventListener('click', () => {
-  if (selectedCard) {
-    selectedCard.classList.remove('selected');
-    selectedCard = null;
-  }
-});
-
 function requestSpotSelection(spotOptions) {
-
   spotOptions.forEach((option) => {
     piece = document.getElementById(option)
     piece.classList.add('glow');
     piece.addEventListener('click', () => {
-
       event.stopPropagation(); // Prevent document click from firing
       removeGlowOnEverySpot();
       sendSpotSelection(local_player_name, event.currentTarget.id);
-      
-
     });
   });
-
 }
 
 function requestCardSelection() {
-  const player = playerAssignments.find(p => p.name === local_player_name);
-  if (!player) {
-    console.warn(`No player found with ID "${local_player_name}"`, JSON.stringify(playerAssignments));
-    return; // or handle this gracefully
-  }
-  const block = positionMap[player.position].card_box;
-
-  block.querySelectorAll('.card-container').forEach(c => {
+  local_card_box.querySelectorAll('.card-container').forEach(c => {
     c.addEventListener('click', clickCardClickListener);
     console.log('[requestCardSelection] Added clickCardClickListener.');
-  });
-          
-}
-
-function removeGlowOnEverySpot() {
-  document.querySelectorAll('.glow').forEach((spot) => {
-    spot.classList.remove('glow');
-  });
+  });       
 }
 
 
+////// Simulation/debug methods: to be removed in Prod //////
 function simulate(gameId = local_game_Id) {
 
   // player 3
@@ -797,8 +790,6 @@ function simulate(gameId = local_game_Id) {
     ws3.send(JSON.stringify({"id":"b7874d18-b2d3-47c3-92b6-a621aa4f1471","type":"text_input","msg":"green"}));
   };
     
-
-
   // player4
   const wsUrl4 = `wss://${window.location.host}/toc/ws/${gameId}/p4`;
   try {
@@ -810,5 +801,4 @@ function simulate(gameId = local_game_Id) {
   ws4.onopen = () => {
     log(`Simulated p4 joined game ${gameId}.`);
   };
-
 }
