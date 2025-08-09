@@ -154,7 +154,11 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case 'play':
         removeCard(data.playerId, data.value, data.suit);
-        movePieceFromSpotToSpot(data.playerId, data.origin, data.target);
+        if (data.value == 'J') {
+          switchPieces(data.playerId, data.origin, data.target);
+        } else {
+          movePieceFromSpotToSpot(data.playerId, data.origin, data.target);
+        }
         log(data.msg);
         break;
 
@@ -412,6 +416,14 @@ function movePieceFromSpotToSpot(playerId, originSpot, targetSpot) {
   
   target_spot.innerHTML = '';
   target_spot.appendChild(piece);
+}
+
+function switchPieces(playerId, originSpot, targetSpot) {
+  const target_spot = document.getElementById(targetSpot);
+  const targetPlayerId = target_spot.querySelector('.piece').dataset.player;
+
+  movePieceFromSpotToSpot(playerId, originSpot, targetSpot);
+  movePieceFromSpotToSpot(targetPlayerId, targetSpot, originSpot);
 }
 
 function removeGlowOnEverySpot() {
