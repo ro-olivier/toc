@@ -93,7 +93,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         assignPlayer(data.name, data.team, data.color);
         break;
 
-      case "full_ui_state":
+      case "full-ui-state":
         data.players.forEach(p => {
           assignPlayer(p.name, p.team, p.color);
           if (p.number_of_cards == 0) {

@@ -9,7 +9,8 @@ import json
 
 
 class Player:
-	def __init__(self, name : str, team : str = None, color : str = None, position : str = None, gameSession = None, router = None):
+	def __init__(self, identifier : str, name : str, team : str = None, color : str = None, position : str = None, gameSession = None, router = None):
+		self._id = identifier
 		self._name = name
 		self._team = team
 		self._color = color
@@ -31,12 +32,12 @@ class Player:
 		return s
 
 	async def send_message_to_user(self, message: str) -> None:
-		await self._router.send_output(self._name, message)
+		await self._router.send_output(self._id, message)
 
 	async def get_input_from_prompt(self, prompt: str) -> str:
 		await self.send_message_to_user({"type": "query", "msg": prompt})
 		print(f"[Player] Waiting for input from {self._name}...")
-		return await self._router.wait_for_input(self._name)
+		return await self._router.wait_for_input(self._id)
 		
 	@property
 	def name(self) -> str:
@@ -228,4 +229,4 @@ class Player:
 		while r.value in ['J', '4', '7']:
 			r = random.choice(self.hand.cards)
 		cmd = json.loads(f'{{"type":"card_selection","name":"{self.name}","value":"{r.value}","suit":"{r.suit}"}}')
-		await self._router.add_input(self.name, cmd)
+		await self._router.add_input(self._id, cmd)
