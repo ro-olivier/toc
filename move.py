@@ -66,3 +66,7 @@ class Move:
 		elif self._ID == 'SEVEN':
 			self._description = f'Play {self._card} to do a "seven split" : move any of your pieces as you wish a total of 7 times, kicking any piece you meet as you go.'
 		##debug##print(f'End of updateDescription, new description: {self._description}')
+		elif self._ID == 'FIVE':
+			self._description = f'Play {self._card} to do force an opponent to move 5 spots forward.'
+			##todo: if the target spot is occupied by a player, the piece is kicked ou
+		## todo: other special moves: 7-teleport (landing exactly on a spot #7 allows the player, if he/she wants to teleport to the next 7)

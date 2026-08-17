@@ -479,13 +479,14 @@ function assignPlayer(name, team, color) {
   positionMap[newPlayer.position].info_box.style.display = 'flex';
   drawQuadrant(newPlayer.position, color);
 
-  // Setting a few short-hands for cleaner code
-  local_player = playerAssignments.find(p => p.name === local_player_name);
-  if (!local_player) {
-    console.warn(`Error setting up the local_player var, no player found with ID "${local_player_name}"`, JSON.stringify(playerAssignments));
+    // Setting a few short-hands for cleaner code
+    local_player = playerAssignments.find(p => p.name === local_player_name);
+    if (!local_player) {
+      console.warn(`Error setting up the local_player var, no player found with ID "${local_player_name}"`, JSON.stringify(playerAssignments));
+    } else {
+    local_card_box = positionMap[local_player.position].card_box
+    local_info_box = positionMap[local_player.position].info_box
   }
-  local_card_box = positionMap[local_player.position].card_box
-  local_info_box = positionMap[local_player.position].info_box
 }
 
 
