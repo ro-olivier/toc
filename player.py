@@ -130,9 +130,9 @@ class Player:
 				if len(possibleOrigins) == 1: # There could be one single origin, but several targets (for example an A being played with only one piece out and no more pieces to take out), and so here we may skip asking the player to choose the origin
 					origin = possibleOrigins[0]
 				else:
-					origin = await self.getOriginChoiceFromPlayer(possibleOrigins)
+					origin = await self.	ginChoiceFromPlayer(possibleOrigins)
 					while not origin:
-						origin = await self.getOriginChoiceFromPlayer(possibleOrigins)
+						origin = await self.	ginChoiceFromPlayer(possibleOrigins)
 
 				print(f'[getMoveChoiceFromPlayer] selected originSpot: {str(origin)} - {id(origin)} - {type(origin)}')
 
@@ -154,21 +154,34 @@ class Player:
 		return moveChoice
 
 	async def getOriginChoiceFromPlayer(self, possibleOrigins) -> Spot:
-		await self.send_message_to_user({"type": "query-origin", "msg": 'What piece do you want to play this card on?', "originOptions": [str(o) for o in possibleOrigins]})
-		spotChoice = await self.get_input_from_prompt("What piece do you want to play this card on?")
-		while not spotChoice or (not 'type' in spotChoice.keys()) or (spotChoice['type'] != 'spot_selection') or (not (self._board.getSpotById(spotChoice['result']) in self._board.getOccupiedSpotsOnTheBoard(self._name) or (self._board.getSpotById(spotChoice['result']) == self._board.getFirstSpot(self._color)))):
-			data = await self.get_input_from_prompt("What piece do you want to play this card on?")
-		origin = self._board.getSpotById(spotChoice['result'])
-		return origin
+		await self.send_message_to_user({
+			"type": "query-origin",
+			"msg": "What piece do you want to play this card on?",
+			"originOptions": [str(origin) for origin in possibleOrigins],
+		})
 
+		originsById = {str(origin): origin for origin in possibleOrigins}
+		spotChoice = await self.get_input_from_prompt("What piece do you want to play this card on?")
+
+		while not isinstance(spotChoice, dict) or spotChoice.get("type") != "spot_selection" or spotChoice.get("result") not in originsById:
+			spotChoice = await self.get_input_from_prompt("What piece do you want to play this card on?")
+
+		return originsById[spotChoice["result"]]
 
 	async def getTargetChoiceFromPlayer(self, possibleTargets) -> Spot:
-		await self.send_message_to_user({"type": "query-target", "msg": 'Where do you want to move this piece?', "targetOptions": [str(t) for t in possibleTargets]})
+		await self.send_message_to_user({
+			"type": "query-target",
+			"msg": "Where do you want to move this piece?",
+			"targetOptions": [str(target) for target in possibleTargets],
+		})
+
+		targetsById = {str(target): target for target in possibleTargets}
 		spotChoice = await self.get_input_from_prompt("Where do you want to move this piece?")
-		while not spotChoice or  (not 'type' in spotChoice.keys()) or (spotChoice['type'] != 'spot_selection') or not (self._board.getSpotById(spotChoice['result'])):
+
+		while not isinstance(spotChoice, dict) or spotChoice.get("type") != "spot_selection" or spotChoice.get("result") not in targetsById:
 			spotChoice = await self.get_input_from_prompt("Where do you want to move this piece?")
-		target = self._board.getSpotById(spotChoice['result'])
-		return target
+
+		return targetsById[spotChoice["result"]]
 
 	async def getSevenMoveFromPlayer(self, board : Board) -> None:
 		counter = 0

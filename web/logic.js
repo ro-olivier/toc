@@ -10,6 +10,8 @@ const gameScreen = document.getElementById("game-screen");
 const errorMsg = document.getElementById("error-msg");
 const board = document.getElementById('board');
 
+const selectableSpotHandlers = new Map();
+
 let ws = null;
 let local_player_name = null;
 let local_game_Id = null;
@@ -406,6 +408,16 @@ function placePieceOnSpot(playerId, targetSpot) {
   movePieceFromSpotToSpot(playerId, targetSpot, targetSpot);
 }
 
+function resetEmptyPosition(position) {
+  if (position.classList.contains("house")) {
+    const houseNumber = Number(position.id.split("-").at(-1));
+    position.textContent = houseLabels[houseNumber];
+    return;
+  }
+
+  position.textContent = Number(position.index) % spotsPerRegion === 0 ? "" : position.index;
+}
+
 function movePieceFromSpotToSpot(playerId, originSpot, targetSpot) {
   const playerClass = getPlayerClass(playerId);
 
@@ -414,7 +426,7 @@ function movePieceFromSpotToSpot(playerId, originSpot, targetSpot) {
     const origin_spot =  document.getElementById(originSpot);
     const old = origin_spot.querySelector(`[data-player="${playerId}"]`);
     if (old && old.parentElement) { // this test is almost certainly unnecessary, but just in case, ...we don't want to go change the content of other spots on the board
-      old.parentElement.innerHTML = (parseInt(origin_spot.index) % 17) == 0 ? '' : parseInt(origin_spot.index); // reseting the value inside the spot
+      resetEmptyPosition(origin_spot); // reseting the value inside the spot
     }
   }
 
@@ -439,6 +451,12 @@ function removeGlowOnEverySpot() {
   document.querySelectorAll('.glow').forEach((spot) => {
     spot.classList.remove('glow');
   });
+}
+
+function clearSpotSelection() {
+  selectableSpotHandlers.forEach((handler, position) => position.removeEventListener("click", handler));
+  selectableSpotHandlers.clear();
+  removeGlowOnEverySpot();
 }
 
 
@@ -777,14 +795,24 @@ function switchCardClickListener(event) {
   }
 
 function requestSpotSelection(spotOptions) {
+  clearSpotSelection();
+
   spotOptions.forEach((option) => {
-    piece = document.getElementById(option)
-    piece.classList.add('glow');
-    piece.addEventListener('click', () => {
-      event.stopPropagation(); // Prevent document click from firing
-      removeGlowOnEverySpot();
-      sendSpotSelection(local_player_name, event.currentTarget.id);
-    });
+    const position = document.getElementById(option);
+    if (!position) return;
+
+    const handler = (event) => {
+      event.stopPropagation();
+
+      const selectedPositionId = event.currentTarget.id;
+
+      clearSpotSelection();
+      sendSpotSelection(local_player_name, selectedPositionId);
+    };
+
+    position.classList.add("glow");
+    position.addEventListener("click", handler);
+    selectableSpotHandlers.set(position, handler);
   });
 }
 
