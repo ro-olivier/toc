@@ -1,6 +1,5 @@
 from __future__ import annotations
 from typing import Optional
-import copy
 
 from move import Move
 from spot import Spot, House
@@ -11,7 +10,6 @@ from params import *
 
 class Board:
 	def __init__(self, colors : List):
-		self._savedState = None
 		self._spots = []
 		self._colors = colors
 		for color in colors:
@@ -51,18 +49,6 @@ class Board:
 			return self._colors[-1]
 		else:
 			return self._colors[colorIndex - 1]
-
-	def saveState(self) -> None:
-		# This method used by the Player.getSevenMoveFromPlayer() to store the state of the board while the player is doing the "seven split".
-		# This way, the seven split can be done while giving the player a view of what is done step by step, while giving the player the option
-		# to cancel and choose another card to play, or to play the seven split a different way.
-		self._savedState = {'Spots': copy.deepcopy(self._spots), 'Houses': copy.deepcopy(self._houses)}
-
-	def restoreState(self) -> None:
-		# See method above.
-		##debug##print(f'Call to restoreState with self.saveState Spots = {[str(spot) + ' - Occupied ? ' + str(spot.isOccupied) + ' by ' + str(spot.occupant.name) for spot in self._savedState['Spots']]} and self.saveState Houses = {[str(house) + ' - Occupied ? ' + str(house.isOccupied) + ' by ' + str(house.occupant.name) for house in self._savedState['Houses']]}')
-		self._spots = self._savedState['Spots']
-		self._houses = self._savedState['Houses']
 
 	def getSpot(self, color : str, number : int) -> Spot:
 		return self._spots[self._colors.index(color)*SPOTS_PER_REGION + number]
@@ -426,8 +412,8 @@ class Board:
 			if self.isMoveValid(sevenMove):
 				options.append(sevenMove)
 
+		# Internal one-step card used to calculate and execute seven-split steps.
 		elif card.value == "1":
-			# Internal one-step move used while constructing a seven split.
 			options.extend(
 				self.getForwardMoveOptions(
 					player,

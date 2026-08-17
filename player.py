@@ -183,42 +183,28 @@ class Player:
 
 		return targetsById[spotChoice["result"]]
 
-	async def getSevenMoveFromPlayer(self, board : Board) -> None:
-		counter = 0
-		moves = []
-		board.saveState()
-		await self.send_message_to_user({"type": "log", "msg": 'Please select the moves you want to do in your seven-split:'})
-		# This loop will display all the 'one-move' options to the user, who will have to choose one seven times
-		while counter < 7:
-			moveOptions = board.getMoveOptions(self, Card('', '1'))
-			##debug##print(f'moveOptions provided to user : {moveOptions}')
-			moveChoice = self.getMoveChoiceFromPlayer(moveOptions)
+	async def getSevenStepChoiceFromPlayer(self, options: list[Move]) -> Move:
+		if not options:
+			raise ValueError("Cannot choose a seven step without any available option")
 
-			# the move effect on the board are applied as if the move was really going to happen, but it's ok since the board.saveState() was called earlier
-			# and so the board can be restored later
-			moveChoice.originSpot.setEmpty()
-			moveChoice.targetSpot.setOccupant(self)
-			# we don't actually kick the users from the spots they occupy because that would mess up the pieceOnTheBoard counter
-			# we store the move and go on seven times
-			moves.append(moveChoice)
-			counter += 1
-		await self.send_message_to_user({"type": "log", "msg": f'Selected moves for seven split : {moves}'})
-		confirmation = await self.get_input_from_prompt('Please confirm that you wish to do this seven-split this way? (Y/N) ')
-		while confirmation not in ['Y', 'N']:
-			confirmation = await self.get_input_from_prompt('Please confirm that you wish to do this seven-split this way? (Y/N) ')
-		# we restore the board state before re-applying all the changes, but this time kicking player along the way
-		board.restoreState()
-		# if the user confirms we proceed
-		if confirmation == 'Y':
-			for move in moves:
-				board.getSpot(move.originSpot.color, move.originSpot.number).setEmpty()
-				kickedPlayer = board.getSpot(move.targetSpot.color, move.targetSpot.number).setOccupant(self)
-				if not kickedPlayer is None:
-					kickedPlayer.removeAPieceFromTheBoard()
-		# if the user does not confirm we simply call the method again to offer the possibility to choose differently
-		# (the board was already restored so we're good)
+		if len(options) == 1:
+			return options[0]
+
+		possibleOrigins = list(dict.fromkeys(move.originSpot for move in options))
+
+		if len(possibleOrigins) == 1:
+			origin = possibleOrigins[0]
 		else:
-			await self.getSevenMoveFromPlayer(board)
+			origin = await self.getOriginChoiceFromPlayer(possibleOrigins)
+
+		possibleTargets = list(dict.fromkeys(move.targetSpot for move in options if move.originSpot == origin))
+
+		if len(possibleTargets) == 1:
+			target = possibleTargets[0]
+		else:
+			target = await self.getTargetChoiceFromPlayer(possibleTargets)
+
+		return next(move for move in options if move.originSpot == origin and move.targetSpot == target)
 
 	def discard(self, card) -> None:
 		self._hand.discardFromHand(card)

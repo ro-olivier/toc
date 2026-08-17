@@ -194,6 +194,25 @@ class Game:
 		else:
 			raise ValueError(f"Cannot apply move of type {move.ID}")
 
+	async def playSeven(self, player: Player) -> None:
+		for stepsRemaining in range(7, 0, -1):
+			options = self._board.getSevenStepOptions(player, stepsRemaining)
+
+			if not options:
+				raise RuntimeError("Seven split reached a state with no complete legal continuation")
+
+			move = await player.getSevenStepChoiceFromPlayer(options)
+
+			self.applyMove(move)
+
+			await self.broadcast({
+				"type": "seven-step",
+				"playerId": player.name,
+				"origin": str(move.originSpot),
+				"target": str(move.targetSpot),
+				"stepsRemaining": stepsRemaining - 1,
+			})
+
 	async def nextPlayer(self) -> None:
 		self._activePlayerIndex += 1
 		if self._activePlayerIndex == NUMBER_OF_PLAYERS:
@@ -220,15 +239,33 @@ class Game:
 					moveChoice = await self._activePlayer.getMoveChoiceFromPlayer(moveOptions)
 
 				cardChoice = moveChoice.card
-				await self.broadcast({"type": "play", "msg": f"Player {self._activePlayer.name} has selected the following move: {str(moveChoice)}", "playerId": self._activePlayer.name, "value": moveChoice.card.value, "suit": moveChoice.card.suit, "origin": str(moveChoice.originSpot), "target": str(moveChoice.targetSpot)})
 
-				if moveChoice.ID in ["OUT", "MOVE", "SWITCH", "BACK", "ENTER"]:
-					self._activePlayer.discard(cardChoice)
-					self._deck.discardCard(cardChoice)
+				self._activePlayer.discard(cardChoice)
+				self._deck.discardCard(cardChoice)
+
+				if moveChoice.ID == "SEVEN":
+					await self.broadcast({
+						"type": "seven-start",
+						"msg": f"Player {self._activePlayer.name} is starting a seven split.",
+						"playerId": self._activePlayer.name,
+						"value": cardChoice.value,
+						"suit": cardChoice.suit,
+					})
+
+					await self.playSeven(self._activePlayer)
+
+				else:
+					await self.broadcast({
+						"type": "play",
+						"msg": f"Player {self._activePlayer.name} has selected the following move: {str(moveChoice)}",
+						"playerId": self._activePlayer.name,
+						"value": cardChoice.value,
+						"suit": cardChoice.suit,
+						"origin": str(moveChoice.originSpot),
+						"target": str(moveChoice.targetSpot),
+					})
+
 					self.applyMove(moveChoice)
-
-				elif moveChoice.ID == 'SEVEN':
-					self._activePlayer.getSevenMoveFromPlayer(self._board)
 
 			if self._activePlayer.hand.size == 0:
 				self._handsFinished += 1

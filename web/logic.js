@@ -173,6 +173,15 @@ async function connectToGame(gameId, name, rejoin = false) {
         log(data.msg);
         break;
 
+      case "seven-start":
+        removeCard(data.playerId, data.value, data.suit);
+        log(data.msg);
+        break;
+
+      case "seven-step":
+        movePieceFromSpotToSpot(data.playerId, data.origin, data.target);
+        break;
+
       case 'reject-card-selection':
         log(data.msg);
         showAllCardUp();
