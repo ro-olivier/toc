@@ -56,3 +56,33 @@ Pieces inside a house lane:
 - Cannot jump over another piece.
 - Cannot land on an occupied house position.
 - Cannot share a house position.
+
+
+## Seven split
+
+A seven moves the player's pieces a total of exactly seven forward
+positions.
+
+- The steps may be distributed between any number of the player's pieces.
+- The same piece may be moved multiple times.
+- Pieces may be moved in any order.
+- Pieces on the ordinary track and inside houses may be moved.
+- All seven steps must be legally completed.
+- If no complete seven-step sequence exists, the seven cannot be played.
+- Kicking occurs immediately after each individual step.
+- Every individual step must obey ordinary blocking and house rules.
+
+
+## Landing on occupied track positions
+
+A piece may land on any non-protected occupied track position.
+
+The occupying piece is kicked, including when it belongs to:
+
+- An opponent.
+- The moving player's partner.
+- The moving player themselves.
+
+The moving piece replaces the occupying piece. Pieces cannot stack.
+
+This rule also applies to every individual step of a seven split.

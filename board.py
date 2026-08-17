@@ -4,6 +4,7 @@ import copy
 
 from move import Move
 from spot import Spot, House
+from cards import Card
 
 from params import *
 
@@ -223,6 +224,22 @@ class Board:
 
 		return options
 
+	def getPositionSnapshot(self) -> list[tuple]:
+		return [(position, position.occupant, position.isBlocking) for position in self._spots + self._houses]
+
+
+	def restorePositionSnapshot(self, snapshot: list[tuple]) -> None:
+		for position, occupant, isBlocking in snapshot:
+			position.setEmpty()
+
+			if occupant is not None:
+				position.setOccupant(occupant, isBlocking)
+
+
+	def applySimulatedMove(self, move: Move) -> None:
+		move.originSpot.setEmpty()
+		move.targetSpot.setOccupant(move.player)
+
 	def isMoveValid(self, move : Move) -> bool:
 		##debug##print(f'call isMoveValid with move = {move.ID}, originSpot = {move.originSpot}, targetSpot = {move.targetSpot}')
 		result = True
@@ -296,12 +313,9 @@ class Board:
 
 						if any(house.isOccupied for house in housesBeforeTarget):
 							result = False
-		elif move.ID == 'SEVEN':
-			# Cannot do a SEVEN move if there is not at least one piece on the board
-			# and even then it might not be possible !! ##TODO##
-			if move.player.piecesOnTheBoard == 0:
+		elif move.ID == "SEVEN":
+			if move.player.piecesOnTheBoard == 0 or not self.getSevenStepOptions(move.player, 7):
 				result = False
-		##debug##		print(f'returning {result}')
 		return result
 
 	def getMoveOptions(self, player: Player, card: Card) -> Optional[list[Move]]:
@@ -432,3 +446,25 @@ class Board:
 			)
 
 		return options
+
+	def getSevenStepOptions(self, player: Player, stepsRemaining: int) -> list[Move]:
+		if stepsRemaining <= 0:
+			return []
+
+		candidates = self.getForwardMoveOptions(player, Card("", "1"), [1])
+
+		if stepsRemaining == 1:
+			return candidates
+
+		viableOptions = []
+
+		for move in candidates:
+			snapshot = self.getPositionSnapshot()
+			self.applySimulatedMove(move)
+
+			if self.getSevenStepOptions(player, stepsRemaining - 1):
+				viableOptions.append(move)
+
+			self.restorePositionSnapshot(snapshot)
+
+		return viableOptions
