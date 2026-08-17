@@ -8,6 +8,7 @@ from cards import Deck, Card
 from hand import Hand
 from params import *
 from player import Player
+from move import Move
 
 
 class Game:
@@ -162,6 +163,37 @@ class Game:
 			self.nextDealer()
 			await self.start()
 
+	def applyMove(self, move: Move) -> None:
+		player = move.player
+		origin = move.originSpot
+		target = move.targetSpot
+
+		if move.ID == "OUT":
+			kickedPlayer = target.setOccupant(player, True)
+			player.addAPieceOnTheBoard()
+
+			if kickedPlayer is not None and kickedPlayer is not player:
+				kickedPlayer.removeAPieceFromTheBoard()
+
+		elif move.ID in ["MOVE", "BACK"]:
+			origin.setEmpty()
+			kickedPlayer = target.setOccupant(player)
+
+			if kickedPlayer is not None:
+				kickedPlayer.removeAPieceFromTheBoard()
+
+		elif move.ID == "SWITCH":
+			targetPlayer = target.occupant
+			origin.setOccupant(targetPlayer)
+			target.setOccupant(player)
+
+		elif move.ID == "ENTER":
+			origin.setEmpty()
+			target.setOccupant(player)
+
+		else:
+			raise ValueError(f"Cannot apply move of type {move.ID}")
+
 	async def nextPlayer(self) -> None:
 		self._activePlayerIndex += 1
 		if self._activePlayerIndex == NUMBER_OF_PLAYERS:
@@ -190,38 +222,10 @@ class Game:
 				cardChoice = moveChoice.card
 				await self.broadcast({"type": "play", "msg": f"Player {self._activePlayer.name} has selected the following move: {str(moveChoice)}", "playerId": self._activePlayer.name, "value": moveChoice.card.value, "suit": moveChoice.card.suit, "origin": str(moveChoice.originSpot), "target": str(moveChoice.targetSpot)})
 
-				if moveChoice.ID in ['OUT', 'MOVE', 'SWITCH', 'BACK', 'ENTER']:
-					# have the player discard the card from his hand
+				if moveChoice.ID in ["OUT", "MOVE", "SWITCH", "BACK", "ENTER"]:
 					self._activePlayer.discard(cardChoice)
-					# and put the card in the discard pile of the deck
 					self._deck.discardCard(cardChoice)
-
-					origin = self._board.getSpot(moveChoice.originSpot.color, moveChoice.originSpot.number)
-					target = self._board.getSpot(moveChoice.targetSpot.color, moveChoice.targetSpot.number)
-					
-					# player decided to take a piece out
-					if moveChoice.ID == 'OUT':
-						self._activePlayer.addAPieceOnTheBoard()
-						target.setOccupant(self._activePlayer, True)
-
-					# player decided to move a piece forward or backward
-					if moveChoice.ID in ['MOVE', 'BACK']:
-						origin.setEmpty()
-						kickedPlayer = target.setOccupant(self._activePlayer)
-						if not kickedPlayer is None:
-							kickedPlayer.removeAPieceFromTheBoard()
-
-					# player decided to switch two pieces
-					if moveChoice.ID == 'SWITCH':
-						origin.setOccupant(moveChoice.targetSpot.occupant)
-						target.setOccupant(self._activePlayer)
-
-					# player decided to move a piece into a house
-					if moveChoice.ID == 'ENTER':
-						# Re-getting the target spot because it's now a house, not a spot !
-						target = self._board.getHouse(moveChoice.targetSpot.color, moveChoice.targetSpot.number)
-						origin.setEmpty()
-						target.setOccupant(self._activePlayer)
+					self.applyMove(moveChoice)
 
 				elif moveChoice.ID == 'SEVEN':
 					self._activePlayer.getSevenMoveFromPlayer(self._board)
