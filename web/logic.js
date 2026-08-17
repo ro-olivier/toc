@@ -24,6 +24,15 @@ nameInput.value = stored_player_name !== null ? stored_player_name : '';
 gameIdInput.value = stored_game_id !== null ? stored_game_id : '';
 joinBtn.disabled = (stored_player_name && stored_game_id) !== null ? false : true;
 
+function buildWebSocketUrl(gameId, playerName) {
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+
+  return (
+    `${protocol}://${window.location.host}/toc/ws/` +
+    `${encodeURIComponent(gameId)}/` +
+    `${encodeURIComponent(playerName)}`
+  );
+}
 
 ////// Input-Output / WebSocket handling //////
 function log(msg) {
@@ -58,7 +67,7 @@ function clearError() {
 
 async function connectToGame(gameId, name, rejoin = false) {
   clearError();
-  const wsUrl = `wss://${window.location.host}/toc/ws/${gameId}/${name}`;
+  const wsUrl = buildWebSocketUrl(gameId, name);
   try {
     ws = new WebSocket(wsUrl);
   } catch (err) {
@@ -791,7 +800,7 @@ function requestCardSelection() {
 function simulate(gameId = local_game_Id) {
 
   // player 3
-  const wsUrl3 = `wss://${window.location.host}/toc/ws/${gameId}/p3`;
+  const wsUrl3 = buildWebSocketUrl(gameId, "p3");
   try {
     ws3 = new WebSocket(wsUrl3);
   } catch (err) {
@@ -804,7 +813,7 @@ function simulate(gameId = local_game_Id) {
   };
     
   // player4
-  const wsUrl4 = `wss://${window.location.host}/toc/ws/${gameId}/p4`;
+  const wsUrl4 = buildWebSocketUrl(gameId, "p4");
   try {
     ws4 = new WebSocket(wsUrl4);
   } catch (err) {

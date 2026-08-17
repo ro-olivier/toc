@@ -1,5 +1,7 @@
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
 from typing import Dict
 import asyncio
 import string
@@ -12,6 +14,13 @@ from player import Player
 from params import *
 
 app = FastAPI()
+BASE_DIR = Path(__file__).resolve().parent
+
+app.mount(
+    "/toc/play",
+    StaticFiles(directory=BASE_DIR / "web", html=True),
+    name="toc-frontend",
+)
 
 class DuplicateNameError(Exception):
     pass
