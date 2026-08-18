@@ -191,6 +191,13 @@ class Game:
 			origin.setEmpty()
 			target.setOccupant(player)
 
+		elif move.ID == "FIVE":
+			origin.setEmpty()
+			kickedPlayer = target.setOccupant(move.pieceOwner)
+
+			if kickedPlayer is not None:
+				kickedPlayer.removeAPieceFromTheBoard()
+
 		else:
 			raise ValueError(f"Cannot apply move of type {move.ID}")
 

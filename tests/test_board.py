@@ -408,3 +408,82 @@ def test_seven_search_does_not_mutate_board():
 	assert board.getAllPiecesOnTheBoard() == stateBeforeSearch
 	assert origin.occupant is player
 
+
+def test_five_can_move_opponent_piece():
+	board = Board(COLORS)
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	origin = place_piece(board, bob, "red", 5)
+	target = board.getSpot("red", 10)
+
+	options = board.getMoveOptions(alice, Card("♥️", "5"))
+
+	assert any(
+		move.ID == "FIVE"
+		and move.player is alice
+		and move.pieceOwner is bob
+		and move.originSpot == origin
+		and move.targetSpot == target
+		for move in options
+	)
+
+
+def test_five_cannot_move_partner_piece():
+	board = Board(COLORS)
+
+	alice = make_player("Alice", "red", "0")
+	partner = make_player("Partner", "green", "0")
+
+	alice.setBoard(board)
+	partner.setBoard(board)
+
+	partnerPiece = place_piece(board, partner, "red", 5)
+
+	options = board.getMoveOptions(alice, Card("♥️", "5"))
+
+	assert not any(move.originSpot == partnerPiece for move in options)
+
+
+def test_five_cannot_move_piece_inside_house():
+	board = Board(COLORS)
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	housePiece = place_house_piece(board, bob, 0)
+
+	options = board.getMoveOptions(alice, Card("♥️", "5"))
+
+	assert not any(move.originSpot == housePiece for move in options)
+
+
+def test_five_does_not_enter_opponent_house():
+	board = Board(COLORS)
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	origin = place_piece(board, bob, "red", 16)
+	expectedTarget = board.getSpotFromDistance(origin, 5)
+
+	options = board.getMoveOptions(alice, Card("♥️", "5"))
+
+	assert any(
+		move.ID == "FIVE"
+		and move.originSpot == origin
+		and move.targetSpot == expectedTarget
+		for move in options
+	)
+
+	assert not any(move.ID == "ENTER" and move.originSpot == origin for move in options)

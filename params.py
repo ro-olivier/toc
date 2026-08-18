@@ -5,4 +5,13 @@ NUMBER_OF_PLAYERS = 4
 NUMBER_OF_TEAMS = 2
 SPOTS_PER_REGION = 17
 SPOTS_PER_HOUSE = 4
-MOVE_DESCRIPTION = {'OUT' : 'Take a piece out.', 'MOVE' : f'Move x time(s) forward.', 'SWITCH' : f'Switch piece with piece of player x in spot x.', 'CHANGE_CARD' : 'Pick another card', 'BACK' : f'Move 4 spots backward.', 'ENTER' : f'Enter house spot number x.', 'SEVEN':f'Play a seven split.'}
+MOVE_DESCRIPTION = {
+	'OUT' : 'Take a piece out.', 
+	'MOVE' : f'Move x time(s) forward.', 
+	'SWITCH' : f'Switch piece with piece of player x in spot x.', 
+	'CHANGE_CARD' : 'Pick another card', 
+	'BACK' : f'Move 4 spots backward.', 
+	'ENTER' : f'Enter house spot number x.', 
+	'SEVEN':f'Play a seven split.',
+	'FIVE':f'Move an opponent\'s piece 5 times forward.'
+	}

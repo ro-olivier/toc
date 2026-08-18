@@ -7,13 +7,14 @@ from params import *
 
 
 class Move:
-	def __init__(self, ID : str, originSpot : Spot = None, targetSpot : Spot = None, card : Card = None, player : Player = None):
+	def __init__(self, ID : str, originSpot : Spot = None, targetSpot : Spot = None, card : Card = None, player : Player = None, pieceOwner: Player = None):
 		self._ID = ID
 		self._description = MOVE_DESCRIPTION[self._ID]
 		self._originSpot = originSpot
 		self._targetSpot = targetSpot
 		self._card = card
 		self._player = player
+		self._pieceOwner = pieceOwner if pieceOwner is not None else player
 		##debug##print(f'REPR of move in the __init__ : {repr(self)}')
 
 	@property
@@ -35,6 +36,10 @@ class Move:
 	@property
 	def player(self) -> Player:
 		return self._player
+
+	@property
+	def pieceOwner(self) -> Player:
+		return self._pieceOwner
 
 	def __str__(self) -> str:
 		return self._description

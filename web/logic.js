@@ -163,13 +163,16 @@ async function connectToGame(gameId, name, rejoin = false) {
         log(data.msg);
         break;
 
-      case 'play':
+      case "play":
         removeCard(data.playerId, data.value, data.suit);
-        if (data.value == 'J') {
+
+        if (data.value === "J") {
           switchPieces(data.playerId, data.origin, data.target);
         } else {
-          movePieceFromSpotToSpot(data.playerId, data.origin, data.target);
+          const movedPlayerId = data.movedPlayerId || data.playerId;
+          movePieceFromSpotToSpot(movedPlayerId, data.origin, data.target);
         }
+
         log(data.msg);
         break;
 

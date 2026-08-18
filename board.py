@@ -54,47 +54,28 @@ class Board:
 		return self._spots[self._colors.index(color)*SPOTS_PER_REGION + number]
 
 	def getSpotById(self, spotId : str) -> Spot:
-		res = [spot for spot in self._spots if str(spot) == spotId]
-		spot = res[0]
-		print(f'[getSpotById] called with spotId = {spotId}, result is {id(spot)} (len(res) was {len(res)})')
-		return spot
+		return [spot for spot in self._spots if str(spot) == spotId][0]
 
 	def getHouse(self, color : str, number : int) -> Spot:
 		return self._houses[self._colors.index(color)*SPOTS_PER_HOUSE + number]
 
 	def getHouseById(self, houseId : str) -> Spot:
-		house = [house for house in self._houses if str(house) == houseId][0]
-		return house
+		return [house for house in self._houses if str(house) == houseId][0]
 
 	def getFirstSpot(self, color : str) -> Optional[Spot]:
-		for spot in self._spots:
-			if spot.color == color and spot.number == 0:
-				return spot
-		return None  # in case no such spot is found, but there should always be one
+		return [spot for spot in self._spots if spot.color == color and spot.number == 0][0]
 
 	def getOccupiedSpotsOnTheBoard(self, player) -> list[Spot]:
-		result = []
-		##debug##print(f'Call to getOccupiedSpotsOnTheBoard with requested with current self._spots = {[str(spot) + ' - Occupied ? ' + str(spot.isOccupied) + ' by ' + str(spot.occupant) for spot in self._spots]}')
-		for spot in self._spots:
-			if not spot.occupant is None:
-				if spot.occupant.name == player:
-					result.append(spot)
-		##debug##print(f'returning : {result}')
-		return result
+		return [spot for spot in self._spots if not spot.occupant is None and spot.occupant.name == player]
 
 	def getOccupiedHouses(self, player) -> list[House]:
-			return [
-				house
-				for house in self._houses
-				if house.isOccupied and house.occupant.name == player
-		]
+			return [house for house in self._houses if house.isOccupied and house.occupant.name == player]
 
 	def getOtherPiecesOnTheBoard(self, player) -> list[Spot]:
-		result = []
-		for spot in self._spots:
-			if spot.occupant != player and spot.isOccupied:
-				result.append(spot)
-		return result
+		return [spot for spot in self._spots if spot.occupant != player and spot.isOccupied]
+
+	def getOpponentPiecesOnTheBoard(self, player) -> list[Spot]:
+		return [spot for spot in self._spots if spot.isOccupied and spot.occupant.team != player.team]
 
 	def getAllPiecesOfOtherPlayer(self, player) -> list[Spot]:
 		return getOtherPiecesOnTheBoard(player)
@@ -411,6 +392,17 @@ class Board:
 
 			if self.isMoveValid(sevenMove):
 				options.append(sevenMove)
+
+		elif card.value == "5":
+			opponentPieces = self.getOpponentPiecesOnTheBoard(player)
+
+			for piece in opponentPieces:
+				pieceOwner = piece.occupant
+				target = self.getSpotFromDistance(piece, 5)
+				potentialMove = Move("FIVE", piece, target, card, player, pieceOwner)
+
+				if self.isMoveValid(potentialMove):
+					options.append(potentialMove)
 
 		# Internal one-step card used to calculate and execute seven-split steps.
 		elif card.value == "1":

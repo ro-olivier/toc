@@ -72,6 +72,22 @@ positions.
 - Kicking occurs immediately after each individual step.
 - Every individual step must obey ordinary blocking and house rules.
 
+## Five
+
+A five allows the acting player to choose one opposing team's piece
+and move it exactly five positions forward.
+
+- The acting player's own pieces cannot be selected.
+- The acting player's partner's pieces cannot be selected.
+- Only pieces on the ordinary circular track can be selected.
+- Pieces inside houses cannot be selected.
+- The piece remains on the ordinary track and cannot enter its houses.
+- Protected starting positions block its movement normally.
+- Landing on an occupied non-protected position kicks the occupying piece.
+- The moved piece retains its original owner.
+- If no opposing piece can legally move five positions, the five cannot
+  be played.
+
 
 ## Landing on occupied track positions
 
