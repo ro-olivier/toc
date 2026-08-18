@@ -8,6 +8,7 @@ import string
 import random
 import json
 import logging
+import uuid
 
 from game import Game
 from player import Player
@@ -30,6 +31,8 @@ class PlayerInputRouter:
 		self.input_queues = {}
 		self.output_queues = {}
 		self.recycleBin = {}
+		self.pendingPrompts = {}
+		self.interactiveMessageTypes = {"query-card", "query-origin", "query-target", "query-seven-hop"}
 
 	def register(self, player_name: str):
 		if player_name in self.input_queues:
@@ -65,12 +68,31 @@ class PlayerInputRouter:
 			print(f"[Router] No input queue found for {player_name}")
 
 	async def wait_for_input(self, player_name: str):
-		msg = await self.input_queues[player_name].get()
-		print(f"[Router] wait_for_input received {msg} of type {type(msg)}")
-		return msg
+		while True:
+			msg = await self.input_queues[player_name].get()
+			pendingPrompt = self.pendingPrompts.get(player_name)
 
-	async def send_output(self, player_name: str, message: str):
+			if pendingPrompt is None:
+				return msg
+
+			requestId = msg.get("requestId") if isinstance(msg, dict) else None
+
+			if requestId is None or requestId == pendingPrompt.get("requestId"):
+				return msg
+
+			print(f"[Router] Ignored stale input from {player_name}: {msg}")
+
+	async def send_output(self, player_name: str, message: dict):
+		if isinstance(message, dict) and message.get("type") in self.interactiveMessageTypes:
+			message = message.copy()
+
+			if "requestId" not in message:
+				message["requestId"] = uuid.uuid4().hex
+
+			self.pendingPrompts[player_name] = message.copy()
+
 		print(f"[Router] send_output called for {player_name}: {message}")
+
 		queue = self.output_queues.get(player_name)
 		if queue:
 			await queue.put(message)
@@ -79,6 +101,14 @@ class PlayerInputRouter:
 
 	async def get_output(self, player_name: str):
 		return await self.output_queues[player_name].get()
+
+	def clear_pending_prompt(self, player_name: str) -> None:
+		self.pendingPrompts.pop(player_name, None)
+
+	async def resend_pending_prompt(self, player_name: str) -> None:
+		prompt = self.pendingPrompts.get(player_name)
+		if prompt is not None:
+			await self.send_output(player_name, prompt.copy())
 
 
 class ConnectionManager:
@@ -338,6 +368,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 			await existingPlayer["object"].send_message_to_user(gameSession.fullUI())
 			await existingPlayer["object"].send_message_to_user({"type": "log", "msg": f"You successfully rejoined the game in team {existingPlayer['team']} with color {existingPlayer['color']}!\n"})
 			await existingPlayer["object"].sendHandAgain()
+			await router.resend_pending_prompt(player_id)
 			await gameSession.broadcast({"type": "log", "msg": f"{player_id} has rejoined team {existingPlayer['team']} and plays {existingPlayer['color']}.\n"}, excluded_player=player_id)
 
 		await gameSession.start_game_if_ready()

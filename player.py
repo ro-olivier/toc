@@ -105,6 +105,7 @@ class Player:
 		while not cardChoice or (not 'type' in cardChoice.keys()) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
 			cardChoice = await self.get_input_from_prompt('What card do you want to play?')
 		chosenCard = Card(cardChoice['suit'], cardChoice['value'])
+		self._router.clear_pending_prompt(self._id)
 		print(f'Card chosen by {self._name} for his/her next move: {chosenCard}')
 		return chosenCard
 
@@ -170,6 +171,7 @@ class Player:
 		while not isinstance(spotChoice, dict) or spotChoice.get("type") != "spot_selection" or spotChoice.get("result") not in originsById:
 			spotChoice = await self.get_input_from_prompt("What piece do you want to play this card on?")
 
+		self._router.clear_pending_prompt(self._id)
 		return originsById[spotChoice["result"]]
 
 	async def getTargetChoiceFromPlayer(self, possibleTargets) -> Spot:
@@ -185,6 +187,7 @@ class Player:
 		while not isinstance(spotChoice, dict) or spotChoice.get("type") != "spot_selection" or spotChoice.get("result") not in targetsById:
 			spotChoice = await self.get_input_from_prompt("Where do you want to move this piece?")
 
+		self._router.clear_pending_prompt(self._id)
 		return targetsById[spotChoice["result"]]
 
 	async def getSevenStepChoiceFromPlayer(self, options: list[Move]) -> Move:
@@ -243,4 +246,5 @@ class Player:
 			choice = await self._router.wait_for_input(self._id)
 
 			if isinstance(choice, dict) and choice.get("type") == "seven_hop_choice" and isinstance(choice.get("result"), bool):
+				self._router.clear_pending_prompt(self._id)
 				return choice["result"]

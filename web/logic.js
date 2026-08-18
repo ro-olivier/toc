@@ -20,7 +20,9 @@ let local_card_box = null;
 let local_info_box = null;
 
 let stored_player_name = window.localStorage.getItem("session_player_name");
-let stored_game_id = window.localStorage.getItem("session_game_ID")
+let stored_game_id = window.localStorage.getItem("session_game_ID");
+
+let activeRequestId = null;
 
 nameInput.value = stored_player_name !== null ? stored_player_name : '';
 gameIdInput.value = stored_game_id !== null ? stored_game_id : '';
@@ -186,6 +188,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "query-seven-hop":
+        activeRequestId = data.requestId;
         requestSevenHop(data.origin, data.target);
         break;
 
@@ -193,28 +196,29 @@ async function connectToGame(gameId, name, rejoin = false) {
         movePieceFromSpotToSpot(data.movedPlayerId, data.origin, data.target);
         break;
 
-      case 'reject-card-selection':
-        log(data.msg);
-        showAllCardUp();
-        break;
-
-      case 'query-origin':
-        //log(data.msg);
+      case "query-origin":
+        activeRequestId = data.requestId;
         requestSpotSelection(data.originOptions);
         break;
 
-      case 'query-target':
-        //log(data.msg);
+      case "query-target":
+        activeRequestId = data.requestId;
         requestSpotSelection(data.targetOptions);
         break;
 
-      case 'query-card':
-        //log(data.msg);
+      case "query-card":
+        activeRequestId = data.requestId;
         requestCardSelection();
         break;
 
       case 'query':
+        activeRequestId = data.requestId;
         query(data.msg);
+        break;
+
+      case 'reject-card-selection':
+        log(data.msg);
+        showAllCardUp();
         break;
 
       case "game-over":
@@ -330,21 +334,21 @@ gameIdInput.addEventListener("input", () => {
 });
 
 function sendCardSelection(player_name, rank, suit) {
-  const message = {"id": crypto.randomUUID(), "type": "card_selection", "name": player_name, "value": rank, "suit": suit};
+  const message = {"id": crypto.randomUUID(), "requestId": activeRequestId, "type": "card_selection", "name": player_name, "value": rank, "suit": suit};
   const message_json = JSON.stringify(message);
   console.log('[sendCardSelection] Sending following content to back-end:' + message_json);
   ws.send(message_json);
 }
 
 function sendSpotSelection(player_name, spot) {
-  const message = {"id": crypto.randomUUID(), "type": "spot_selection", "name": player_name, "result": spot};
+  const message = {"id": crypto.randomUUID(), "requestId": activeRequestId, "type": "spot_selection", "name": player_name, "result": spot};
   const message_json = JSON.stringify(message);
   console.log('[sendSpotSelection] Sending following content to back-end:' + message_json);
   ws.send(message_json);
 }
 
 function sendSevenHopChoice(result) {
-  const message = {"id": crypto.randomUUID(), "type": "seven_hop_choice", "name": local_player_name, "result": result};
+  const message = {"id": crypto.randomUUID(), "requestId": activeRequestId, "type": "seven_hop_choice", "name": local_player_name, "result": result};
   console.log('[sendSevenHopChoice] Sending following content to back-end:' + JSON.stringify(message));
   ws.send(JSON.stringify(message));
 }

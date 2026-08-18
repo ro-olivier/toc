@@ -103,3 +103,48 @@ def test_player_order_rejects_invalid_teams():
 
 	assert not session.set_player_order()
 	assert session.order == []
+
+def test_pending_prompt_is_replayed_after_reconnection():
+	async def scenario():
+		router = PlayerInputRouter()
+		playerId = "TEST-Alice"
+		prompt = {"type": "query-origin", "originOptions": ["red-1", "red-5"]}
+
+		router.register(playerId)
+		await router.send_output(playerId, prompt)
+		sentPrompt = await router.get_output(playerId)
+
+		assert sentPrompt["type"] == "query-origin"
+		assert sentPrompt["originOptions"] == ["red-1", "red-5"]
+		assert sentPrompt.get("requestId")
+
+		router.unregister(playerId)
+		router.registerAgain(playerId)
+		await router.resend_pending_prompt(playerId)
+
+		replayedPrompt = await router.get_output(playerId)
+		assert replayedPrompt == sentPrompt
+
+		router.clear_pending_prompt(playerId)
+		assert playerId not in router.pendingPrompts
+
+	asyncio.run(scenario())
+
+def test_router_ignores_input_for_an_old_prompt():
+	async def scenario():
+		router = PlayerInputRouter()
+		playerId = "TEST-Alice"
+
+		router.register(playerId)
+		await router.send_output(playerId, {"type": "query-target", "targetOptions": ["red-5"]})
+		prompt = await router.get_output(playerId)
+
+		staleInput = {"type": "spot_selection", "result": "red-2", "requestId": "obsolete"}
+		currentInput = {"type": "spot_selection", "result": "red-5", "requestId": prompt["requestId"]}
+
+		await router.add_input(playerId, staleInput)
+		await router.add_input(playerId, currentInput)
+
+		assert await router.wait_for_input(playerId) == currentInput
+
+	asyncio.run(scenario())
