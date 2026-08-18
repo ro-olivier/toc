@@ -229,3 +229,12 @@ class Player:
 			r = random.choice(self.hand.cards)
 		cmd = json.loads(f'{{"type":"card_selection","name":"{self.name}","value":"{r.value}","suit":"{r.suit}"}}')
 		await self._router.add_input(self._id, cmd)
+
+	async def getSevenHopChoiceFromPlayer(self, originSpot: Spot, targetSpot: Spot) -> bool:
+		await self.send_message_to_user({"type": "query-seven-hop", "msg": f"Do you want to seven-hop from {originSpot} to {targetSpot}?", "origin": str(originSpot), "target": str(targetSpot)})
+		choice = await self.get_input_from_prompt("Do you want to seven-hop?")
+
+		while not choice or choice.get("type") != "seven_hop_choice" or not isinstance(choice.get("result"), bool):
+			choice = await self.get_input_from_prompt("Do you want to seven-hop?")
+
+		return choice["result"]

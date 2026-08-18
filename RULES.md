@@ -88,6 +88,20 @@ and move it exactly five positions forward.
 - If no opposing piece can legally move five positions, the five cannot
   be played.
 
+## Seven-hopping
+
+After a movement finishes on a track position numbered 7, the player who played the card may move that piece to the next position numbered 7.
+
+- Seven-hopping is optional.
+- Only one hop may occur.
+- Intermediate positions are ignored.
+- Landing on an occupied destination kicks its occupant, including one's own or one's partner's piece.
+- The initial movement is resolved before the hop, including any kick on the first position numbered 7.
+- Forward movement, a backward four, and a five may trigger seven-hopping.
+- With a five, the player who played the card decides whether the opposing piece hops.
+- A seven-split may trigger a hop only after all seven steps have been completed, and only when its final step lands on a position numbered 7.
+- A Jack switch never triggers seven-hopping.
+
 
 ## Landing on occupied track positions
 

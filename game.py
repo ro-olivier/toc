@@ -175,9 +175,9 @@ class Game:
 			if kickedPlayer is not None and kickedPlayer is not player:
 				kickedPlayer.removeAPieceFromTheBoard()
 
-		elif move.ID in ["MOVE", "BACK"]:
+		elif move.ID in ["MOVE", "BACK", "FIVE", "HOP"]:
 			origin.setEmpty()
-			kickedPlayer = target.setOccupant(player)
+			kickedPlayer = target.setOccupant(move.pieceOwner)
 
 			if kickedPlayer is not None:
 				kickedPlayer.removeAPieceFromTheBoard()
@@ -190,13 +190,6 @@ class Game:
 		elif move.ID == "ENTER":
 			origin.setEmpty()
 			target.setOccupant(player)
-
-		elif move.ID == "FIVE":
-			origin.setEmpty()
-			kickedPlayer = target.setOccupant(move.pieceOwner)
-
-			if kickedPlayer is not None:
-				kickedPlayer.removeAPieceFromTheBoard()
 
 		else:
 			raise ValueError(f"Cannot apply move of type {move.ID}")
@@ -219,6 +212,21 @@ class Game:
 				"target": str(move.targetSpot),
 				"stepsRemaining": stepsRemaining - 1,
 			})
+
+			if stepsRemaining == 1:
+				await self.playSevenHop(move)
+
+	async def playSevenHop(self, triggeringMove: Move) -> Optional[Move]:
+		hopMove = self._board.getSevenHopMove(triggeringMove)
+		if hopMove is None:
+			return None
+
+		if not await triggeringMove.player.getSevenHopChoiceFromPlayer(hopMove.originSpot, hopMove.targetSpot):
+			return None
+
+		self.applyMove(hopMove)
+		await self.broadcast({"type": "seven-hop", "playerId": hopMove.player.name, "movedPlayerId": hopMove.pieceOwner.name, "origin": str(hopMove.originSpot), "target": str(hopMove.targetSpot)})
+		return hopMove
 
 	async def nextPlayer(self) -> None:
 		self._activePlayerIndex += 1
@@ -273,6 +281,7 @@ class Game:
 					})
 
 					self.applyMove(moveChoice)
+					await self.playSevenHop(moveChoice)
 
 			if self._activePlayer.hand.size == 0:
 				self._handsFinished += 1

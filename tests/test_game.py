@@ -143,3 +143,30 @@ def test_apply_five_moves_opponent_piece_and_kicks_target():
 	assert target.occupant is bob
 	assert bob.piecesOnTheBoard == 1
 	assert alice.piecesOnTheBoard == 0
+
+def test_hop_kicks_destination_occupant():
+    game = Game(None, COLORS)
+    board = game.board
+
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "1")
+
+    alice.setBoard(board)
+    bob.setBoard(board)
+
+    origin = board.getSpot("red", 7)
+    target = board.getSpot("blue", 7)
+
+    origin.setOccupant(bob)
+    bob.addAPieceOnTheBoard()
+
+    target.setOccupant(alice)
+    alice.addAPieceOnTheBoard()
+
+    hop = Move("HOP", origin, target, Card("♥️", "5"), alice, bob)
+    game.applyMove(hop)
+
+    assert not origin.isOccupied
+    assert target.occupant is bob
+    assert bob.piecesOnTheBoard == 1
+    assert alice.piecesOnTheBoard == 0

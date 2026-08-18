@@ -446,3 +446,19 @@ class Board:
 			self.restorePositionSnapshot(snapshot)
 
 		return viableOptions
+
+	def getNextSevenSpot(self, originSpot: Spot) -> Spot:
+		if originSpot not in self._spots or originSpot.number != 7:
+			raise ValueError("A seven-hop must start on a track position numbered 7.")
+		return self.getSpotFromDistance(originSpot, SPOTS_PER_REGION)
+
+	def getSevenHopMove(self, triggeringMove: Move) -> Optional[Move]:
+		if triggeringMove.ID not in ["MOVE", "BACK", "FIVE"]:
+			return None
+
+		origin = triggeringMove.targetSpot
+		if origin not in self._spots or origin.number != 7:
+			return None
+
+		target = self.getNextSevenSpot(origin)
+		return Move("HOP", origin, target, triggeringMove.card, triggeringMove.player, triggeringMove.pieceOwner)

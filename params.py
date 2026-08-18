@@ -12,6 +12,7 @@ MOVE_DESCRIPTION = {
 	'CHANGE_CARD' : 'Pick another card', 
 	'BACK' : f'Move 4 spots backward.', 
 	'ENTER' : f'Enter house spot number x.', 
-	'SEVEN':f'Play a seven split.',
-	'FIVE':f'Move an opponent\'s piece 5 times forward.'
+	'SEVEN': f'Play a seven split.',
+	'FIVE': f'Move an opponent\'s piece 5 times forward.',
+	'HOP': 'Hop from one position numbered 7 to the next.',
 	}
