@@ -19,6 +19,16 @@ class AutomaticPlayer(Player):
 	async def getSevenStepChoiceFromPlayer(self, options):
 		return options[0]
 
+class AutomaticHopPlayer(AutomaticPlayer):
+    def __init__(self, identifier, name, team, color, shouldHop):
+        super().__init__(identifier, name, team, color)
+        self.shouldHop = shouldHop
+        self.hopRequests = []
+
+    async def getSevenHopChoiceFromPlayer(self, originSpot, targetSpot):
+        self.hopRequests.append((originSpot, targetSpot))
+        return self.shouldHop
+
 def make_player(name="Alice", color="red", team="0"):
 	return Player(identifier=f"TEST-{name}", name=name, team=team, color=color)
 
@@ -170,3 +180,102 @@ def test_hop_kicks_destination_occupant():
     assert target.occupant is bob
     assert bob.piecesOnTheBoard == 1
     assert alice.piecesOnTheBoard == 0
+
+def test_player_can_decline_seven_hop():
+    session = FakeGameSession()
+    game = Game(session, COLORS)
+    board = game.board
+
+    alice = AutomaticHopPlayer("TEST-Alice", "Alice", "0", "red", False)
+    alice.setBoard(board)
+
+    origin = board.getSpot("red", 7)
+    target = board.getSpot("blue", 7)
+
+    origin.setOccupant(alice)
+    alice.addAPieceOnTheBoard()
+
+    triggeringMove = Move("MOVE", board.getSpot("red", 5), origin, Card("♥️", "2"), alice)
+    result = asyncio.run(game.playSevenHop(triggeringMove))
+
+    assert result is None
+    assert origin.occupant is alice
+    assert not target.isOccupied
+    assert alice.hopRequests == [(origin, target)]
+    assert not any(message["type"] == "seven-hop" for message in session.messages)
+
+def test_five_player_can_accept_hop_for_opponents_piece():
+    session = FakeGameSession()
+    game = Game(session, COLORS)
+    board = game.board
+
+    alice = AutomaticHopPlayer("TEST-Alice", "Alice", "0", "red", True)
+    bob = make_player("Bob", "blue", "1")
+
+    alice.setBoard(board)
+    bob.setBoard(board)
+
+    origin = board.getSpot("red", 7)
+    target = board.getSpot("blue", 7)
+
+    origin.setOccupant(bob)
+    bob.addAPieceOnTheBoard()
+
+    target.setOccupant(alice)
+    alice.addAPieceOnTheBoard()
+
+    triggeringMove = Move("FIVE", board.getSpot("red", 2), origin, Card("♥️", "5"), alice, bob)
+    result = asyncio.run(game.playSevenHop(triggeringMove))
+
+    assert result is not None
+    assert alice.hopRequests == [(origin, target)]
+    assert not origin.isOccupied
+    assert target.occupant is bob
+    assert bob.piecesOnTheBoard == 1
+    assert alice.piecesOnTheBoard == 0
+
+    hopMessages = [message for message in session.messages if message["type"] == "seven-hop"]
+
+    assert len(hopMessages) == 1
+    assert hopMessages[0]["playerId"] == "Alice"
+    assert hopMessages[0]["movedPlayerId"] == "Bob"
+
+def test_seven_split_can_hop_after_final_step():
+    session = FakeGameSession()
+    game = Game(session, COLORS)
+
+    alice = AutomaticHopPlayer("TEST-Alice", "Alice", "0", "red", True)
+    alice.setBoard(game.board)
+
+    place_track_piece(game.board, alice, "red", 0)
+
+    asyncio.run(game.playSeven(alice))
+
+    redSeven = game.board.getSpot("red", 7)
+    blueSeven = game.board.getSpot("blue", 7)
+
+    assert alice.hopRequests == [(redSeven, blueSeven)]
+    assert not redSeven.isOccupied
+    assert blueSeven.occupant is alice
+
+    messageTypes = [message["type"] for message in session.messages]
+
+    assert messageTypes.count("seven-step") == 7
+    assert messageTypes.count("seven-hop") == 1
+    assert messageTypes[-1] == "seven-hop"
+
+def test_seven_split_cannot_hop_before_final_step():
+    session = FakeGameSession()
+    game = Game(session, COLORS)
+
+    alice = AutomaticHopPlayer("TEST-Alice", "Alice", "0", "red", True)
+    alice.setBoard(game.board)
+
+    # Step two lands on red-7, but the split eventually finishes on red-12.
+    place_track_piece(game.board, alice, "red", 5)
+
+    asyncio.run(game.playSeven(alice))
+
+    assert alice.hopRequests == []
+    assert game.board.getSpot("red", 12).occupant is alice
+    assert not any(message["type"] == "seven-hop" for message in session.messages)

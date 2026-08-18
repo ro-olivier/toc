@@ -130,9 +130,9 @@ class Player:
 				if len(possibleOrigins) == 1: # There could be one single origin, but several targets (for example an A being played with only one piece out and no more pieces to take out), and so here we may skip asking the player to choose the origin
 					origin = possibleOrigins[0]
 				else:
-					origin = await self.	ginChoiceFromPlayer(possibleOrigins)
+					origin = await self.getOriginChoiceFromPlayer(possibleOrigins)
 					while not origin:
-						origin = await self.	ginChoiceFromPlayer(possibleOrigins)
+						origin = await self.getOriginChoiceFromPlayer(possibleOrigins)
 
 				print(f'[getMoveChoiceFromPlayer] selected originSpot: {str(origin)} - {id(origin)} - {type(origin)}')
 
@@ -231,10 +231,12 @@ class Player:
 		await self._router.add_input(self._id, cmd)
 
 	async def getSevenHopChoiceFromPlayer(self, originSpot: Spot, targetSpot: Spot) -> bool:
-		await self.send_message_to_user({"type": "query-seven-hop", "msg": f"Do you want to seven-hop from {originSpot} to {targetSpot}?", "origin": str(originSpot), "target": str(targetSpot)})
-		choice = await self.get_input_from_prompt("Do you want to seven-hop?")
+		message = {"type": "query-seven-hop", "msg": f"Do you want to seven-hop from {originSpot} to {targetSpot}?", "origin": str(originSpot), "target": str(targetSpot)}
 
-		while not choice or choice.get("type") != "seven_hop_choice" or not isinstance(choice.get("result"), bool):
-			choice = await self.get_input_from_prompt("Do you want to seven-hop?")
+		while True:
+			await self.send_message_to_user(message)
+			print(f"[Player] Waiting for seven-hop choice from {self._name}...")
+			choice = await self._router.wait_for_input(self._id)
 
-		return choice["result"]
+			if isinstance(choice, dict) and choice.get("type") == "seven_hop_choice" and isinstance(choice.get("result"), bool):
+				return choice["result"]

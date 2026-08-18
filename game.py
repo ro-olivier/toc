@@ -278,6 +278,7 @@ class Game:
 						"suit": cardChoice.suit,
 						"origin": str(moveChoice.originSpot),
 						"target": str(moveChoice.targetSpot),
+						"movedPlayerId": moveChoice.pieceOwner.name,
 					})
 
 					self.applyMove(moveChoice)

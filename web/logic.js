@@ -185,6 +185,14 @@ async function connectToGame(gameId, name, rejoin = false) {
         movePieceFromSpotToSpot(data.playerId, data.origin, data.target);
         break;
 
+      case "query-seven-hop":
+        requestSevenHop(data.origin, data.target);
+        break;
+
+      case "seven-hop":
+        movePieceFromSpotToSpot(data.movedPlayerId, data.origin, data.target);
+        break;
+
       case 'reject-card-selection':
         log(data.msg);
         showAllCardUp();
@@ -325,6 +333,17 @@ function sendSpotSelection(player_name, spot) {
   const message_json = JSON.stringify(message);
   console.log('[sendSpotSelection] Sending following content to back-end:' + message_json);
   ws.send(message_json);
+}
+
+function sendSevenHopChoice(result) {
+  const message = {"id": crypto.randomUUID(), "type": "seven_hop_choice", "name": local_player_name, "result": result};
+  console.log('[sendSevenHopChoice] Sending following content to back-end:' + JSON.stringify(message));
+  ws.send(JSON.stringify(message));
+}
+
+function requestSevenHop(originSpot, targetSpot) {
+  const shouldHop = window.confirm(`Do you want to seven-hop from ${originSpot} to ${targetSpot}?`);
+  sendSevenHopChoice(shouldHop);
 }
 
 
