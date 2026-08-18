@@ -58,12 +58,14 @@ class Hand:
 	def addToHand(self, card) -> None:
 		self._cards.append(card)
 
-	def getAllPossibleMoves(self, board : Board) -> list[Move]:
+	def getAllPossibleMoves(self, board: Board, pieceOwner: Player = None) -> list[Move]:
 		allPossibleMoveOptions = []
+
 		for card in self._cards:
-			optionsFromThisCard = board.getMoveOptions(self._player, card)
+			optionsFromThisCard = board.getMoveOptions(self._player, card, pieceOwner)
+
 			for option in optionsFromThisCard:
 				allPossibleMoveOptions.append(option)
-		return allPossibleMoveOptions
 
+		return allPossibleMoveOptions
 

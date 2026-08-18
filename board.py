@@ -126,44 +126,26 @@ class Board:
 
 		return None
 
-	def getForwardMoveOptions(self, player: Player, card: Card, distances: list[int]) -> list[Move]:
+	def getForwardMoveOptions(self, player: Player, card: Card, distances: list[int], pieceOwner: Player = None) -> list[Move]:
+		pieceOwner = pieceOwner if pieceOwner is not None else player
 		options = []
 
-		boardPieces = self.getOccupiedSpotsOnTheBoard(player.name)
-		housePieces = self.getOccupiedHouses(player.name)
+		boardPieces = self.getOccupiedSpotsOnTheBoard(pieceOwner.name)
+		housePieces = self.getOccupiedHouses(pieceOwner.name)
 
 		for distance in distances:
 			# Pieces on the circular track can either remain on the track
 			# or enter their house lane when both moves are legal.
 			for piece in boardPieces:
-				trackMove = Move(
-					"MOVE",
-					piece,
-					self.getSpotFromDistance(
-						piece,
-						distance,
-					),
-					card,
-					player,
-				)
+				trackMove = Move("MOVE", piece, self.getSpotFromDistance(piece, distance), card, player, pieceOwner)
 
 				if self.isMoveValid(trackMove):
 					options.append(trackMove)
 
-				availableHouse = self.getHouseFromDistance(
-					piece,
-					distance,
-					player,
-				)
+				availableHouse = self.getHouseFromDistance(piece, distance, pieceOwner)
 
 				if availableHouse is not None:
-					houseMove = Move(
-						"ENTER",
-						piece,
-						availableHouse,
-						card,
-						player,
-					)
+					houseMove = Move("ENTER", piece, availableHouse, card, player, pieceOwner)
 
 					if self.isMoveValid(houseMove):
 						options.append(houseMove)
@@ -171,20 +153,10 @@ class Board:
 			# Pieces already inside houses can only move farther forward
 			# through the same house lane.
 			for piece in housePieces:
-				availableHouse = self.getHouseFromDistance(
-					piece,
-					distance,
-					player,
-				)
+				availableHouse = self.getHouseFromDistance(piece, distance, pieceOwner)
 
 				if availableHouse is not None:
-					houseMove = Move(
-						"ENTER",
-						piece,
-						availableHouse,
-						card,
-						player,
-					)
+					houseMove = Move("ENTER", piece, availableHouse, card, player, pieceOwner)
 
 					if self.isMoveValid(houseMove):
 						options.append(houseMove)
@@ -205,7 +177,7 @@ class Board:
 
 	def applySimulatedMove(self, move: Move) -> None:
 		move.originSpot.setEmpty()
-		move.targetSpot.setOccupant(move.player)
+		move.targetSpot.setOccupant(move.pieceOwner)
 
 	def isMoveValid(self, move : Move) -> bool:
 		##debug##print(f'call isMoveValid with move = {move.ID}, originSpot = {move.originSpot}, targetSpot = {move.targetSpot}')
@@ -218,9 +190,9 @@ class Board:
 			if move.originSpot.isBlocking:
 				result = False
 			# Cannot take more pieces out than there are spots in the houses
-			if move.player.piecesOnTheBoard == SPOTS_PER_HOUSE:
+			if move.pieceOwner.piecesOnTheBoard == SPOTS_PER_HOUSE:
 				result = False
-		elif move.ID == 'MOVE':
+		elif move.ID in ["MOVE", "FIVE"]:
 			# Cannot do a MOVE move up X spots if there is a blocking spot less or equal to X spots ahead
 			i = 0
 			spotAhead = self.getSpotFromDistance(move.originSpot, i + 1)
@@ -249,7 +221,7 @@ class Board:
 			if not isinstance(target, House):
 				result = False
 
-			elif target.color != move.player.color:
+			elif target.color != move.pieceOwner.color:
 				result = False
 
 			elif target.isOccupied:
@@ -281,114 +253,56 @@ class Board:
 						if any(house.isOccupied for house in housesBeforeTarget):
 							result = False
 		elif move.ID == "SEVEN":
-			if move.player.piecesOnTheBoard == 0 or not self.getSevenStepOptions(move.player, 7):
+			if move.pieceOwner.piecesOnTheBoard == 0 or not self.getSevenStepOptions(move.player, 7, move.pieceOwner):
 				result = False
 		return result
 
-	def getMoveOptions(self, player: Player, card: Card) -> Optional[list[Move]]:
+	def getMoveOptions(self, player: Player, card: Card, pieceOwner: Player = None) -> Optional[list[Move]]:
+		pieceOwner = pieceOwner if pieceOwner is not None else player
 		options = []
 
 		if card.value == "A":
-			exitSpot = self.getFirstSpot(player.color)
-
-			exitMove = Move(
-				"OUT",
-				exitSpot,
-				exitSpot,
-				card,
-				player,
-			)
+			exitSpot = self.getFirstSpot(pieceOwner.color)
+			exitMove = Move("OUT", exitSpot, exitSpot, card, player, pieceOwner)
 
 			if self.isMoveValid(exitMove):
 				options.append(exitMove)
 
-			options.extend(
-				self.getForwardMoveOptions(
-					player,
-					card,
-					[1, 11],
-				)
-			)
+			options.extend(self.getForwardMoveOptions(player, card, [1, 11], pieceOwner))
 
 		elif card.value == "K":
-			exitSpot = self.getFirstSpot(player.color)
-
-			exitMove = Move(
-				"OUT",
-				exitSpot,
-				exitSpot,
-				card,
-				player,
-			)
+			exitSpot = self.getFirstSpot(pieceOwner.color)
+			exitMove = Move("OUT", exitSpot, exitSpot, card, player, pieceOwner)
 
 			if self.isMoveValid(exitMove):
 				options.append(exitMove)
 
-			options.extend(
-				self.getForwardMoveOptions(
-					player,
-					card,
-					[13],
-				)
-			)
+			options.extend(self.getForwardMoveOptions(player, card, [13], pieceOwner))
 
 		elif card.value == "J":
-			ownPieces = self.getOccupiedSpotsOnTheBoard(
-				player.name
-			)
-			otherPieces = self.getOtherPiecesOnTheBoard(
-				player
-			)
+			ownPieces = self.getOccupiedSpotsOnTheBoard(pieceOwner.name)
+			otherPieces = self.getOtherPiecesOnTheBoard(pieceOwner)
 
 			for ownPiece in ownPieces:
 				for otherPiece in otherPieces:
-					switchMove = Move(
-						"SWITCH",
-						ownPiece,
-						otherPiece,
-						card,
-						player,
-					)
+					switchMove = Move("SWITCH", ownPiece, otherPiece, card, player, pieceOwner)
 
 					if self.isMoveValid(switchMove):
 						options.append(switchMove)
 
 		elif card.value == "4":
 			# Forward four uses the ordinary forward and house rules.
-			options.extend(
-				self.getForwardMoveOptions(
-					player,
-					card,
-					[4],
-				)
-			)
+			options.extend(self.getForwardMoveOptions(player, card, [4], pieceOwner))
 
 			# Backward four applies only to pieces on the circular track.
-			for piece in self.getOccupiedSpotsOnTheBoard(
-				player.name
-			):
-				backwardMove = Move(
-					"BACK",
-					piece,
-					self.getSpotFromDistance(
-						piece,
-						-4,
-					),
-					card,
-					player,
-				)
+			for piece in self.getOccupiedSpotsOnTheBoard(pieceOwner.name):
+				backwardMove = Move("BACK", piece, self.getSpotFromDistance(piece, -4), card, player, pieceOwner)
 
 				if self.isMoveValid(backwardMove):
 					options.append(backwardMove)
 
 		elif card.value == "7":
-			sevenMove = Move(
-				"SEVEN",
-				None,
-				None,
-				card,
-				player,
-			)
+			sevenMove = Move("SEVEN", None, None, card, player, pieceOwner)
 
 			if self.isMoveValid(sevenMove):
 				options.append(sevenMove)
@@ -397,39 +311,28 @@ class Board:
 			opponentPieces = self.getOpponentPiecesOnTheBoard(player)
 
 			for piece in opponentPieces:
-				pieceOwner = piece.occupant
+				movedPieceOwner = piece.occupant
 				target = self.getSpotFromDistance(piece, 5)
-				potentialMove = Move("FIVE", piece, target, card, player, pieceOwner)
+				potentialMove = Move("FIVE", piece, target, card, player, movedPieceOwner)
 
 				if self.isMoveValid(potentialMove):
 					options.append(potentialMove)
 
 		# Internal one-step card used to calculate and execute seven-split steps.
 		elif card.value == "1":
-			options.extend(
-				self.getForwardMoveOptions(
-					player,
-					card,
-					[1],
-				)
-			)
+			options.extend(self.getForwardMoveOptions(player, card, [1], pieceOwner))
 
 		else:
-			options.extend(
-				self.getForwardMoveOptions(
-					player,
-					card,
-					[card.numValue],
-				)
-			)
+			options.extend(self.getForwardMoveOptions(player, card, [card.numValue], pieceOwner))
 
 		return options
 
-	def getSevenStepOptions(self, player: Player, stepsRemaining: int) -> list[Move]:
+	def getSevenStepOptions(self, player: Player, stepsRemaining: int, pieceOwner: Player = None) -> list[Move]:
 		if stepsRemaining <= 0:
 			return []
 
-		candidates = self.getForwardMoveOptions(player, Card("", "1"), [1])
+		pieceOwner = pieceOwner if pieceOwner is not None else player
+		candidates = self.getForwardMoveOptions(player, Card("", "1"), [1], pieceOwner)
 
 		if stepsRemaining == 1:
 			return candidates
@@ -440,7 +343,7 @@ class Board:
 			snapshot = self.getPositionSnapshot()
 			self.applySimulatedMove(move)
 
-			if self.getSevenStepOptions(player, stepsRemaining - 1):
+			if self.getSevenStepOptions(player, stepsRemaining - 1, pieceOwner):
 				viableOptions.append(move)
 
 			self.restorePositionSnapshot(snapshot)

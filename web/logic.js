@@ -167,7 +167,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         removeCard(data.playerId, data.value, data.suit);
 
         if (data.value === "J") {
-          switchPieces(data.playerId, data.origin, data.target);
+          switchPieces(data.movedPlayerId || data.playerId, data.origin, data.target);
         } else {
           const movedPlayerId = data.movedPlayerId || data.playerId;
           movePieceFromSpotToSpot(movedPlayerId, data.origin, data.target);
@@ -182,7 +182,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "seven-step":
-        movePieceFromSpotToSpot(data.playerId, data.origin, data.target);
+        movePieceFromSpotToSpot(data.movedPlayerId || data.playerId, data.origin, data.target);
         break;
 
       case "query-seven-hop":
@@ -215,6 +215,11 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case 'query':
         query(data.msg);
+        break;
+
+      case "game-over":
+        displayNoActivePlayers();
+        log(data.msg);
         break;
 
       case 'error':

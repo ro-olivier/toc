@@ -71,6 +71,33 @@ class Game:
 				return player2
 		return None
 
+	def getControlledPlayer(self, player: Player) -> Player:
+		teammate = self.getTeammate(player)
+
+		if teammate is not None and self._board.areAllHouseFilled(player.color):
+			return teammate
+
+		return player
+
+	def getWinningTeam(self) -> Optional[Tuple[Player, Player]]:
+		for team in self.getPlayersInTeams():
+			if all(self._board.areAllHouseFilled(player.color) for player in team):
+				return team
+
+		return None
+
+	async def finishGameIfWon(self) -> bool:
+		winningTeam = self.getWinningTeam()
+
+		if winningTeam is None:
+			return False
+
+		self._isFinished = True
+		winnerNames = [player.name for player in winningTeam]
+
+		await self.broadcast({"type": "game-over", "winners": winnerNames, "msg": f"Players {' and '.join(winnerNames)} win!"})
+		return True
+
 	@property
 	def dealer(self) -> Player:
 		return self._players[0]
@@ -171,15 +198,14 @@ class Game:
 				await self.nextDealer()
 
 	def applyMove(self, move: Move) -> None:
-		player = move.player
 		origin = move.originSpot
 		target = move.targetSpot
 
 		if move.ID == "OUT":
-			kickedPlayer = target.setOccupant(player, True)
-			player.addAPieceOnTheBoard()
+			kickedPlayer = target.setOccupant(move.pieceOwner, True)
+			move.pieceOwner.addAPieceOnTheBoard()
 
-			if kickedPlayer is not None and kickedPlayer is not player:
+			if kickedPlayer is not None:
 				kickedPlayer.removeAPieceFromTheBoard()
 
 		elif move.ID in ["MOVE", "BACK", "FIVE", "HOP"]:
@@ -192,33 +218,28 @@ class Game:
 		elif move.ID == "SWITCH":
 			targetPlayer = target.occupant
 			origin.setOccupant(targetPlayer)
-			target.setOccupant(player)
+			target.setOccupant(move.pieceOwner)
 
 		elif move.ID == "ENTER":
 			origin.setEmpty()
-			target.setOccupant(player)
+			target.setOccupant(move.pieceOwner)
 
 		else:
 			raise ValueError(f"Cannot apply move of type {move.ID}")
 
-	async def playSeven(self, player: Player) -> None:
+	async def playSeven(self, player: Player, pieceOwner: Player = None) -> None:
+		pieceOwner = pieceOwner if pieceOwner is not None else player
+
 		for stepsRemaining in range(7, 0, -1):
-			options = self._board.getSevenStepOptions(player, stepsRemaining)
+			options = self._board.getSevenStepOptions(player, stepsRemaining, pieceOwner)
 
 			if not options:
 				raise RuntimeError("Seven split reached a state with no complete legal continuation")
 
 			move = await player.getSevenStepChoiceFromPlayer(options)
-
 			self.applyMove(move)
 
-			await self.broadcast({
-				"type": "seven-step",
-				"playerId": player.name,
-				"origin": str(move.originSpot),
-				"target": str(move.targetSpot),
-				"stepsRemaining": stepsRemaining - 1,
-			})
+			await self.broadcast({"type": "seven-step", "playerId": player.name, "movedPlayerId": move.pieceOwner.name, "origin": str(move.originSpot), "target": str(move.targetSpot), "stepsRemaining": stepsRemaining - 1})
 
 			if stepsRemaining == 1:
 				await self.playSevenHop(move)
@@ -241,7 +262,9 @@ class Game:
 		if self._activePlayer.hand.size > 0:
 			await self.broadcast({"type": "next-player", "playerId": self._activePlayer.name, "msg": f"Moving on to next player: {str(self._activePlayer)}"})
 
-			moveOptions = self._activePlayer.hand.getAllPossibleMoves(self._board)
+			controlledPlayer = self.getControlledPlayer(self._activePlayer)
+			moveOptions = self._activePlayer.hand.getAllPossibleMoves(self._board, controlledPlayer)
+
 			if len(moveOptions) == 0:
 				# player has no available move, he must fold his hand
 				await self.broadcast({"type": "fold", "playerId": self._activePlayer.name, "msg": f"Player has no available move and must fold."})
@@ -271,7 +294,7 @@ class Game:
 						"suit": cardChoice.suit,
 					})
 
-					await self.playSeven(self._activePlayer)
+					await self.resolveMove(moveChoice)
 
 				else:
 					await self.broadcast({
@@ -297,14 +320,11 @@ class Game:
 			await self.broadcast({"type": "log", "msg": f"Next player: {self._activePlayer.name} has folded in a previous turn, moving on...\n"})
 
 
-		# When a player manages to fill all his/her houses:
-		if self._board.areAllHouseFilled(self._activePlayer.color):
-			await self.broadcast({"type": "log", "msg": f"Player {self._activePlayer.name} has filled all houses!)"})
+	async def resolveMove(self, move: Move) -> None:
+		if move.ID == "SEVEN":
+			await self.playSeven(move.player, move.pieceOwner)
+		else:
+			self.applyMove(move)
+			await self.playSevenHop(move)
 
-			teammate = self.getTeammate(self._activePlayer)
-			# If the teammate's houses are all filled as well, the game is won!
-			if self._board.areAllHouseFilled(teammate.color):
-				await self.broadcast({"type": "log", "msg": f"Players {self._activePlayer.name} and {teammate.name} win!!!"})
-			else:
-				await self.broadcast({"type": "log", "msg": f"This player will now play using his/her teammate\'s pieces and attempt to win the game."})
-				self._activePlayer.color = self.getTeammate(self._activePlayer).color
+		await self.finishGameIfWon()

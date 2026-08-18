@@ -51,6 +51,11 @@ def place_track_piece(board, player, color, number):
 	player.addAPieceOnTheBoard()
 	return spot
 
+def fill_houses(board, player):
+    for houseNumber in range(4):
+        board.getHouse(player.color, houseNumber).setOccupant(player)
+        player.addAPieceOnTheBoard()
+
 
 def test_play_seven_moves_exactly_seven_steps():
 	session = FakeGameSession()
@@ -363,3 +368,82 @@ def test_deck_cycle_uses_five_four_four_schedule():
         ("Deal 2", 4),
         ("Deal 3", 4),
     ]
+
+def test_finished_player_controls_teammate_without_changing_color():
+    game = Game(FakeGameSession(), COLORS)
+
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "0")
+    carol = make_player("Carol", "green", "1")
+    diana = make_player("Diana", "yellow", "1")
+
+    game.setPlayers([alice, carol, bob, diana])
+    fill_houses(game.board, alice)
+
+    assert game.getControlledPlayer(alice) is bob
+    assert alice.color == "red"
+
+def test_finished_player_moves_teammates_piece():
+    game = Game(FakeGameSession(), COLORS)
+
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "0")
+    carol = make_player("Carol", "green", "1")
+    diana = make_player("Diana", "yellow", "1")
+
+    game.setPlayers([alice, carol, bob, diana])
+    fill_houses(game.board, alice)
+
+    origin = place_track_piece(game.board, bob, "red", 5)
+    options = game.board.getMoveOptions(alice, Card("♥️", "2"), bob)
+    move = next(move for move in options if move.ID == "MOVE" and move.originSpot is origin)
+
+    assert move.player is alice
+    assert move.pieceOwner is bob
+
+    game.applyMove(move)
+
+    assert move.targetSpot.occupant is bob
+    assert alice.color == "red"
+
+def test_finished_player_can_play_seven_for_teammate():
+    session = FakeGameSession()
+    game = Game(session, COLORS)
+
+    alice = AutomaticPlayer("TEST-Alice", "Alice", "0", "red")
+    bob = make_player("Bob", "blue", "0")
+    carol = make_player("Carol", "green", "1")
+    diana = make_player("Diana", "yellow", "1")
+
+    game.setPlayers([alice, carol, bob, diana])
+    fill_houses(game.board, alice)
+    place_track_piece(game.board, bob, "red", 5)
+
+    asyncio.run(game.playSeven(alice, bob))
+
+    assert game.board.getSpot("red", 12).occupant is bob
+
+    stepMessages = [message for message in session.messages if message["type"] == "seven-step"]
+
+    assert len(stepMessages) == 7
+    assert all(message["movedPlayerId"] == "Bob" for message in stepMessages)
+
+def test_team_wins_when_both_house_lanes_are_full():
+    session = FakeGameSession()
+    game = Game(session, COLORS)
+
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "0")
+    carol = make_player("Carol", "green", "1")
+    diana = make_player("Diana", "yellow", "1")
+
+    game.setPlayers([alice, carol, bob, diana])
+    fill_houses(game.board, alice)
+    fill_houses(game.board, bob)
+
+    result = asyncio.run(game.finishGameIfWon())
+
+    assert result is True
+    assert game.isFinished
+    assert session.messages[-1]["type"] == "game-over"
+    assert session.messages[-1]["winners"] == ["Alice", "Bob"]

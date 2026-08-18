@@ -9,6 +9,8 @@ Player play one card in turn, rotating clockwise. After applying the effect(s) o
 
 The goal of the game is to place all the piece of both player in a team into the "house" spots. To do that, player must first place a piece on the board by playing an Ace or a King. The piece are places on the "exit" spot on the track. The piece must then move from this spot (either forward or backward) and then enter the "house" spots by passing again on the exit spot and then moving on to the house spots.
 
+Once a player has filled his house, he keeps playing using his partner's pieces. The game ends when a team manages to fill both the team-member's houses.
+
 ## Track and house entrance
 
 The colour order is:
