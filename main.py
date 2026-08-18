@@ -7,7 +7,7 @@ import asyncio
 import string
 import random
 import json
-from time import sleep
+import logging
 
 from game import Game
 from player import Player
@@ -17,342 +17,364 @@ app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
 
 app.mount(
-    "/toc/play",
-    StaticFiles(directory=BASE_DIR / "web", html=True),
-    name="toc-frontend",
+	"/toc/play",
+	StaticFiles(directory=BASE_DIR / "web", html=True),
+	name="toc-frontend",
 )
 
 class DuplicateNameError(Exception):
-    pass
+	pass
 
 class PlayerInputRouter:
-    def __init__(self):
-        self.input_queues = {}
-        self.output_queues = {}
-        self.recycleBin = {}
+	def __init__(self):
+		self.input_queues = {}
+		self.output_queues = {}
+		self.recycleBin = {}
 
-    def register(self, player_name: str):
-        if player_name in self.input_queues:
-            print(f'[Router] Attempted to re-registered a user with name {player_name}!')
-            raise DuplicateNameError
-        else:
-            print(f'[Router] Registered user {player_name}')
-            self.input_queues[player_name] = asyncio.Queue()
-            self.output_queues[player_name] = asyncio.Queue()
+	def register(self, player_name: str):
+		if player_name in self.input_queues:
+			print(f'[Router] Attempted to re-registered a user with name {player_name}!')
+			raise DuplicateNameError
+		else:
+			print(f'[Router] Registered user {player_name}')
+			self.input_queues[player_name] = asyncio.Queue()
+			self.output_queues[player_name] = asyncio.Queue()
 
-    def registerAgain(self, player_name: str):
-        print(f'[Router] Reregistering user {player_name}')
-        self.input_queues[player_name] = self.recycleBin[player_name]['in']
-        self.output_queues[player_name] = self.recycleBin[player_name]['out']
+	def registerAgain(self, player_name: str):
+		print(f"[Router] Reregistering user {player_name}")
+		queues = self.recycleBin.pop(player_name)
+		self.input_queues[player_name] = queues["in"]
+		self.output_queues[player_name] = queues["out"]
 
-    def unregister(self, player_name: str):
-        print(f'[Router] Unregistered user {player_name}')
-        self.recycleBin[player_name] = {'in': self.input_queues.pop(player_name, None), 'out': self.output_queues.pop(player_name, None)}
+	def unregister(self, player_name: str):
+		if player_name not in self.input_queues:
+			return
 
-    async def add_input(self, player_name: str, message: str):
-        print(f"[Router] add_input called for {player_name}: {message}")
-        queue = self.input_queues.get(player_name)
-        if queue:
-            await queue.put(message)
-        else:
-            print(f"[Router] No input queue found for {player_name}")
+		print(f"[Router] Unregistered user {player_name}")
+		self.recycleBin[player_name] = {
+			"in": self.input_queues.pop(player_name),
+			"out": self.output_queues.pop(player_name),
+		}
 
-    async def wait_for_input(self, player_name: str):
-        msg = await self.input_queues[player_name].get()
-        print(f"[Router] wait_for_input received {msg} of type {type(msg)}")
-        return msg
+	async def add_input(self, player_name: str, message: str):
+		print(f"[Router] add_input called for {player_name}: {message}")
+		queue = self.input_queues.get(player_name)
+		if queue:
+			await queue.put(message)
+		else:
+			print(f"[Router] No input queue found for {player_name}")
 
-    async def send_output(self, player_name: str, message: str):
-        print(f"[Router] send_output called for {player_name}: {message}")
-        queue = self.output_queues.get(player_name)
-        if queue:
-            await queue.put(message)
-        else:
-            print(f"[Router] No output queue found for {player_name}")
+	async def wait_for_input(self, player_name: str):
+		msg = await self.input_queues[player_name].get()
+		print(f"[Router] wait_for_input received {msg} of type {type(msg)}")
+		return msg
 
-    async def get_output(self, player_name: str):
-        return await self.output_queues[player_name].get()
+	async def send_output(self, player_name: str, message: str):
+		print(f"[Router] send_output called for {player_name}: {message}")
+		queue = self.output_queues.get(player_name)
+		if queue:
+			await queue.put(message)
+		else:
+			print(f"[Router] No output queue found for {player_name}")
+
+	async def get_output(self, player_name: str):
+		return await self.output_queues[player_name].get()
 
 
 class ConnectionManager:
-    def __init__(self):
-        self.games: Dict[str, GameSession] = {}
+	def __init__(self):
+		self.games: Dict[str, GameSession] = {}
 
-    def _generate_game_id(self, length=4):
-        charset = string.ascii_uppercase + string.digits
-        while True:
-            game_id = ''.join(random.choices(charset, k=length))
-            if game_id not in self.games:
-                return game_id
+	def _generate_game_id(self, length=4):
+		charset = string.ascii_uppercase + string.digits
+		while True:
+			game_id = ''.join(random.choices(charset, k=length))
+			if game_id not in self.games:
+				return game_id
 
-    def create_game(self, msg_router) -> str:
-        game_id = self._generate_game_id()
-        self.games[game_id] = GameSession(game_id, msg_router)
-        return game_id
+	def create_game(self, msg_router) -> str:
+		game_id = self._generate_game_id()
+		self.games[game_id] = GameSession(game_id, msg_router)
+		return game_id
 
-    def get_game(self, game_id: str):
-        return self.games.get(game_id)
+	def get_game(self, game_id: str):
+		return self.games.get(game_id)
 
 class GameSession:
-    def __init__(self, game_id: str, msg_router):
-        self.id = game_id
-        self.players: Dict = {}
-        self.started = False
-        self.lock = asyncio.Lock()
-        self.remaining_colors = COLORS
-        self.router = msg_router
-        self.ui_queues: List = []
-        self.order: List = []
-        self.game = None
+	def __init__(self, game_id: str, msg_router):
+		self.id = game_id
+		self.players: Dict = {}
+		self.started = False
+		self.lock = asyncio.Lock()
+		self.setupLock = asyncio.Lock()
+		self.remaining_colors = COLORS
+		self.router = msg_router
+		self.order: List = []
+		self.game = None
 
-    def fullUI(self) -> dict:
-        if self.game:
-            if self.game.activePlayer:
-                active_player_name = self.game.activePlayer.name
-            else:
-                active_player_name = ""
+	def fullUI(self) -> dict:
+		if self.game:
+			if self.game.activePlayer:
+				active_player_name = self.game.activePlayer.name
+			else:
+				active_player_name = ""
 
-            return {"type": "full-ui-state", "players": [{"name": self.players[p]["name"], "team": self.players[p]["team"], "color": self.players[p]["color"], "number_of_cards": self.players[p]["object"].hand.size} for p in self.players], "pieces": self.game.board.getAllPiecesOnTheBoard(), "active_player": active_player_name}
-        else:
-            return {"type": "full-ui-state", "players": [{"name": self.players[p]["name"], "team": self.players[p]["team"], "color": self.players[p]["color"], "number_of_cards": self.players[p]["object"].hand.size} for p in self.players], "pieces": [], "active_player": ""}
+			return {"type": "full-ui-state", "players": [{"name": self.players[p]["name"], "team": self.players[p]["team"], "color": self.players[p]["color"], "number_of_cards": self.players[p]["object"].hand.size} for p in self.players], "pieces": self.game.board.getAllPiecesOnTheBoard(), "active_player": active_player_name}
+		else:
+			return {"type": "full-ui-state", "players": [{"name": self.players[p]["name"], "team": self.players[p]["team"], "color": self.players[p]["color"], "number_of_cards": self.players[p]["object"].hand.size} for p in self.players], "pieces": [], "active_player": ""}
 
 
-    def team_is_full(self, team: str) -> bool:
-        return sum([self.players[p]['team'] == team for p in self.players.keys()]) == 2
+	def team_is_full(self, team: str) -> bool:
+		return sum([self.players[p]["team"] == team for p in self.players]) >= NUMBER_OF_PLAYERS // NUMBER_OF_TEAMS
 
-    def getFullPlayerId(self, game_id : str, player_name : str) -> str:
-        return f'{game_id}-{player_name}'
+	def is_full(self) -> bool:
+	   return len(self.players) >= NUMBER_OF_PLAYERS
 
-    async def broadcast(self, message: Dict, excluded_player : str = None):
-        for player_id in self.players.keys():
-            if player_id != excluded_player:
-                player = self.players[player_id]['object']
-                await player.send_message_to_user(message)
+	def getFullPlayerId(self, game_id : str, player_name : str) -> str:
+		return f'{game_id}-{player_name}'
 
-    async def game_loop(self):
-        async with self.lock:
-            if self.started:
-                return
-            self.started = True
-            await self.broadcast({"type": "log", "msg": "Four players have joined: game is starting!\n"})
-            self.game = Game(self, [self.players[player_id]['color'] for player_id in self.order])
-            # players are set in the order defined by the array passed by the UI
-            self.game.setPlayers([self.players[player_id]['object'] for player_id in self.order])
-            await self.game.start()
+	def set_player_order(self) -> bool:
+		if len(self.players) != NUMBER_OF_PLAYERS:
+			return False
 
-    async def make_player_choose_color(self, player_id) -> str:
-        player = self.players[player_id]['object']
-        if len(self.remaining_colors) == 1:
-            await player.send_message_to_user({"type": "log", "msg": f"The only remaining color is {self.remaining_colors[0]}, hope you like it!"})
-            return self.remaining_colors[0]
-        else:
-            await player.send_message_to_user({"type": "query", "msg": 
-                f"Choose the color you wish to play. Available colors: {', '.join(self.remaining_colors)}."})
-            while True:
-                parsed_msg = await self.router.wait_for_input(player_id)
-                if parsed_msg['type'] == 'text_input' and parsed_msg['msg'].strip() in self.remaining_colors:
-                    color = parsed_msg['msg'].strip()
-                    self.remaining_colors = [c for c in self.remaining_colors if c != color]
-                    break
-                else:
-                    await player.send_message_to_user({"type": "error", "msg": "Please choose a valid color."})
-            return color
+		playerIds = list(self.players.keys())
+		firstPlayerId = playerIds[0]
+		firstTeam = self.players[firstPlayerId]["team"]
+
+		teammateIds = [playerId for playerId in playerIds if playerId != firstPlayerId and self.players[playerId]["team"] == firstTeam]
+		opponentIds = [playerId for playerId in playerIds if self.players[playerId]["team"] != firstTeam]
+
+		if len(teammateIds) != 1 or len(opponentIds) != 2:
+			return False
+
+		self.order = [firstPlayerId, opponentIds[0], teammateIds[0], opponentIds[1]]
+		return True
+
+	async def broadcast(self, message: Dict, excluded_player : str = None):
+		for player_id in self.players.keys():
+			if player_id != excluded_player:
+				player = self.players[player_id]['object']
+				await player.send_message_to_user(message)
+
+	async def game_loop(self):
+		try:
+			await self.broadcast({"type": "log", "msg": "Four players have joined: game is starting!\n"})
+			self.game = Game(self, [self.players[player_id]["color"] for player_id in self.order])
+			self.game.setPlayers([self.players[player_id]["object"] for player_id in self.order])
+			await self.game.start()
+		except Exception:
+			logging.exception("Game loop failed for game %s", self.id)
+			await self.broadcast({"type": "error", "msg": "The game stopped because of an internal server error."})
+
+	async def start_game_if_ready(self) -> bool:
+		async with self.lock:
+			if self.started or len(self.players) != NUMBER_OF_PLAYERS or len(self.order) != NUMBER_OF_PLAYERS:
+				return False
+
+			if not all(player.get("configured", False) for player in self.players.values()):
+				return False
+
+			self.started = True
+			self.gameTask = asyncio.create_task(self.game_loop())
+			return True
+
+	async def configure_player(self, player_id: str) -> None:
+		async with self.setupLock:
+			playerData = self.players[player_id]
+
+			if playerData.get("configured", False):
+				return
+
+			player = playerData["object"]
+			team = await self.make_player_choose_team(player_id)
+			color = await self.make_player_choose_color(player_id)
+
+			player.setTeam(team)
+			player.setColor(color)
+
+			playerData["team"] = team
+			playerData["color"] = color
+			playerData["configured"] = True
+
+			if len(self.players) == NUMBER_OF_PLAYERS and all(player.get("configured", False) for player in self.players.values()):
+				if not self.set_player_order():
+					raise RuntimeError("Could not determine a valid player order")
+
+			await player.send_message_to_user({"type": "log", "msg": f"You successfully joined the game and will play in team {team} with color {color}!\n"})
+			await self.broadcast({"type": "log", "msg": f"{player.name} has joined team {team} and will play {color}.\n"}, excluded_player=player_id)
+			await self.broadcast({"type": "assign-player", "name": player.name, "team": team, "color": color})
+
+		await self.start_game_if_ready()
+
+	async def make_player_choose_team(self, player_id: str) -> str:
+		player = self.players[player_id]["object"]
+
+		assignedTeams = [playerData.get("team") for playerData in self.players.values() if playerData.get("team") in ["0", "1"]]
+
+		if not assignedTeams:
+			await player.send_message_to_user({"type": "log", "msg": "You have been assigned to team 0."})
+			return "0"
+
+		if self.team_is_full("0"):
+			await player.send_message_to_user({"type": "log", "msg": "Team 0 is full, you have been assigned to team 1."})
+			return "1"
+
+		if self.team_is_full("1"):
+			await player.send_message_to_user({"type": "log", "msg": "Team 1 is full, you have been assigned to team 0."})
+			return "0"
+
+		await player.send_message_to_user({"type": "query", "msg": "Choose your team (0 or 1):"})
+
+		while True:
+			message = await self.router.wait_for_input(player_id)
+
+			if isinstance(message, dict) and message.get("type") == "text_input" and message.get("msg", "").strip() in ["0", "1"]:
+				team = message["msg"].strip()
+				await player.send_message_to_user({"type": "log", "msg": f"Successfully joined team {team}."})
+				return team
+
+			await player.send_message_to_user({"type": "error", "msg": "Invalid team. Please enter '0' or '1'."})
+
+	async def make_player_choose_color(self, player_id) -> str:
+		player = self.players[player_id]['object']
+		if len(self.remaining_colors) == 1:
+			color = self.remaining_colors.pop()
+			await player.send_message_to_user({"type": "log", "msg": f"The only remaining color is {color}, hope you like it!"})
+			return color
+		else:
+			await player.send_message_to_user({"type": "query", "msg": 
+				f"Choose the color you wish to play. Available colors: {', '.join(self.remaining_colors)}."})
+			while True:
+				parsed_msg = await self.router.wait_for_input(player_id)
+				if parsed_msg['type'] == 'text_input' and parsed_msg['msg'].strip() in self.remaining_colors:
+					color = parsed_msg['msg'].strip()
+					self.remaining_colors = [c for c in self.remaining_colors if c != color]
+					break
+				else:
+					await player.send_message_to_user({"type": "error", "msg": "Please choose a valid color."})
+			return color
+
+	async def handle_player_message(self, player_id: str, message: dict) -> None:
+		messageType = message.get("type")
+
+		if messageType == "debug":
+			if message.get("msg") == "simulate_card_exchange_players3and4":
+				playerIds = list(self.players.keys())
+				player3 = self.players[playerIds[2]]["object"]
+				player4 = self.players[playerIds[3]]["object"]
+
+				await self.router.add_input(playerIds[2], {"type": "card_selection", "name": playerIds[2], "value": player3.hand.cards[0].value, "suit": player3.hand.cards[0].suit})
+				await self.router.add_input(playerIds[3], {"type": "card_selection", "name": playerIds[3], "value": player4.hand.cards[0].value, "suit": player4.hand.cards[0].suit})
+
+			elif message.get("msg") == "force-play" and self.game is not None and self.game.activePlayer is not None:
+				await self.game.activePlayer.forceRandomMove()
+
+			return
+
+		await self.router.add_input(player_id, message)
 
 @app.websocket("/toc/ws/{game_id}/{player_name}")
 async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: str):
+	await websocket.accept()
+	gameSession = manager.games.get(game_id)
 
-    gameSession = manager.games.get(game_id)    
-    # Setting up all the WebSocket and asyncio logic 
-    await websocket.accept()
+	player_id = gameSession.getFullPlayerId(game_id, player_name)
+	existingPlayer = gameSession.players.get(player_id)
+	initialUI = None
+	newPlayer = None
 
-    if not gameSession:
-        print('Closing with 4001 code')
-        await websocket.close(code=4001)
-        return
+	if existingPlayer is not None and existingPlayer["active"]:
+		await websocket.close(code=4002)
+		return
 
-    player_id = gameSession.getFullPlayerId(game_id, player_name)
+	if existingPlayer is None and gameSession.is_full():
+		await websocket.close(code=4004)
+		return
 
-    existing_player = gameSession.players.get(player_id)
-    if not existing_player:
-        try:
-            router.register(player_id)
-        except DuplicateNameError:
-            ## If username has already been chosen, we cannot proceed.
-            print('Closing with 4002 code')
-            await websocket.close(code=4002)
-            return
-    else:
-        if not existing_player['active']:
-            try:
-                router.registerAgain(player_id)
-            except:
-                print('Closing with 4003 code')
-                await websocket.close(code=4003)
-                return
+	try:
+		if existingPlayer is None:
+			router.register(player_id)
+			initialUI = gameSession.fullUI()
+			newPlayer = Player(player_id, player_name, "", "", "", gameSession, router)
+			gameSession.players[player_id] = {"name": player_name, "id": player_id, "websocket": websocket, "team": "", "color": "", "object": newPlayer, "active": True, "configured": False}
+		else:
+			router.registerAgain(player_id)
+			existingPlayer["websocket"] = websocket
+			existingPlayer["active"] = True
+	except (DuplicateNameError, KeyError):
+		await websocket.close(code=4003)
+		return
 
-    await websocket.send_json({"type": "ready"})
+	async def input_loop() -> None:
+		while True:
+			data = await websocket.receive_text()
 
-    ## Player input loop
-    async def input_loop():
-        try:
-            while True:
-                data = await websocket.receive_text()
-                #print(f"[input_loop] Raw message: {data}")  # Log raw message
-                try:
-                    # Parse the JSON string into a Python dictionary
-                    parsed_data = json.loads(data)
-                    print(f"[input_loop] Received data from {player_id}: {parsed_data}")  # Now it should print the actual content
+			try:
+				message = json.loads(data)
+			except json.JSONDecodeError:
+				await router.send_output(player_id, {"type": "error", "msg": "Invalid JSON message."})
+				continue
 
-                    if parsed_data['type'] == 'debug':
-                        print(f'[input loop] Received DEBUG command from {player_id}!!')
-                        if parsed_data['msg'] == 'simulate_card_exchange_players3and4':
-                            print('DEBUG : simulating card exchange between player 3 and 4')
-                            p3_name = list(gameSession.players.keys())[2]
-                            p4_name = list(gameSession.players.keys())[3]
-                            p3_card = gameSession.players[p3_name]['object'].hand.cards[0]
-                            p4_card = gameSession.players[p4_name]['object'].hand.cards[0]
-                            cmd3 = json.loads(f'{{"type":"card_selection","name":"{p3_name}","value":"{p3_card.value}","suit":"{p3_card.suit}"}}')
-                            cmd4 = json.loads(f'{{"type":"card_selection","name":"{p4_name}","value":"{p4_card.value}","suit":"{p4_card.suit}"}}')
-                            await router.add_input(p3_name, cmd3)
-                            await router.add_input(p4_name, cmd4)
-                        if parsed_data['msg'] == 'force-play':
-                            print('DEBUG : Forcing the current player to play the first available move')
-                            await gameSession.game.activePlayer.forceRandomMove()
+			if not isinstance(message, dict):
+				await router.send_output(player_id, {"type": "error", "msg": "Invalid message format."})
+				continue
 
-                    elif parsed_data['type'] == 'everybody_is_here':
-                            # We're dealing with the special message at the end of the game setup phase where the front-end of player 4 is giving the back-end the order in which the players have decided to play. This data is used to update the order in which items are in the game.players array.
-                        if len(gameSession.order) == 0: # we only need to update the game.order once, and we don't want this check to be mutualized with the parsed_data type check otherwise multiple msg will reach the router and this will break the card exchange process which comes after
-                            gameSession.order = [gameSession.getFullPlayerId(gameSession.id, player_name_from_UI) for player_name_from_UI in parsed_data['order']]
-                            await try_notify_order_ready(gameSession, orderIsSet_condition)
-                    else:
-                        await router.add_input(player_id, parsed_data)
-                except json.JSONDecodeError as e:
-                    print(f"Error decoding JSON, passing it as raw text just in case: {e}")
-                    await router.add_input(player_id, data)
-        except WebSocketDisconnect:
-            gameSession.players[player_id]['active'] = False
-            router.unregister(player_id)
-            await gameSession.broadcast({"type": "log", "msg": f"{player_id} disconnected."}, excluded_player=player_id)
-        except Exception as e:
-            print(f"[input_loop] Error: {e}")
+			await gameSession.handle_player_message(player_id, message)
 
-    asyncio.create_task(input_loop())
+	async def output_loop() -> None:
+		while True:
+			message = await router.get_output(player_id)
+			await websocket.send_json(message)
 
-    ## Player output loop
-    async def output_loop():
-        while True:
-            message = await router.get_output(player_id)
-            await websocket.send_json(message)
+	async def setup_connection() -> None:
+		if existingPlayer is None:
+			await newPlayer.send_message_to_user(initialUI)
+			await gameSession.configure_player(player_id)
 
-    asyncio.create_task(output_loop())
+		else:
+			if not existingPlayer.get("configured", False):
+				await gameSession.configure_player(player_id)
 
-    ## IO output loop
-    async def send_updates(websocket: WebSocket, queue: asyncio.Queue):
-        while True:
-            update = await queue.get()
-            await websocket.send_json(update)
+			await existingPlayer["object"].send_message_to_user(gameSession.fullUI())
+			await existingPlayer["object"].send_message_to_user({"type": "log", "msg": f"You successfully rejoined the game in team {existingPlayer['team']} with color {existingPlayer['color']}!\n"})
+			await existingPlayer["object"].sendHandAgain()
+			await gameSession.broadcast({"type": "log", "msg": f"{player_id} has rejoined team {existingPlayer['team']} and plays {existingPlayer['color']}.\n"}, excluded_player=player_id)
 
-    ui_queue = asyncio.Queue()
-    gameSession.ui_queues.append(ui_queue)
+		await gameSession.start_game_if_ready()
 
-    sender = asyncio.create_task(send_updates(websocket, ui_queue))
+	try:
+		await websocket.send_json({"type": "ready"})
 
-    # Finalizing game setup for each player connecting
-    
-    ## We're checking the player doesn't exist already, just in case
-    if not existing_player:
-        ## First creating the new_player object and updating the new player's UI with current state of the board
-        new_player = Player(player_id, player_name, '', '', '', gameSession, router)
-        await new_player.send_message_to_user(gameSession.fullUI())
-        
-        ## Only then we create the new player object and add it to the collection (since it will be without color or team for now, if we send it before the UI broadcast the front-end will get confused)
-        gameSession.players[player_id] = {
-            "name": player_name,
-            "id": player_id,
-            "websocket": websocket,
-            "team": '',
-            "color": '',
-            "object": new_player,
-            "active": True
-        }
+		async with asyncio.TaskGroup() as taskGroup:
+			taskGroup.create_task(input_loop())
+			taskGroup.create_task(output_loop())
+			await setup_connection()
 
-        ## Figuring out and/or asking the player for team and color selection
-        if len(gameSession.players) == 1:
-            # If we're dealing with the first player in the game, we can assign him/her to team 0 without loss of generality.
-            team = "0"
-            await new_player.send_message_to_user({"type": "log", "msg": "You have been assigned to team 0."})
-        else:
-            if gameSession.team_is_full("0"):
-                team = "1"
-                await new_player.send_message_to_user({"type": "log", "msg": "Team 0 is full, you have been assigned to team 1."})
-            elif gameSession.team_is_full("1"):
-                team = "0"
-                await new_player.send_message_to_user({"type": "log", "msg": "Team 1 is full, you have been assigned to team 0."})
-            else:
-                await new_player.send_message_to_user({"type": "query", "msg": "Choose your team (0 or 1):"})
-                while True:
-                    msg = await websocket.receive_text()
-                    parsed_msg = json.loads(msg)
-                    if parsed_msg['type'] == 'text_input' and parsed_msg['msg'].strip() in ["0", "1"]:
-                        team = parsed_msg['msg'].strip()
-                        await new_player.send_message_to_user({"type": "log", "msg": f"Successfully joined team {team}"})
-                        break
-                    else:
-                        await new_player.send_message_to_user({"type": "error", "msg": "Invalid team. Please enter '0' or '1'."})
+	except* WebSocketDisconnect:
+		pass
 
-        color = await gameSession.make_player_choose_color(player_id)
+	except* Exception as errors:
+		for error in errors.exceptions:
+			logging.error("WebSocket connection failed for %s", player_id, exc_info=(type(error), error, error.__traceback__))
 
-        ## Setting the information we got into the various objects which need to be aware of the selections
-        new_player.setColor(color)
-        new_player.setTeam(team)
+	finally:
+		playerData = gameSession.players.get(player_id)
 
-        # Now that we have color and team, we can set it
-        gameSession.players[player_id]['color'] = color
-        gameSession.players[player_id]['object'].setColor(color)
-        gameSession.players[player_id]['team'] = team
-        gameSession.players[player_id]['object'].setTeam(team)
-        gameSession.players[player_id]['active'] = True
-
-
-        ## Broadcasting the join-info to new player, the UIs and the other players
-        await new_player.send_message_to_user({"type": "log", "msg": f"You successfully joined the game and will play in team {team} with color {color}!\n"})
-        await gameSession.broadcast({"type": "log", "msg": f"{player_name} has joined team {team} and will play {color}.\n"}, excluded_player=player_id)
-        await gameSession.broadcast({"type": "assign-player", "name": player_name, "team": team, "color": color})
-
-    else:
-        # and we're also checking if this is not a disconnect player who is coming back!
-        if not existing_player['active']:
-            existing_player['websocket'] = websocket
-            existing_player['active'] = True
-            await existing_player['object'].send_message_to_user(gameSession.fullUI())
-            await existing_player['object'].send_message_to_user({"type": "log", "msg": f"You successfully rejoined the game in team {existing_player['team']} with color {existing_player['color']}!\n"})
-            await existing_player['object'].sendHandAgain()
-            await gameSession.broadcast({"type": "log", "msg": f"{player_id} has rejoined team {existing_player['team']} and plays {existing_player['color']}.\n"}, excluded_player=player_id)
-
-    ## When we have 4 players, the game can start if the game.order variable has been set!
-    if len(gameSession.players) == 4:
-        ## We wait for the lock on the game.order to be lifted because this ws message will (most likely) come later than the check on len(game.players)
-        async with orderIsSet_condition:
-            await orderIsSet_condition.wait_for(lambda: len(gameSession.order) == 4)
-        await gameSession.game_loop()
+		if playerData is not None and playerData.get("websocket") is websocket:
+			playerData["active"] = False
+			router.unregister(player_id)
+			await gameSession.broadcast({"type": "log", "msg": f"{player_id} disconnected."}, excluded_player=player_id)
 
 
 router = PlayerInputRouter()
 manager = ConnectionManager()
-orderIsSet_condition = asyncio.Condition()
-
-# Helper function for the lock on game.order at the beginning of the game
-async def try_notify_order_ready(gameSession, condition):
-    async with condition:
-        if len(gameSession.order) == 4:
-            condition.notify_all()
 
 @app.get("/toc")
 async def root():
-    return {"message": "Game backend is running."}
+	return {"message": "Game backend is running."}
 
 
 @app.post("/toc/api/create-game")
 async def create_game():
-    game_id = manager.create_game(router)
-    return {"game_id": game_id}
+	game_id = manager.create_game(router)
+	return {"game_id": game_id}
