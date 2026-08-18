@@ -6,8 +6,28 @@ const sendBtn = document.getElementById("send-btn");
 const commandInput = document.getElementById("command-input");
 const terminal = document.getElementById("terminal");
 const startScreen = document.getElementById("start-screen");
+const lobbyScreen = document.getElementById("lobby-screen");
 const gameScreen = document.getElementById("game-screen");
 const errorMsg = document.getElementById("error-msg");
+const lobbyGameId = document.getElementById("lobby-game-id");
+const lobbyPlayerCount = document.getElementById("lobby-player-count");
+const lobbyPlayers = document.getElementById("lobby-players");
+const lobbyChoiceForm = document.getElementById("lobby-choice-form");
+const teamSelect = document.getElementById("team-select");
+const colorSelect = document.getElementById("color-select");
+const confirmLobbyChoice = document.getElementById("confirm-lobby-choice");
+const lobbyStatus = document.getElementById("lobby-status");
+const lobbyError = document.getElementById("lobby-error");
+const gameIdDisplay = document.getElementById("game-id-display");
+const dealerName = document.getElementById("dealer-name");
+const connectionStatus = document.getElementById("connection-status");
+const connectionStatusText = document.getElementById("connection-status-text");
+const currentPlayerName = document.getElementById("current-player-name");
+const turnInstruction = document.getElementById("turn-instruction");
+const turnBanner = document.querySelector(".turn-banner");
+const cancelCardSelection = document.getElementById("cancel-card-selection");
+const localHandSlot = document.getElementById("local-hand-slot");
+const emptyHandMessage = document.getElementById("empty-hand-message");
 const board = document.getElementById('board');
 
 const selectableSpotHandlers = new Map();
@@ -18,6 +38,7 @@ let local_game_Id = null;
 let local_player = null;
 let local_card_box = null;
 let local_info_box = null;
+let currentLobbyState = null;
 
 let stored_player_name = window.localStorage.getItem("session_player_name");
 let stored_game_id = window.localStorage.getItem("session_game_ID");
@@ -45,21 +66,48 @@ function log(msg) {
 }
 
 function query(msg) {
-  terminal.textContent += msg + "\n";
-  terminal.scrollTop = terminal.scrollHeight;
+  turnInstruction.textContent = msg;
+  turnInstruction.classList.remove("error-state");
+  log(msg);
 }
 
 function error(msg) {
-  terminal.textContent += msg + "\n";
-  terminal.scrollTop = terminal.scrollHeight;
+  turnInstruction.textContent = msg;
+  turnInstruction.classList.add("error-state");
+  log(`Error: ${msg}`);
+}
+
+function setCancelSelectionVisible(visible) {
+  if (!cancelCardSelection) return;
+
+  cancelCardSelection.classList.toggle("hidden", !visible);
+  cancelCardSelection.disabled = !visible;
 }
 
 function showGameUI() {
   startScreen.classList.add("hidden");
+  lobbyScreen.classList.add("hidden");
   gameScreen.classList.remove("hidden");
 }
 
+function showLobbyUI() {
+  startScreen.classList.add("hidden");
+  gameScreen.classList.add("hidden");
+  lobbyScreen.classList.remove("hidden");
+}
+
 function showError(message) {
+  if (!lobbyScreen.classList.contains("hidden")) {
+    lobbyError.textContent = message;
+    lobbyError.classList.remove("hidden");
+    return;
+  }
+
+  if (!gameScreen.classList.contains("hidden")) {
+    error(message);
+    return;
+  }
+
   errorMsg.textContent = message;
   errorMsg.classList.remove("hidden");
 }
@@ -67,6 +115,8 @@ function showError(message) {
 function clearError() {
   errorMsg.textContent = "";
   errorMsg.classList.add("hidden");
+  lobbyError.textContent = "";
+  lobbyError.classList.add("hidden");
 }
 
 async function connectToGame(gameId, name, rejoin = false) {
@@ -99,7 +149,20 @@ async function connectToGame(gameId, name, rejoin = false) {
         log(`Connected to game ${gameId} as ${name}`);
         local_player_name = name;
         local_game_Id = gameId;
-        showGameUI();
+        gameIdDisplay.textContent = gameId;
+        connectionStatus.classList.add("connected");
+        connectionStatusText.textContent = "Connected";
+        showLobbyUI();
+        break;
+
+      case 'lobby-state':
+        renderLobbyState(data);
+        break;
+
+      case 'lobby-error':
+        lobbyError.textContent = data.msg;
+        lobbyError.classList.remove("hidden");
+        confirmLobbyChoice.disabled = false;
         break;
       
       case 'assign-player':
@@ -137,6 +200,7 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case "dealer":
         toogleDealerOnPlayerBlock(data.playerId);
+        dealerName.textContent = data.playerId;
         break;
 
       case "receive-card-from-friend":
@@ -161,11 +225,15 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case 'next-player':
+        setCancelSelectionVisible(false);
+        clearSpotSelection();
         displayActivePlayer(data.playerId);
         log(data.msg);
         break;
 
       case "play":
+        setCancelSelectionVisible(false);
+        clearSpotSelection();
         removeCard(data.playerId, data.value, data.suit);
 
         if (data.value === "J") {
@@ -179,6 +247,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "seven-start":
+        setCancelSelectionVisible(false);
         removeCard(data.playerId, data.value, data.suit);
         log(data.msg);
         break;
@@ -189,6 +258,9 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case "query-seven-hop":
         activeRequestId = data.requestId;
+        setCancelSelectionVisible(false);
+        clearSpotSelection();
+        query(data.msg);
         requestSevenHop(data.origin, data.target);
         break;
 
@@ -198,31 +270,43 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case "query-origin":
         activeRequestId = data.requestId;
+        setCancelSelectionVisible(Boolean(data.canCancel));
+        query(data.msg || "Choose the piece you want to move.");
         requestSpotSelection(data.originOptions);
         break;
 
       case "query-target":
         activeRequestId = data.requestId;
+        setCancelSelectionVisible(Boolean(data.canCancel));
+        query(data.msg || "Choose the destination.");
         requestSpotSelection(data.targetOptions);
         break;
 
       case "query-card":
         activeRequestId = data.requestId;
+        setCancelSelectionVisible(false);
+        clearSpotSelection();
+        query(data.msg || "Choose a card to play.");
+        showAllCardUp();
         requestCardSelection();
         break;
 
       case 'query':
-        activeRequestId = data.requestId;
+        if (data.requestId) activeRequestId = data.requestId;
         query(data.msg);
         break;
 
       case 'reject-card-selection':
-        log(data.msg);
+        error(data.msg);
         showAllCardUp();
         break;
 
       case "game-over":
+        setCancelSelectionVisible(false);
+        clearSpotSelection();
         displayNoActivePlayers();
+        currentPlayerName.textContent = "Game over";
+        turnInstruction.textContent = data.msg;
         log(data.msg);
         break;
 
@@ -236,6 +320,10 @@ async function connectToGame(gameId, name, rejoin = false) {
   };
   
   ws.onclose = (event) => {
+	setCancelSelectionVisible(false);
+	clearSpotSelection();
+	connectionStatus.classList.remove("connected");
+	connectionStatusText.textContent = "Disconnected";
 
     switch (event.code) {
       case 4001:
@@ -291,6 +379,20 @@ joinBtn.addEventListener("click", async () => {
   await connectToGame(gameId, name);
 });
 
+if (cancelCardSelection) {
+  cancelCardSelection.addEventListener("click", (event) => {
+    event.stopPropagation();
+
+    if (!ws || ws.readyState !== WebSocket.OPEN || !activeRequestId) return;
+
+    const message = {"id": crypto.randomUUID(), "requestId": activeRequestId, "type": "cancel_move_selection"};
+    ws.send(JSON.stringify(message));
+    setCancelSelectionVisible(false);
+    clearSpotSelection();
+    turnInstruction.textContent = "Returning to card selection...";
+  });
+}
+
 sendBtn.addEventListener("click", () => {
   const commandInputContent = commandInput.value.trim();
   // simulation only, not for production
@@ -333,6 +435,87 @@ gameIdInput.addEventListener("input", () => {
   joinBtn.disabled = gameIdInput.value.trim() === "";
 });
 
+lobbyChoiceForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    lobbyError.textContent = "The connection is not open.";
+    lobbyError.classList.remove("hidden");
+    return;
+  }
+
+  lobbyError.classList.add("hidden");
+  confirmLobbyChoice.disabled = true;
+  lobbyStatus.textContent = "Confirming your choices...";
+
+  const message = {"id": crypto.randomUUID(), "type": "configure-player", "team": teamSelect.value, "color": colorSelect.value};
+  ws.send(JSON.stringify(message));
+});
+
+function renderLobbyState(state) {
+  currentLobbyState = state;
+  lobbyGameId.textContent = state.gameId;
+  lobbyPlayerCount.textContent = `${state.players.length} / 4 players`;
+  lobbyPlayers.replaceChildren();
+
+  state.players.forEach((player) => {
+    const row = document.createElement("div");
+    const connection = document.createElement("span");
+    const name = document.createElement("span");
+    const choice = document.createElement("span");
+
+    row.className = "lobby-player";
+    connection.className = `lobby-connection${player.connected ? " connected" : ""}`;
+    name.className = "lobby-player-name";
+    choice.className = "lobby-player-choice";
+    name.textContent = player.name === local_player_name ? `${player.name} (you)` : player.name;
+    choice.textContent = player.configured ? `Team ${player.team} · ${player.color}` : "Choosing...";
+
+    row.append(connection, name, choice);
+    lobbyPlayers.appendChild(row);
+  });
+
+  const localPlayer = state.players.find((player) => player.name === local_player_name);
+
+  if (state.started) {
+    state.players.filter((player) => player.configured).forEach((player) => assignPlayer(player.name, player.team, player.color));
+    showGameUI();
+    return;
+  }
+
+  showLobbyUI();
+
+  if (!localPlayer || localPlayer.configured) {
+    lobbyChoiceForm.classList.add("hidden");
+    lobbyStatus.textContent = localPlayer ? "Your choices are confirmed. Waiting for the other players..." : "Joining lobby...";
+    return;
+  }
+
+  lobbyChoiceForm.classList.remove("hidden");
+  confirmLobbyChoice.disabled = false;
+  lobbyError.classList.add("hidden");
+
+  Array.from(teamSelect.options).forEach((option) => {
+    option.disabled = state.teamCounts[option.value] >= state.teamCapacity;
+  });
+
+  if (teamSelect.selectedOptions[0]?.disabled) {
+    const availableTeam = Array.from(teamSelect.options).find((option) => !option.disabled);
+    if (availableTeam) teamSelect.value = availableTeam.value;
+  }
+
+  colorSelect.replaceChildren();
+  state.availableColors.forEach((color) => {
+    const option = document.createElement("option");
+    option.value = color;
+    option.textContent = color;
+    colorSelect.appendChild(option);
+  });
+
+  confirmLobbyChoice.disabled = state.availableColors.length === 0;
+  lobbyStatus.textContent = state.players.length < 4 ? "Choose your team and colour while the other players join." : "Choose your team and colour to start the game.";
+}
+
 function sendCardSelection(player_name, rank, suit) {
   const message = {"id": crypto.randomUUID(), "requestId": activeRequestId, "type": "card_selection", "name": player_name, "value": rank, "suit": suit};
   const message_json = JSON.stringify(message);
@@ -362,7 +545,7 @@ function requestSevenHop(originSpot, targetSpot) {
 ////// User Interface handling //////
 const regions = ['red', 'green', 'yellow', 'blue'];
 const totalRegions = 4;
-const spotsPerRegion = 17;
+const spotsPerRegion = 18;
 const totalSpots = totalRegions * spotsPerRegion;
 
 const radius = 250;
@@ -405,8 +588,8 @@ function drawQuadrant(position, color) {
   const quadrantSpots = [];
   const quadrantHouses = [];
 
-  for (let i = 0; i < 17; i++) {
-    const angle = angleOffset + (i / 68) * 2 * Math.PI; // 68 = total spots in circle
+  for (let i = 0; i < spotsPerRegion; i++) {
+    const angle = angleOffset + (i / (spotsPerRegion * totalRegions)) * 2 * Math.PI; // (spotsPerRegion * totalRegions) = total spots in circle
     const x = centerX + radius * Math.cos(angle) - 15;
     const y = centerY + radius * Math.sin(angle) - 15;
 
@@ -422,7 +605,7 @@ function drawQuadrant(position, color) {
     if (i === 0) {
       spot.classList.add('out-spot');
 
-      for (let j = 0; j < 4; j++) {
+      for (let j = 0; j < totalRegions; j++) {
         const innerRadius = radius - houseDistance * (j + 1);
         const gx = centerX + innerRadius * Math.cos(angle) - 15;
         const gy = centerY + innerRadius * Math.sin(angle) - 15;
@@ -507,7 +690,7 @@ function clearSpotSelection() {
 function assignPlayer(name, team, color) {
   // if the player is already in the playerAssignements array, we don't add it again. 
   // This can happen because the full_ui uses the assignPlayer method (#TODO: refactor this?)
-  player_test = playerAssignments.find(p => p.name === name);
+  const player_test = playerAssignments.find(p => p.name === name);
   if (player_test) return;
 
   const newPlayer = { name, team, color };
@@ -530,17 +713,20 @@ function assignPlayer(name, team, color) {
   usedPositions.push(newPlayer.position);
 
   updatePlayerBlock(newPlayer);
-  positionMap[newPlayer.position].card_box.style.display = 'flex';
   positionMap[newPlayer.position].info_box.style.display = 'flex';
   drawQuadrant(newPlayer.position, color);
 
-    // Setting a few short-hands for cleaner code
-    local_player = playerAssignments.find(p => p.name === local_player_name);
-    if (!local_player) {
-      console.warn(`Error setting up the local_player var, no player found with ID "${local_player_name}"`, JSON.stringify(playerAssignments));
-    } else {
+  // Setting a few short-hands for cleaner code
+  local_player = playerAssignments.find(p => p.name === local_player_name);
+  if (local_player) {
     local_card_box = positionMap[local_player.position].card_box
     local_info_box = positionMap[local_player.position].info_box
+    local_info_box.classList.add("local-player");
+
+    if (!local_card_box.classList.contains("local-hand")) {
+      local_card_box.classList.add("local-hand");
+      localHandSlot.appendChild(local_card_box);
+    }
   }
 }
 
@@ -591,25 +777,52 @@ function getPlayerClass(playerId) {
 function hideCardBlock(playerId) {
   const player = getPlayerFromId(playerId);
   positionMap[player.position].card_box.style.display = 'none';
+
+  if (playerId === local_player_name) {
+    emptyHandMessage.textContent = "Waiting for the next deal.";
+    emptyHandMessage.classList.remove("hidden");
+  }
 }
 
 function updatePlayerBlock(player, isDealer = false) {
   const block = positionMap[player.position].info_box;
-  block.innerHTML = `${player.name}<br>Team ${player.team}`;
-  if (isDealer) block.innerHTML += '<br><i>Dealer</i>'
+  const identity = document.createElement("div");
+  const name = document.createElement("span");
+  const team = document.createElement("span");
+
+  identity.className = "player-identity";
+  name.className = "player-name";
+  team.className = "player-team";
+  name.textContent = player.name;
+  team.textContent = `Team ${player.team}`;
+  identity.append(name, team);
+  block.replaceChildren(identity);
+
+  if (isDealer) {
+    const dealerBadge = document.createElement("span");
+    dealerBadge.className = "dealer-badge";
+    dealerBadge.textContent = "D";
+    dealerBadge.title = "Dealer";
+    dealerBadge.setAttribute("aria-label", "Dealer");
+    block.appendChild(dealerBadge);
+  }
+
   const playerClass = getPlayerClass(player.name);
+  block.classList.remove("player-red", "player-green", "player-blue", "player-yellow");
   block.classList.add(playerClass);
 }
 
 function updateRegionColor(position, color) {
   const regionIndex = positionMap[position].index;
-  const regionSpots = spotElements.slice(regionIndex * 17, regionIndex * 17 + 17);
-  const regionHouseSpots = houseElements.slice(regionIndex * 4, regionIndex * 4 + 4);
+  const regionSpots = spotElements.slice(regionIndex * spotsPerRegion, (regionIndex + 1) * spotsPerRegion);
+  const regionHouseSpots = houseElements.slice(regionIndex * totalRegions, (regionIndex + 1) * totalRegions);
   regionSpots.forEach(s => s.classList.add(color));
   regionHouseSpots.forEach(s => s.classList.add(color));
 }
 
 function toogleDealerOnPlayerBlock(playerId) {
+	dealerName.textContent = playerId;
+
   playerAssignments.forEach(p => {
     if (p.name === playerId) {
       updatePlayerBlock(p, true);
@@ -620,6 +833,16 @@ function toogleDealerOnPlayerBlock(playerId) {
 }
 
 function displayActivePlayer(playerId) {
+  if (!playerId) {
+    currentPlayerName.textContent = "Waiting for the game to start";
+    return;
+  }
+
+  currentPlayerName.textContent = playerId === local_player_name ? `${playerId} (you)` : playerId;
+  turnInstruction.textContent = playerId === local_player_name ? "It is your turn." : `Waiting for ${playerId} to play.`;
+  turnInstruction.classList.remove("error-state");
+  turnBanner.classList.toggle("your-turn", playerId === local_player_name);
+
   playerAssignments.forEach(p => {
     const block = positionMap[p.position].info_box;
     if (p.name === playerId) {
@@ -631,6 +854,9 @@ function displayActivePlayer(playerId) {
 }
 
 function displayNoActivePlayers() {
+	currentPlayerName.textContent = "No active player";
+	turnBanner.classList.remove("your-turn");
+
   playerAssignments.forEach(p => {
     const block = positionMap[p.position].info_box;
     block.classList.remove('active');
@@ -672,6 +898,10 @@ function setupPlayerCards(playerId, cards) {
 
 function displayHiddenCards(playerId, number_of_cards) {
   const block = getCardBoxFromId(playerId);
+
+  if (playerId === local_player_name) {
+    emptyHandMessage.classList.add("hidden");
+  }
   
   for (let i = 0; i < number_of_cards; i++) {
     block.style.display = 'flex';
@@ -697,6 +927,8 @@ function displayHiddenCards(playerId, number_of_cards) {
 }
 
 function showAllCardUp() {
+  if (!local_card_box) return;
+
   local_card_box.querySelectorAll(".card-container").forEach(cardContainer => {
     cardContainer.classList.add('flip');
   });
@@ -713,6 +945,11 @@ function foldAllCardsOfPlayer(playerId) {
     cardContainer.removeEventListener('click', clickCardClickListener);
     block.style.display = 'none';
   });
+
+  if (playerId === local_player_name) {
+    emptyHandMessage.textContent = "Waiting for the next deal.";
+    emptyHandMessage.classList.remove("hidden");
+  }
 }
 
 function replaceCard(rank, suit) {

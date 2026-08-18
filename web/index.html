@@ -7,12 +7,12 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="toc.css">
 </head>
-<body class="bg-gray-900 text-white font-mono p-6">
-  <div class="max-w-xl mx-auto">
-    <h1 class="text-3xl font-bold mb-4 text-center">TOC Online</h1>
+<body>
+  <div class="app-frame">
+    <h1 class="app-title">TOC Online</h1>
 
     <!-- Start screen -->
-    <div id="start-screen" class="space-y-4">
+    <div id="start-screen" class="pre-game-screen space-y-4">
       <input id="name-input" type="text" placeholder="Enter your name"
              class="w-full p-2 bg-gray-800 border border-gray-600 rounded" />
 
@@ -31,31 +31,113 @@
       <div id="error-msg" class="text-red-400 text-sm hidden"></div>
     </div>
 
+    <!-- Lobby screen -->
+    <div id="lobby-screen" class="pre-game-screen hidden space-y-5">
+      <div class="lobby-heading">
+        <div>
+          <p class="lobby-label">Game</p>
+          <p id="lobby-game-id" class="lobby-game-id"></p>
+        </div>
+        <p id="lobby-player-count" class="lobby-player-count"></p>
+      </div>
+
+      <div id="lobby-players" class="lobby-players"></div>
+
+      <form id="lobby-choice-form" class="lobby-choice-form">
+        <h2 class="text-xl font-bold">Choose your seat</h2>
+
+        <label for="team-select">Team</label>
+        <select id="team-select" class="lobby-select">
+          <option value="0">Team 0</option>
+          <option value="1">Team 1</option>
+        </select>
+
+        <label for="color-select">Colour</label>
+        <select id="color-select" class="lobby-select"></select>
+
+        <button id="confirm-lobby-choice" type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Confirm choices</button>
+      </form>
+
+      <p id="lobby-status" class="lobby-status"></p>
+      <p id="lobby-error" class="text-red-400 text-sm hidden"></p>
+    </div>
+
     <!-- Game screen -->
-    <div id="game-screen" class="hidden flex flex-col space-y-4">
-      <div class="relative w-[600px] h-[600px] mx-auto" id="board-wrapper">
-        <div id="board"></div>
-        <div id="player-info-top-left" class="player-info-block"></div>
-        <div id="card-box-top-left" class="card-box"></div>
-        <div id="player-info-top-right" class="player-info-block"></div>
-        <div id="card-box-top-right" class="card-box"></div>
-        <div id="player-info-bottom-left" class="player-info-block"></div>
-        <div id="card-box-bottom-left" class="card-box"></div>
-        <div id="player-info-bottom-right" class="player-info-block"></div>
-        <div id="card-box-bottom-right" class="card-box"></div>
+    <div id="game-screen" class="game-screen hidden">
+      <header class="game-topbar">
+        <div>
+          <p class="game-topbar-label">Game</p>
+          <p id="game-id-display" class="game-topbar-value">—</p>
+        </div>
+        <div class="game-topbar-meta">
+          <div>
+            <span class="game-topbar-label">Dealer</span>
+            <strong id="dealer-name">Waiting…</strong>
+          </div>
+          <div id="connection-status" class="connection-badge connected"><span class="connection-dot"></span><span id="connection-status-text">Connected</span></div>
+        </div>
+      </header>
+
+      <div class="game-layout">
+        <main class="board-panel">
+          <div class="turn-banner">
+            <div>
+              <span class="turn-label">Current turn</span>
+              <strong id="current-player-name">Waiting for the game to start</strong>
+            </div>
+            <p id="turn-instruction">The next action will appear here.</p>
+          </div>
+
+          <div id="board-wrapper">
+            <div id="board">
+              <div class="board-center-mark"><span>TOC</span><small>Online</small></div>
+            </div>
+            <div id="player-info-top-left" class="player-info-block"></div>
+            <div id="card-box-top-left" class="card-box"></div>
+            <div id="player-info-top-right" class="player-info-block"></div>
+            <div id="card-box-top-right" class="card-box"></div>
+            <div id="player-info-bottom-left" class="player-info-block"></div>
+            <div id="card-box-bottom-left" class="card-box"></div>
+            <div id="player-info-bottom-right" class="player-info-block"></div>
+            <div id="card-box-bottom-right" class="card-box"></div>
+          </div>
+        </main>
+
+        <aside class="game-sidebar">
+          <section class="sidebar-card">
+            <div class="sidebar-heading">
+              <div>
+                <span class="sidebar-eyebrow">Game history</span>
+                <h2>Latest actions</h2>
+              </div>
+              <span class="live-indicator">Live</span>
+            </div>
+            <div id="terminal" class="activity-log"></div>
+          </section>
+
+          <details class="debug-panel">
+            <summary>Debug tools</summary>
+            <div class="debug-controls">
+              <input id="command-input" type="text" placeholder="Type a command" />
+              <button id="send-btn" type="button">Send</button>
+            </div>
+          </details>
+        </aside>
       </div>
-      <div id="terminal" class="bg-black text-green-400 p-4 rounded h-64 overflow-y-auto whitespace-pre-wrap text-sm border border-green-500"></div>
-      <div class="flex space-x-2">
-        <input id="command-input" type="text" placeholder="Type a command"
-               class="flex-1 p-2 bg-gray-800 border border-gray-600 rounded" />
-        <button id="send-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
-          Send
-        </button>
-      </div>
+
+      <section class="local-hand-panel">
+        <div class="local-hand-heading">
+          <div>
+            <span class="sidebar-eyebrow">Your cards</span>
+            <h2>Your hand</h2>
+          </div>
+          <p>Select a card, then confirm it with a second click.</p>
+        </div>
+        <div id="local-hand-slot" class="local-hand-slot"><span id="empty-hand-message">Cards will appear when the round starts.</span></div>
+      </section>
     </div>
   </div>
 
   <script src="logic.js"></script>
 </body>
 </html>
-

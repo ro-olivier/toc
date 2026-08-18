@@ -137,7 +137,6 @@ class GameSession:
 		self.started = False
 		self.lock = asyncio.Lock()
 		self.setupLock = asyncio.Lock()
-		self.remaining_colors = COLORS
 		self.router = msg_router
 		self.order: List = []
 		self.game = None
@@ -158,7 +157,19 @@ class GameSession:
 		return sum([self.players[p]["team"] == team for p in self.players]) >= NUMBER_OF_PLAYERS // NUMBER_OF_TEAMS
 
 	def is_full(self) -> bool:
-	   return len(self.players) >= NUMBER_OF_PLAYERS
+		return len(self.players) >= NUMBER_OF_PLAYERS
+
+	def available_colors(self) -> list[str]:
+		usedColors = {playerData["color"] for playerData in self.players.values() if playerData.get("color")}
+		return [color for color in COLORS if color not in usedColors]
+
+	def lobby_state(self) -> dict:
+		players = [{"name": playerData["name"], "team": playerData.get("team", ""), "color": playerData.get("color", ""), "connected": playerData.get("active", False), "configured": playerData.get("configured", False)} for playerData in self.players.values()]
+		teamCounts = {team: sum(playerData.get("team") == team for playerData in self.players.values()) for team in ["0", "1"]}
+		return {"type": "lobby-state", "gameId": self.id, "started": self.started, "players": players, "availableColors": self.available_colors(), "teamCounts": teamCounts, "teamCapacity": NUMBER_OF_PLAYERS // NUMBER_OF_TEAMS}
+
+	async def broadcast_lobby_state(self) -> None:
+		await self.broadcast(self.lobby_state())
 
 	def getFullPlayerId(self, game_id : str, player_name : str) -> str:
 		return f'{game_id}-{player_name}'
@@ -205,87 +216,59 @@ class GameSession:
 				return False
 
 			self.started = True
-			self.gameTask = asyncio.create_task(self.game_loop())
-			return True
 
-	async def configure_player(self, player_id: str) -> None:
+		await self.broadcast_lobby_state()
+		self.gameTask = asyncio.create_task(self.game_loop())
+		return True
+
+	async def configure_player(self, player_id: str, team: str, color: str) -> bool:
 		async with self.setupLock:
-			playerData = self.players[player_id]
+			playerData = self.players.get(player_id)
+
+			if playerData is None or self.started:
+				return False
 
 			if playerData.get("configured", False):
-				return
+				await playerData["object"].send_message_to_user({"type": "lobby-error", "msg": "Your lobby choices have already been confirmed."})
+				return False
+
+			if team not in ["0", "1"]:
+				await playerData["object"].send_message_to_user({"type": "lobby-error", "msg": "Please choose a valid team."})
+				return False
+
+			if color not in COLORS:
+				await playerData["object"].send_message_to_user({"type": "lobby-error", "msg": "Please choose a valid color."})
+				return False
+
+			if self.team_is_full(team):
+				await playerData["object"].send_message_to_user({"type": "lobby-error", "msg": f"Team {team} is already full."})
+				return False
+
+			if color not in self.available_colors():
+				await playerData["object"].send_message_to_user({"type": "lobby-error", "msg": f"The color {color} has already been selected."})
+				return False
 
 			player = playerData["object"]
-			team = await self.make_player_choose_team(player_id)
-			color = await self.make_player_choose_color(player_id)
-
 			player.setTeam(team)
 			player.setColor(color)
-
 			playerData["team"] = team
 			playerData["color"] = color
 			playerData["configured"] = True
 
-			if len(self.players) == NUMBER_OF_PLAYERS and all(player.get("configured", False) for player in self.players.values()):
+			if len(self.players) == NUMBER_OF_PLAYERS and all(data.get("configured", False) for data in self.players.values()):
 				if not self.set_player_order():
 					raise RuntimeError("Could not determine a valid player order")
 
-			await player.send_message_to_user({"type": "log", "msg": f"You successfully joined the game and will play in team {team} with color {color}!\n"})
-			await self.broadcast({"type": "log", "msg": f"{player.name} has joined team {team} and will play {color}.\n"}, excluded_player=player_id)
-			await self.broadcast({"type": "assign-player", "name": player.name, "team": team, "color": color})
-
+		await self.broadcast_lobby_state()
 		await self.start_game_if_ready()
-
-	async def make_player_choose_team(self, player_id: str) -> str:
-		player = self.players[player_id]["object"]
-
-		assignedTeams = [playerData.get("team") for playerData in self.players.values() if playerData.get("team") in ["0", "1"]]
-
-		if not assignedTeams:
-			await player.send_message_to_user({"type": "log", "msg": "You have been assigned to team 0."})
-			return "0"
-
-		if self.team_is_full("0"):
-			await player.send_message_to_user({"type": "log", "msg": "Team 0 is full, you have been assigned to team 1."})
-			return "1"
-
-		if self.team_is_full("1"):
-			await player.send_message_to_user({"type": "log", "msg": "Team 1 is full, you have been assigned to team 0."})
-			return "0"
-
-		await player.send_message_to_user({"type": "query", "msg": "Choose your team (0 or 1):"})
-
-		while True:
-			message = await self.router.wait_for_input(player_id)
-
-			if isinstance(message, dict) and message.get("type") == "text_input" and message.get("msg", "").strip() in ["0", "1"]:
-				team = message["msg"].strip()
-				await player.send_message_to_user({"type": "log", "msg": f"Successfully joined team {team}."})
-				return team
-
-			await player.send_message_to_user({"type": "error", "msg": "Invalid team. Please enter '0' or '1'."})
-
-	async def make_player_choose_color(self, player_id) -> str:
-		player = self.players[player_id]['object']
-		if len(self.remaining_colors) == 1:
-			color = self.remaining_colors.pop()
-			await player.send_message_to_user({"type": "log", "msg": f"The only remaining color is {color}, hope you like it!"})
-			return color
-		else:
-			await player.send_message_to_user({"type": "query", "msg": 
-				f"Choose the color you wish to play. Available colors: {', '.join(self.remaining_colors)}."})
-			while True:
-				parsed_msg = await self.router.wait_for_input(player_id)
-				if parsed_msg['type'] == 'text_input' and parsed_msg['msg'].strip() in self.remaining_colors:
-					color = parsed_msg['msg'].strip()
-					self.remaining_colors = [c for c in self.remaining_colors if c != color]
-					break
-				else:
-					await player.send_message_to_user({"type": "error", "msg": "Please choose a valid color."})
-			return color
+		return True
 
 	async def handle_player_message(self, player_id: str, message: dict) -> None:
 		messageType = message.get("type")
+
+		if messageType == "configure-player":
+			await self.configure_player(player_id, message.get("team", ""), message.get("color", ""))
+			return
 
 		if messageType == "debug":
 			if message.get("msg") == "simulate_card_exchange_players3and4":
@@ -308,9 +291,12 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 	await websocket.accept()
 	gameSession = manager.games.get(game_id)
 
+	if gameSession is None:
+		await websocket.close(code=4001)
+		return
+
 	player_id = gameSession.getFullPlayerId(game_id, player_name)
 	existingPlayer = gameSession.players.get(player_id)
-	initialUI = None
 	newPlayer = None
 
 	if existingPlayer is not None and existingPlayer["active"]:
@@ -324,7 +310,6 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 	try:
 		if existingPlayer is None:
 			router.register(player_id)
-			initialUI = gameSession.fullUI()
 			newPlayer = Player(player_id, player_name, "", "", "", gameSession, router)
 			gameSession.players[player_id] = {"name": player_name, "id": player_id, "websocket": websocket, "team": "", "color": "", "object": newPlayer, "active": True, "configured": False}
 		else:
@@ -358,18 +343,18 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
 	async def setup_connection() -> None:
 		if existingPlayer is None:
-			await newPlayer.send_message_to_user(initialUI)
-			await gameSession.configure_player(player_id)
+			await gameSession.broadcast_lobby_state()
 
 		else:
-			if not existingPlayer.get("configured", False):
-				await gameSession.configure_player(player_id)
-
-			await existingPlayer["object"].send_message_to_user(gameSession.fullUI())
-			await existingPlayer["object"].send_message_to_user({"type": "log", "msg": f"You successfully rejoined the game in team {existingPlayer['team']} with color {existingPlayer['color']}!\n"})
-			await existingPlayer["object"].sendHandAgain()
-			await router.resend_pending_prompt(player_id)
-			await gameSession.broadcast({"type": "log", "msg": f"{player_id} has rejoined team {existingPlayer['team']} and plays {existingPlayer['color']}.\n"}, excluded_player=player_id)
+			if gameSession.started:
+				await existingPlayer["object"].send_message_to_user(gameSession.lobby_state())
+				await existingPlayer["object"].send_message_to_user(gameSession.fullUI())
+				await existingPlayer["object"].send_message_to_user({"type": "log", "msg": f"You successfully rejoined the game in team {existingPlayer['team']} with color {existingPlayer['color']}!\n"})
+				await existingPlayer["object"].sendHandAgain()
+				await router.resend_pending_prompt(player_id)
+				await gameSession.broadcast({"type": "log", "msg": f"{player_name} has rejoined the game.\n"}, excluded_player=player_id)
+			else:
+				await gameSession.broadcast_lobby_state()
 
 		await gameSession.start_game_if_ready()
 
@@ -394,7 +379,11 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 		if playerData is not None and playerData.get("websocket") is websocket:
 			playerData["active"] = False
 			router.unregister(player_id)
-			await gameSession.broadcast({"type": "log", "msg": f"{player_id} disconnected."}, excluded_player=player_id)
+
+			if gameSession.started:
+				await gameSession.broadcast({"type": "log", "msg": f"{player_name} disconnected."}, excluded_player=player_id)
+			else:
+				await gameSession.broadcast_lobby_state()
 
 
 router = PlayerInputRouter()

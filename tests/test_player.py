@@ -1,6 +1,8 @@
 import asyncio
 
 from board import Board
+from cards import Card
+from move import Move
 from params import COLORS
 from player import Player
 
@@ -72,3 +74,79 @@ def test_target_selection_accepts_house_position():
 	result = asyncio.run(player.getTargetChoiceFromPlayer([target]))
 
 	assert result is target
+
+
+def test_origin_selection_can_cancel_when_allowed():
+	board = Board(COLORS)
+	origin = board.getSpot("red", 1)
+	router = FakeRouter([
+		{"type": "cancel_move_selection"},
+	])
+	player = make_player(router)
+	player.setBoard(board)
+
+	result = asyncio.run(player.getOriginChoiceFromPlayer([origin], canCancel=True))
+
+	assert result is None
+	assert router.outputs[0][1]["canCancel"] is True
+
+
+def test_target_selection_can_cancel_when_allowed():
+	board = Board(COLORS)
+	target = board.getSpot("red", 2)
+	router = FakeRouter([
+		{"type": "cancel_move_selection"},
+	])
+	player = make_player(router)
+	player.setBoard(board)
+
+	result = asyncio.run(player.getTargetChoiceFromPlayer([target], canCancel=True))
+
+	assert result is None
+	assert router.outputs[0][1]["canCancel"] is True
+
+
+def test_origin_selection_ignores_cancel_when_not_allowed():
+	board = Board(COLORS)
+	origin = board.getSpot("red", 1)
+	router = FakeRouter([
+		{"type": "cancel_move_selection"},
+		{"type": "spot_selection", "result": str(origin)},
+	])
+	player = make_player(router)
+	player.setBoard(board)
+
+	result = asyncio.run(player.getOriginChoiceFromPlayer([origin]))
+
+	assert result is origin
+	assert router.outputs[0][1]["canCancel"] is False
+
+
+def test_cancelling_origin_returns_to_card_selection():
+	board = Board(COLORS)
+	cardTwo = Card("♥️", "2")
+	cardThree = Card("♠️", "3")
+	originOne = board.getSpot("red", 1)
+	originTwo = board.getSpot("red", 4)
+	targetOne = board.getSpot("red", 3)
+	targetTwo = board.getSpot("red", 6)
+	targetThree = board.getSpot("red", 7)
+	router = FakeRouter([
+		{"type": "card_selection", "suit": "♥️", "value": "2"},
+		{"type": "cancel_move_selection"},
+		{"type": "card_selection", "suit": "♠️", "value": "3"},
+	])
+	player = make_player(router)
+	player.setBoard(board)
+	player.hand.addToHand(cardTwo)
+	player.hand.addToHand(cardThree)
+	options = [
+		Move("MOVE", originOne, targetOne, cardTwo, player),
+		Move("MOVE", originTwo, targetTwo, cardTwo, player),
+		Move("MOVE", originTwo, targetThree, cardThree, player),
+	]
+
+	result = asyncio.run(player.getMoveChoiceFromPlayer(options))
+
+	assert result is options[2]
+	assert [message[1]["type"] for message in router.outputs].count("query-card") == 2

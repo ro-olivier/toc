@@ -135,9 +135,10 @@ class Player:
 				if len(possibleOrigins) == 1: # There could be one single origin, but several targets (for example an A being played with only one piece out and no more pieces to take out), and so here we may skip asking the player to choose the origin
 					origin = possibleOrigins[0]
 				else:
-					origin = await self.getOriginChoiceFromPlayer(possibleOrigins)
-					while not origin:
-						origin = await self.getOriginChoiceFromPlayer(possibleOrigins)
+					origin = await self.getOriginChoiceFromPlayer(possibleOrigins, canCancel=True)
+					if origin is None:
+						cardChoice = await self.getCardChoiceFromPlayer()
+						continue
 
 				print(f'[getMoveChoiceFromPlayer] selected originSpot: {str(origin)} - {id(origin)} - {type(origin)}')
 
@@ -147,9 +148,10 @@ class Player:
 				if len(possibleTargets) == 1: # There could be only one possible target for several moves from different origins (for example you have two pieces seperated by 4 spots and you have only a 4 and an 8 to play), and se here we may skip asking the player to choose the target
 					target = possibleTargets[0]
 				else:
-					target = await self.getTargetChoiceFromPlayer(possibleTargets)
-					while not target:
-						target = await self.getTargetChoiceFromPlayer(possibleTargets)
+					target = await self.getTargetChoiceFromPlayer(possibleTargets, canCancel=True)
+					if target is None:
+						cardChoice = await self.getCardChoiceFromPlayer()
+						continue
 
 				print(f'[getMoveChoiceFromPlayer] selected targetSpot: {str(target)} - {id(target)} - {type(target)}')
 				result = [move for move in possibleMoves if move.originSpot == origin and move.card == cardChoice and move.targetSpot == target]
@@ -158,37 +160,41 @@ class Player:
 			
 		return moveChoice
 
-	async def getOriginChoiceFromPlayer(self, possibleOrigins) -> Spot:
+	async def getOriginChoiceFromPlayer(self, possibleOrigins, canCancel: bool = False) -> Spot:
 		await self.send_message_to_user({
 			"type": "query-origin",
 			"msg": "What piece do you want to play this card on?",
 			"originOptions": [str(origin) for origin in possibleOrigins],
+			"canCancel": canCancel,
 		})
 
 		originsById = {str(origin): origin for origin in possibleOrigins}
-		spotChoice = await self.get_input_from_prompt("What piece do you want to play this card on?")
-
-		while not isinstance(spotChoice, dict) or spotChoice.get("type") != "spot_selection" or spotChoice.get("result") not in originsById:
+		while True:
 			spotChoice = await self.get_input_from_prompt("What piece do you want to play this card on?")
+			if canCancel and isinstance(spotChoice, dict) and spotChoice.get("type") == "cancel_move_selection":
+				self._router.clear_pending_prompt(self._id)
+				return None
+			if isinstance(spotChoice, dict) and spotChoice.get("type") == "spot_selection" and spotChoice.get("result") in originsById:
+				self._router.clear_pending_prompt(self._id)
+				return originsById[spotChoice["result"]]
 
-		self._router.clear_pending_prompt(self._id)
-		return originsById[spotChoice["result"]]
-
-	async def getTargetChoiceFromPlayer(self, possibleTargets) -> Spot:
+	async def getTargetChoiceFromPlayer(self, possibleTargets, canCancel: bool = False) -> Spot:
 		await self.send_message_to_user({
 			"type": "query-target",
 			"msg": "Where do you want to move this piece?",
 			"targetOptions": [str(target) for target in possibleTargets],
+			"canCancel": canCancel,
 		})
 
 		targetsById = {str(target): target for target in possibleTargets}
-		spotChoice = await self.get_input_from_prompt("Where do you want to move this piece?")
-
-		while not isinstance(spotChoice, dict) or spotChoice.get("type") != "spot_selection" or spotChoice.get("result") not in targetsById:
+		while True:
 			spotChoice = await self.get_input_from_prompt("Where do you want to move this piece?")
-
-		self._router.clear_pending_prompt(self._id)
-		return targetsById[spotChoice["result"]]
+			if canCancel and isinstance(spotChoice, dict) and spotChoice.get("type") == "cancel_move_selection":
+				self._router.clear_pending_prompt(self._id)
+				return None
+			if isinstance(spotChoice, dict) and spotChoice.get("type") == "spot_selection" and spotChoice.get("result") in targetsById:
+				self._router.clear_pending_prompt(self._id)
+				return targetsById[spotChoice["result"]]
 
 	async def getSevenStepChoiceFromPlayer(self, options: list[Move]) -> Move:
 		if not options:
