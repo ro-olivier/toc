@@ -16,3 +16,4 @@ MOVE_DESCRIPTION = {
 	'FIVE': f'Move an opponent\'s piece 5 times forward.',
 	'HOP': 'Hop from one position numbered 7 to the next.',
 	}
+DEAL_CARD_COUNTS = (5, 4, 4)

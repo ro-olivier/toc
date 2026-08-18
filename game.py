@@ -89,7 +89,17 @@ class Game:
 		return res
 
 	def resetActivePlayerIndex(self) -> None:
-		self._activePlayerIndex = -1
+		self._activePlayerIndex = 0
+		self._activePlayer = None
+
+	def advanceActivePlayer(self) -> Player:
+		if not self._players:
+			raise RuntimeError("Cannot select an active player before players have joined")
+
+		self._activePlayerIndex = (self._activePlayerIndex + 1) % self._numPlayers
+		self._activePlayer = self._players[self._activePlayerIndex]
+
+		return self._activePlayer
 
 	def setPlayers(self, players : list[Player]) -> None:
 		# self._players is an ordered array, where the first element is always the dealer and where the players are always positioned in the order in which they play
@@ -100,24 +110,21 @@ class Game:
 			player.setBoard(self._board) 
 
 	async def nextDealer(self) -> None:
+		self._players[0].setDealer(False)
 		self._players = self._players[1:] + self._players[:1]
 		self._players[0].setDealer()
 		await self.broadcast({"type": "dealer", "playerId": self._players[0].name})
 
-	async def drawHands(self, first_round : bool) -> None:
-		if first_round:
+	async def drawHands(self, cardsPerPlayer: int) -> None:
+		cardsByPlayer = {player: [] for player in self._players}
+		dealOrder = self._players[1:] + self._players[:1]
 
-			await self._players[0].setHand(Hand(self._players[0], [Card("♥️", "A", self._deck), Card("♥️", "K", self._deck), Card("♥️", "Q", self._deck), Card("♥️", "T", self._deck), Card("♥️", "J", self._deck)]))
+		for _ in range(cardsPerPlayer):
+			for player in dealOrder:
+				cardsByPlayer[player].append(self._deck.drawCard())
 
-			for player in self._players[1:]:
-				hand = self._deck.drawHand(5, player)
-				await player.setHand(hand)
-
-
-		else:
-			for player in self._players:
-				hand = self._deck.drawHand(4, player)
-				await player.setHand(hand)
+		for player in self._players:
+			await player.setHand(Hand(player, cardsByPlayer[player]))
 
 	async def requestCardExchange(self, players: Tuple[Player, Player]) -> None:
 		player1, player2 = players
@@ -129,39 +136,39 @@ class Game:
 		await player1.switchCard(card1, card2)
 		await player2.switchCard(card2, card1)
 
-	async def runRound(self, round_name : str, first_round : bool) -> None:
-		await self.broadcast({"type": "log", "msg": f"Starting {round_name} round with player {self.dealer} as the dealer.\n"})
+	async def runRound(self, roundName: str, cardsPerPlayer: int) -> None:
+		await self.broadcast({"type": "log", "msg": f"Starting {roundName} with player {self.dealer} as the dealer.\n"})
 		self.resetActivePlayerIndex()
-		await self.drawHands(first_round)
+		await self.drawHands(cardsPerPlayer)
 
 		teams = self.getPlayersInTeams()
-		team0 = teams[0]
-		team1 = teams[1]
-
-		await asyncio.gather(
-			self.requestCardExchange(team0),
-			self.requestCardExchange(team1)
-		)
+		await asyncio.gather(*(self.requestCardExchange(team) for team in teams))
 
 		self._handsFinished = 0
-		while self._handsFinished < self._numPlayers:
+
+		while self._handsFinished < self._numPlayers and not self._isFinished:
 			await self.nextPlayer()
-		await self.broadcast({"type": "log", "msg": f"{round_name} round is finished."})
+
+		await self.broadcast({"type": "log", "msg": f"{roundName} is finished."})
+
+	async def runDeckCycle(self) -> None:
+		for roundNumber, cardsPerPlayer in enumerate(DEAL_CARD_COUNTS, start=1):
+			await self.runRound(f"Deal {roundNumber}", cardsPerPlayer)
+
+			if self._isFinished:
+				return
 
 	async def start(self) -> None:
 		self._isStarted = True
-
 		self._players[0].setDealer()
 		await self.broadcast({"type": "dealer", "playerId": self._players[0].name})
 
 		while not self._isFinished:
-			await self.runRound('First', first_round = True)
-			await self.runRound('Second', first_round = False)
-			await self.runRound('Third', first_round = False)
+			await self.runDeckCycle()
 
-			self._deck.reset(self.players)
-			self.nextDealer()
-			await self.start()
+			if not self._isFinished:
+				self._deck.recycleDiscardPile()
+				await self.nextDealer()
 
 	def applyMove(self, move: Move) -> None:
 		player = move.player
@@ -229,10 +236,7 @@ class Game:
 		return hopMove
 
 	async def nextPlayer(self) -> None:
-		self._activePlayerIndex += 1
-		if self._activePlayerIndex == NUMBER_OF_PLAYERS:
-			self._activePlayerIndex = 0
-		self._activePlayer = self._players[self._activePlayerIndex]
+		self.advanceActivePlayer()
 
 		if self._activePlayer.hand.size > 0:
 			await self.broadcast({"type": "next-player", "playerId": self._activePlayer.name, "msg": f"Moving on to next player: {str(self._activePlayer)}"})

@@ -89,8 +89,12 @@ class Player:
 	async def sendHandAgain(self) -> None:
 		await self.send_message_to_user({"type": "reveal", "playerId": self._name, "cards": [c.json for c in self._hand.cards]})
 
-	def setDealer(self) -> None:
-		self._isDealer = True
+	@property
+	def isDealer(self) -> bool:
+		return self._isDealer
+
+	def setDealer(self, isDealer: bool = True) -> None:
+		self._isDealer = isDealer
 
 	async def foldHand(self) -> None:
 		 self._hand.fold()

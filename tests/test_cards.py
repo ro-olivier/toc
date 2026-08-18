@@ -20,3 +20,24 @@ def test_card_numeric_values():
     assert Card("♥️", "Q").numValue == 12
     assert Card("♥️", "K").numValue == 13
     assert Card("♥️", "A").numValue == 11
+
+def test_recycled_discard_pile_preserves_card_order():
+    deck = Deck()
+    drawnCards = [deck.drawCard() for _ in range(52)]
+
+    for card in drawnCards:
+        deck.discardCard(card)
+
+    deck.recycleDiscardPile()
+
+    assert deck.cards == drawnCards
+    assert deck.discardPile == []
+    assert deck.size == 52
+
+def test_drawing_all_cards_empties_deck():
+    deck = Deck()
+
+    for _ in range(52):
+        deck.drawCard()
+
+    assert deck.size == 0

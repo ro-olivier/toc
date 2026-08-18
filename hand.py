@@ -4,15 +4,13 @@ from __future__ import annotations
 class Hand:
 	def __init__(self, player : Player, cards : list[Card] = None):
 		self._player = player
-		self._cards = cards
-		if cards:
-			self._remainingCards = len(self._cards)
+		self._cards = list(cards) if cards is not None else []
 
 	def __str__(self) -> str:
 		if len(self._cards) == 0:
 			return f'{self._player.name}\'s hand is empty'
 		else:
-			s = f'{self._player.name}\'s hand is composed of {self._remainingCards} cards: '
+			s = f'{self._player.name}\'s hand is composed of {len(self._cards)} cards: '
 			for card in self._cards[:-1]:
 				s += str(card) + ', '
 			s += str(self._cards[-1])

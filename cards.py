@@ -10,45 +10,45 @@ class Deck:
 	def __init__(self):
 		self._cards = [Card(suit, value, self) for value in VALUES for suit in SUITS]
 		random.shuffle(self._cards)
-
 		self._discardPile = []
 		self._player = None
 
-	def drawHand(self, number_of_cards : int, player : Player) -> Hand:
-		if not number_of_cards in [4, 5]:
-			raise Exception(f'A hand with {number_of_cards} was requested: that\'s not possible...')
-		else:
-			temp = []
-			for n in range(number_of_cards):
-				picked_card = random.choice(self._cards)
-				remaining_cards = [card for card in self._cards if card != picked_card]
-				self._cards = remaining_cards
-				temp.append(picked_card)
-			self._player = player
-			return Hand(player, temp)
+	@property
+	def cards(self) -> list[Card]:
+		return self._cards
+
+	@property
+	def size(self) -> int:
+		return len(self._cards)
 
 	@property
 	def discardPile(self) -> list[Card]:
 		return self._discardPile
 
-	def discardCard(self, card : Card) -> None:
+
+	def drawCard(self) -> Card:
+		if not self._cards:
+			raise RuntimeError("Cannot draw a card from an empty deck")
+
+		return self._cards.pop(0)
+
+	def discardCard(self, card: Card) -> None:
 		self._discardPile.append(card)
 
-	def discardCards(self, hand : List[Card]) -> None:
-		for card in hand.cards:
-			self._discardPile.append(card)
+	def discardCards(self, hand: Hand) -> None:
+		self._discardPile.extend(hand.cards)
 
-	def reset(self, players) -> None:
-		player_index = 0
-		temp_hands = []
-		for card in self._discardPile:
-			temp_hands.append(card)
-			player_index += 1
-			if player_index == NUMBER_OF_PLAYERS:
-				player_index = 0
+	def recycleDiscardPile(self) -> None:
+		if self._cards:
+			raise RuntimeError("Cannot recycle the discard pile while cards remain in the deck")
 
-		for index, player in enumerate(players):
-			player.setHand(temp_hands[index])
+		expectedCardCount = len(SUITS) * len(VALUES)
+
+		if len(self._discardPile) != expectedCardCount:
+			raise RuntimeError(f"Cannot recycle an incomplete discard pile containing {len(self._discardPile)} cards")
+
+		self._cards = self._discardPile
+		self._discardPile = []
 
 
 class Card:

@@ -14,6 +14,14 @@ class FakeGameSession:
 	async def broadcast(self, message):
 		self.messages.append(message)
 
+class ScheduleRecordingGame(Game):
+    def __init__(self):
+        super().__init__(FakeGameSession(), COLORS)
+        self.roundCalls = []
+
+    async def runRound(self, roundName, cardsPerPlayer):
+        self.roundCalls.append((roundName, cardsPerPlayer))
+
 
 class AutomaticPlayer(Player):
 	async def getSevenStepChoiceFromPlayer(self, options):
@@ -28,6 +36,10 @@ class AutomaticHopPlayer(AutomaticPlayer):
     async def getSevenHopChoiceFromPlayer(self, originSpot, targetSpot):
         self.hopRequests.append((originSpot, targetSpot))
         return self.shouldHop
+
+class QuietPlayer(Player):
+    async def setHand(self, hand):
+        self._hand = hand
 
 def make_player(name="Alice", color="red", team="0"):
 	return Player(identifier=f"TEST-{name}", name=name, team=team, color=color)
@@ -279,3 +291,75 @@ def test_seven_split_cannot_hop_before_final_step():
     assert alice.hopRequests == []
     assert game.board.getSpot("red", 12).occupant is alice
     assert not any(message["type"] == "seven-hop" for message in session.messages)
+
+def test_cards_are_dealt_one_at_a_time_starting_after_dealer():
+    game = Game(FakeGameSession(), COLORS)
+
+    players = [
+        QuietPlayer("TEST-Alice", "Alice", "0", "red"),
+        QuietPlayer("TEST-Bob", "Bob", "1", "blue"),
+        QuietPlayer("TEST-Charlie", "Charlie", "0", "green"),
+        QuietPlayer("TEST-Diana", "Diana", "1", "yellow"),
+    ]
+
+    game.setPlayers(players)
+
+    orderedCards = [Card("", str(index)) for index in range(16)]
+    game.deck._cards = orderedCards.copy()
+
+    asyncio.run(game.drawHands(4))
+
+    assert players[1].hand.cards == [orderedCards[0], orderedCards[4], orderedCards[8], orderedCards[12]]
+    assert players[2].hand.cards == [orderedCards[1], orderedCards[5], orderedCards[9], orderedCards[13]]
+    assert players[3].hand.cards == [orderedCards[2], orderedCards[6], orderedCards[10], orderedCards[14]]
+    assert players[0].hand.cards == [orderedCards[3], orderedCards[7], orderedCards[11], orderedCards[15]]
+    assert game.deck.size == 0
+
+def test_player_after_dealer_plays_first():
+    game = Game(FakeGameSession(), COLORS)
+
+    players = [
+        make_player("Alice", "red", "0"),
+        make_player("Bob", "blue", "1"),
+        make_player("Charlie", "green", "0"),
+        make_player("Diana", "yellow", "1"),
+    ]
+
+    game.setPlayers(players)
+    game.resetActivePlayerIndex()
+
+    assert game.advanceActivePlayer() is players[1]
+
+def test_dealer_rotates_clockwise():
+    session = FakeGameSession()
+    game = Game(session, COLORS)
+
+    players = [
+        make_player("Alice", "red", "0"),
+        make_player("Bob", "blue", "1"),
+        make_player("Charlie", "green", "0"),
+        make_player("Diana", "yellow", "1"),
+    ]
+
+    game.setPlayers(players)
+
+    assert game.dealer is players[0]
+    assert players[0].isDealer
+
+    asyncio.run(game.nextDealer())
+
+    assert game.dealer is players[1]
+    assert players[1].isDealer
+    assert not players[0].isDealer
+    assert session.messages[-1] == {"type": "dealer", "playerId": "Bob"}
+
+def test_deck_cycle_uses_five_four_four_schedule():
+    game = ScheduleRecordingGame()
+
+    asyncio.run(game.runDeckCycle())
+
+    assert game.roundCalls == [
+        ("Deal 1", 5),
+        ("Deal 2", 4),
+        ("Deal 3", 4),
+    ]
