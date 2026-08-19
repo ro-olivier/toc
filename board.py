@@ -4,12 +4,14 @@ from typing import Optional
 from move import Move
 from spot import Spot, House
 from cards import Card
+from rules import GameRules, MONTSURVENT_RULES
 
 from params import *
 
 
 class Board:
-	def __init__(self, colors : List):
+	def __init__(self, colors : List, rules: GameRules = MONTSURVENT_RULES):
+		self._rules = rules
 		self._spots = []
 		self._colors = colors
 		for color in colors:
@@ -22,6 +24,10 @@ class Board:
 				self._houses.append(House(color, i))
 
 		print(f'Created the board with the following ordered colors: {colors}')
+
+	@property
+	def rules(self) -> GameRules:
+		return self._rules
 
 	def __str__(self) -> str:
 		s = ''
@@ -78,7 +84,7 @@ class Board:
 		return [spot for spot in self._spots if spot.isOccupied and spot.occupant.team != player.team]
 
 	def getAllPiecesOfOtherPlayer(self, player) -> list[Spot]:
-		return getOtherPiecesOnTheBoard(player)
+		return self.getOtherPiecesOnTheBoard(player)
 
 	def getAllPiecesOnTheBoard(self) -> list[Spot]:
 		return [{"spotIndex": str(house), "playerId": house.occupant.name} for house in self._houses if house.isOccupied] + [{"spotIndex": str(spot), "playerId": spot.occupant.name} for spot in self._spots if spot.isOccupied]

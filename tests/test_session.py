@@ -1,7 +1,8 @@
 import asyncio
 
-from main import GameSession, PlayerInputRouter
+from main import ConnectionManager, GameSession, PlayerInputRouter
 from player import Player
+from rules import GameRules
 
 
 def add_player(session, router, name, team="", color="", configured=False, active=True):
@@ -10,6 +11,16 @@ def add_player(session, router, name, team="", color="", configured=False, activ
 	player = Player(playerId, name, team=team, color=color, gameSession=session, router=router)
 	session.players[playerId] = {"name": name, "id": playerId, "websocket": None, "team": team, "color": color, "object": player, "active": active, "configured": configured}
 	return playerId, player
+
+
+def test_connection_manager_passes_rules_to_session():
+	router = PlayerInputRouter()
+	manager = ConnectionManager()
+	rules = GameRules(card_exchange=False)
+
+	gameId = manager.create_game(router, rules)
+
+	assert manager.get_game(gameId).rules is rules
 
 
 def test_player_configuration_is_validated_and_broadcast():

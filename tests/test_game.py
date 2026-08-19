@@ -27,6 +27,10 @@ class AutomaticPlayer(Player):
 	async def getSevenStepChoiceFromPlayer(self, options):
 		return options[0]
 
+class WinningMovePlayer(Player):
+	async def getMoveChoiceFromPlayer(self, options):
+		return next(move for move in options if move.ID == "ENTER")
+
 class AutomaticHopPlayer(AutomaticPlayer):
     def __init__(self, identifier, name, team, color, shouldHop):
         super().__init__(identifier, name, team, color)
@@ -447,3 +451,29 @@ def test_team_wins_when_both_house_lanes_are_full():
     assert game.isFinished
     assert session.messages[-1]["type"] == "game-over"
     assert session.messages[-1]["winners"] == ["Alice", "Bob"]
+
+def test_ordinary_turn_finishing_team_triggers_victory_immediately():
+	session = FakeGameSession()
+	game = Game(session, COLORS)
+	alice = WinningMovePlayer("TEST-Alice", "Alice", "0", "red")
+	bob = make_player("Bob", "blue", "0")
+	carol = make_player("Carol", "green", "1")
+	diana = make_player("Diana", "yellow", "1")
+	game.setPlayers([alice, carol, bob, diana])
+
+	fill_houses(game.board, alice)
+	for houseNumber in range(1, 4):
+		game.board.getHouse("blue", houseNumber).setOccupant(bob)
+		bob.addAPieceOnTheBoard()
+	entrySpot = game.board.getFirstSpot("blue")
+	entrySpot.setOccupant(bob)
+	bob.addAPieceOnTheBoard()
+	alice.hand.addToHand(Card("♥️", "A"))
+
+	asyncio.run(game.nextPlayer())
+
+	assert game.board.getHouse("blue", 0).occupant is bob
+	assert game.isFinished
+	gameOverMessages = [message for message in session.messages if message["type"] == "game-over"]
+	assert len(gameOverMessages) == 1
+	assert gameOverMessages[0]["winners"] == ["Alice", "Bob"]

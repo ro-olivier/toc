@@ -332,6 +332,11 @@ body {
 #player-info-bottom-left { bottom: 8px; left: 0; }
 #player-info-bottom-right { right: 0; bottom: 8px; }
 
+.player-identity {
+  display: flex;
+  flex-direction: column;
+}
+
 .card-box {
   position: absolute;
   z-index: 18;

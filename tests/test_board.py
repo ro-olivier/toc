@@ -33,6 +33,22 @@ def test_new_board_contains_no_pieces():
 
 	assert board.getAllPiecesOnTheBoard() == []
 
+
+def test_get_all_pieces_of_other_players_excludes_own_pieces():
+	board = Board(COLORS)
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	charlie = make_player("Charlie", "green", "0")
+
+	aliceSpot = place_piece(board, alice, "red", 1)
+	bobSpot = place_piece(board, bob, "red", 2)
+	charlieSpot = place_piece(board, charlie, "red", 3)
+
+	result = board.getAllPiecesOfOtherPlayer(alice)
+
+	assert aliceSpot not in result
+	assert result == [bobSpot, charlieSpot]
+
 @pytest.mark.parametrize(
 	("distance", "house_number"),
 	[

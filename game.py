@@ -9,12 +9,14 @@ from hand import Hand
 from params import *
 from player import Player
 from move import Move
+from rules import GameRules, MONTSURVENT_RULES
 
 
 class Game:
-	def __init__(self, gameSession : GameSession, colors : List):
+	def __init__(self, gameSession : GameSession, colors : List, rules: GameRules = MONTSURVENT_RULES):
 		self._gameSession = gameSession
-		self._board = Board(colors)
+		self._rules = rules
+		self._board = Board(colors, rules)
 		self._deck = Deck()
 		self._isStarted = False
 		self._isFinished = False
@@ -44,6 +46,10 @@ class Game:
 	@property
 	def board(self) -> Board:
 		return self._board
+
+	@property
+	def rules(self) -> GameRules:
+		return self._rules
 
 	@property
 	def deck(self) -> Deck:
@@ -308,8 +314,7 @@ class Game:
 						"movedPlayerId": moveChoice.pieceOwner.name,
 					})
 
-					self.applyMove(moveChoice)
-					await self.playSevenHop(moveChoice)
+					await self.resolveMove(moveChoice)
 
 			if self._activePlayer.hand.size == 0:
 				self._handsFinished += 1

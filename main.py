@@ -13,6 +13,7 @@ import uuid
 from game import Game
 from player import Player
 from params import *
+from rules import GameRules, MONTSURVENT_RULES
 
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
@@ -122,17 +123,18 @@ class ConnectionManager:
 			if game_id not in self.games:
 				return game_id
 
-	def create_game(self, msg_router) -> str:
+	def create_game(self, msg_router, rules: GameRules = MONTSURVENT_RULES) -> str:
 		game_id = self._generate_game_id()
-		self.games[game_id] = GameSession(game_id, msg_router)
+		self.games[game_id] = GameSession(game_id, msg_router, rules)
 		return game_id
 
 	def get_game(self, game_id: str):
 		return self.games.get(game_id)
 
 class GameSession:
-	def __init__(self, game_id: str, msg_router):
+	def __init__(self, game_id: str, msg_router, rules: GameRules = MONTSURVENT_RULES):
 		self.id = game_id
+		self._rules = rules
 		self.players: Dict = {}
 		self.started = False
 		self.lock = asyncio.Lock()
@@ -140,6 +142,10 @@ class GameSession:
 		self.router = msg_router
 		self.order: List = []
 		self.game = None
+
+	@property
+	def rules(self) -> GameRules:
+		return self._rules
 
 	def fullUI(self) -> dict:
 		if self.game:
@@ -200,7 +206,7 @@ class GameSession:
 	async def game_loop(self):
 		try:
 			await self.broadcast({"type": "log", "msg": "Four players have joined: game is starting!\n"})
-			self.game = Game(self, [self.players[player_id]["color"] for player_id in self.order])
+			self.game = Game(self, [self.players[player_id]["color"] for player_id in self.order], self._rules)
 			self.game.setPlayers([self.players[player_id]["object"] for player_id in self.order])
 			await self.game.start()
 		except Exception:
