@@ -174,8 +174,9 @@ class Game:
 		self.resetActivePlayerIndex()
 		await self.drawHands(cardsPerPlayer)
 
-		teams = self.getPlayersInTeams()
-		await asyncio.gather(*(self.requestCardExchange(team) for team in teams))
+		if self._rules.card_exchange:
+			teams = self.getPlayersInTeams()
+			await asyncio.gather(*(self.requestCardExchange(team) for team in teams))
 
 		self._handsFinished = 0
 
@@ -185,7 +186,7 @@ class Game:
 		await self.broadcast({"type": "log", "msg": f"{roundName} is finished."})
 
 	async def runDeckCycle(self) -> None:
-		for roundNumber, cardsPerPlayer in enumerate(DEAL_CARD_COUNTS, start=1):
+		for roundNumber, cardsPerPlayer in enumerate(self._rules.deal_card_counts, start=1):
 			await self.runRound(f"Deal {roundNumber}", cardsPerPlayer)
 
 			if self._isFinished:

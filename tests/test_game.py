@@ -3,9 +3,10 @@ from game import Game
 from move import Move
 from params import COLORS
 from player import Player
-from rules import FiveHopDecider, GameRules, SevenHopping
+from rules import FiveHopDecider, GameRules, MONTSURVENT_RULES, SevenHopping
 	
 import asyncio
+import pytest
 
 
 class FakeGameSession:
@@ -16,8 +17,8 @@ class FakeGameSession:
 		self.messages.append(message)
 
 class ScheduleRecordingGame(Game):
-    def __init__(self):
-        super().__init__(FakeGameSession(), COLORS)
+    def __init__(self, rules=MONTSURVENT_RULES):
+        super().__init__(FakeGameSession(), COLORS, rules)
         self.roundCalls = []
 
     async def runRound(self, roundName, cardsPerPlayer):
@@ -46,6 +47,20 @@ class QuietPlayer(Player):
     async def setHand(self, hand):
         self._hand = hand
 
+class ExchangeRecordingGame(Game):
+    def __init__(self, rules):
+        super().__init__(FakeGameSession(), COLORS, rules)
+        self.exchangeRequests = []
+
+    async def drawHands(self, cardsPerPlayer):
+        pass
+
+    async def requestCardExchange(self, players):
+        self.exchangeRequests.append(players)
+
+    async def nextPlayer(self):
+        self._handsFinished = self._numPlayers
+
 def make_player(name="Alice", color="red", team="0"):
 	return Player(identifier=f"TEST-{name}", name=name, team=team, color=color)
 
@@ -61,6 +76,12 @@ def fill_houses(board, player):
         board.getHouse(player.color, houseNumber).setOccupant(player)
         player.addAPieceOnTheBoard()
 
+def test_game_passes_rules_to_board():
+    rules = GameRules(card_exchange=False, four_can_move_backward=False, seven_hopping=SevenHopping.DISABLED)
+    game = Game(FakeGameSession(), COLORS, rules)
+
+    assert game.rules is rules
+    assert game.board.rules is rules
 
 def test_play_seven_moves_exactly_seven_steps():
 	session = FakeGameSession()
@@ -363,16 +384,16 @@ def test_dealer_rotates_clockwise():
     assert not players[0].isDealer
     assert session.messages[-1] == {"type": "dealer", "playerId": "Bob"}
 
-def test_deck_cycle_uses_five_four_four_schedule():
-    game = ScheduleRecordingGame()
+@pytest.mark.parametrize("schedule", [(5, 4, 4), (4, 5, 4), (4, 4, 5)])
+def test_deck_cycle_uses_configured_deal_schedule(schedule):
+    rules = GameRules(deal_card_counts=schedule)
+    game = ScheduleRecordingGame(rules)
 
     asyncio.run(game.runDeckCycle())
 
-    assert game.roundCalls == [
-        ("Deal 1", 5),
-        ("Deal 2", 4),
-        ("Deal 3", 4),
-    ]
+    expectedRounds = [(f"Deal {roundNumber}", cardsPerPlayer) for roundNumber, cardsPerPlayer in enumerate(schedule, start=1)]
+
+    assert game.roundCalls == expectedRounds
 
 def test_finished_player_controls_teammate_without_changing_color():
     game = Game(FakeGameSession(), COLORS)
@@ -541,3 +562,36 @@ def test_piece_owner_decides_optional_five_hop_when_configured():
     assert alice.hopRequests == []
     assert bob.hopRequests == [(origin, target)]
     assert target.occupant is bob
+
+def test_round_requests_card_exchange_for_each_team_when_enabled():
+    game = ExchangeRecordingGame(GameRules(card_exchange=True))
+    players = [
+        make_player("Alice", "red", "0"),
+        make_player("Carol", "green", "1"),
+        make_player("Bob", "blue", "0"),
+        make_player("Diana", "yellow", "1"),
+    ]
+    game.setPlayers(players)
+
+    asyncio.run(game.runRound("Test round", 4))
+
+    requestedTeams = [{player.name for player in team} for team in game.exchangeRequests]
+
+    assert requestedTeams == [
+        {"Alice", "Bob"},
+        {"Carol", "Diana"},
+    ]
+
+def test_round_skips_card_exchange_when_disabled():
+    game = ExchangeRecordingGame(GameRules(card_exchange=False))
+    players = [
+        make_player("Alice", "red", "0"),
+        make_player("Carol", "green", "1"),
+        make_player("Bob", "blue", "0"),
+        make_player("Diana", "yellow", "1"),
+    ]
+    game.setPlayers(players)
+
+    asyncio.run(game.runRound("Test round", 4))
+
+    assert game.exchangeRequests == []
