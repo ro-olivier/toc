@@ -65,11 +65,17 @@ def make_player(name="Alice", color="red", team="0"):
 	return Player(identifier=f"TEST-{name}", name=name, team=team, color=color)
 
 
-def place_track_piece(board, player, color, number):
-	spot = board.getSpot(color, number)
-	spot.setOccupant(player)
-	player.addAPieceOnTheBoard()
-	return spot
+def place_track_piece(board, player, color, number, blocking=False):
+    spot = board.getSpot(color, number)
+    spot.setOccupant(player, blocking)
+    player.addAPieceOnTheBoard()
+    return spot
+
+def place_house_piece(board, player, houseNumber):
+    house = board.getHouse(player.color, houseNumber)
+    house.setOccupant(player)
+    player.addAPieceOnTheBoard()
+    return house
 
 def fill_houses(board, player):
     for houseNumber in range(4):
@@ -101,6 +107,64 @@ def test_play_seven_moves_exactly_seven_steps():
 
 	assert len(stepMessages) == 7
 	assert stepMessages[-1]["stepsRemaining"] == 0
+
+
+def test_play_seven_without_path_kicks_only_kicks_at_final_position():
+    session = FakeGameSession()
+    rules = GameRules(seven_split_kicks_pieces_on_path=False)
+    game = Game(session, COLORS, rules)
+
+    alice = AutomaticPlayer("TEST-Alice", "Alice", "0", "red")
+    bob = Player("TEST-Bob", "Bob", "1", "blue")
+
+    alice.setBoard(game.board)
+    bob.setBoard(game.board)
+
+    place_track_piece(game.board, alice, "red", 5)
+    passedPiece = place_track_piece(game.board, bob, "red", 6)
+    finalPiece = place_track_piece(game.board, bob, "red", 12)
+
+    asyncio.run(game.playSeven(alice))
+
+    assert passedPiece.occupant is bob
+    assert finalPiece.occupant is alice
+    assert bob.piecesOnTheBoard == 1
+
+    stepMessages = [message for message in session.messages if message["type"] == "seven-step"]
+
+    assert len(stepMessages) == 1
+    assert stepMessages[0]["stepsUsed"] == 7
+    assert stepMessages[0]["stepsRemaining"] == 0
+
+
+def test_play_seven_without_path_kicks_resolves_each_pawns_final_position():
+    session = FakeGameSession()
+    rules = GameRules(seven_split_kicks_pieces_on_path=False, seven_hopping=SevenHopping.DISABLED)
+    game = Game(session, COLORS, rules)
+
+    alice = AutomaticPlayer("TEST-Alice", "Alice", "0", "red")
+    bob = Player("TEST-Bob", "Bob", "1", "blue")
+
+    alice.setBoard(game.board)
+    bob.setBoard(game.board)
+
+    place_track_piece(game.board, alice, "red", 1)
+    place_track_piece(game.board, alice, "blue", 1)
+    firstFinalPiece = place_track_piece(game.board, bob, "red", 2)
+    passedPiece = place_track_piece(game.board, bob, "blue", 2)
+    secondFinalPiece = place_track_piece(game.board, bob, "blue", 7)
+
+    asyncio.run(game.playSeven(alice))
+
+    assert firstFinalPiece.occupant is alice
+    assert passedPiece.occupant is bob
+    assert secondFinalPiece.occupant is alice
+    assert bob.piecesOnTheBoard == 1
+
+    stepMessages = [message for message in session.messages if message["type"] == "seven-step"]
+
+    assert [message["stepsUsed"] for message in stepMessages] == [1, 6]
+    assert stepMessages[-1]["stepsRemaining"] == 0
 
 
 def test_play_seven_kicks_after_each_step():
@@ -679,3 +743,107 @@ def test_dealer_can_rotate_counterclockwise():
     assert players[3].isDealer
     assert not players[0].isDealer
     assert session.messages[-1] == {"type": "dealer", "playerId": "Diana"}
+
+def test_king_does_not_kick_crossed_pieces_when_rule_is_disabled():
+    game = Game(None, COLORS, GameRules(king_kicks_pieces_on_path=False))
+    board = game.board
+
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "1")
+    alice.setBoard(board)
+    bob.setBoard(board)
+
+    origin = place_track_piece(board, alice, "red", 1)
+    passedPiece = place_track_piece(board, bob, "red", 5)
+    target = board.getSpotFromDistance(origin, 13)
+    move = Move("MOVE", origin, target, Card("♥️", "K"), alice, alice, 13)
+
+    game.applyMove(move)
+
+    assert passedPiece.occupant is bob
+    assert target.occupant is alice
+    assert bob.piecesOnTheBoard == 1
+
+def test_king_kicks_every_crossed_piece_when_rule_is_enabled():
+    game = Game(None, COLORS, GameRules(king_kicks_pieces_on_path=True))
+    board = game.board
+
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "1")
+    partner = make_player("Partner", "green", "0")
+    alice.setBoard(board)
+    bob.setBoard(board)
+    partner.setBoard(board)
+
+    origin = place_track_piece(board, alice, "red", 1)
+    ownedPiece = place_track_piece(board, alice, "red", 3)
+    opponentPiece = place_track_piece(board, bob, "red", 5)
+    partnerPiece = place_track_piece(board, partner, "red", 7)
+    target = board.getSpotFromDistance(origin, 13)
+    move = Move("MOVE", origin, target, Card("♥️", "K"), alice, alice, 13)
+
+    kickedPositions = game.applyMove(move)
+
+    assert not ownedPiece.isOccupied
+    assert not opponentPiece.isOccupied
+    assert not partnerPiece.isOccupied
+    assert target.occupant is alice
+    assert alice.piecesOnTheBoard == 1
+    assert bob.piecesOnTheBoard == 0
+    assert partner.piecesOnTheBoard == 0
+    assert kickedPositions == [ownedPiece, opponentPiece, partnerPiece]
+
+def test_king_cannot_cross_blocking_exit_when_path_kicking_is_enabled():
+    game = Game(None, COLORS, GameRules(king_kicks_pieces_on_path=True))
+    board = game.board
+
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "1")
+    alice.setBoard(board)
+    bob.setBoard(board)
+
+    origin = place_track_piece(board, alice, "red", 10)
+    place_track_piece(board, bob, "blue", 0, blocking=True)
+    target = board.getSpotFromDistance(origin, 13)
+
+    options = board.getMoveOptions(alice, Card("♥️", "K"))
+
+    assert not any(move.ID == "MOVE" and move.originSpot == origin and move.targetSpot == target for move in options)
+
+def test_king_cannot_kick_through_protected_house_positions():
+    game = Game(None, COLORS, GameRules(king_kicks_pieces_on_path=True))
+    board = game.board
+    
+    alice = make_player("Alice", "red", "0")
+    alice.setBoard(board)
+
+    entrySpot = board.getFirstSpot(alice.color)
+    originSpot = board.getSpotFromDistance(entrySpot, -10)
+    origin = place_track_piece(board, alice, originSpot.color, originSpot.number)
+    place_house_piece(board, alice, 0)
+    target = board.getHouse(alice.color, 2)
+
+    options = board.getMoveOptions(alice, Card("♥️", "K"))
+
+    assert not any(move.ID == "ENTER" and move.originSpot == origin and move.targetSpot == target for move in options)
+
+def test_resolve_king_move_broadcasts_crossed_positions():
+    session = FakeGameSession()
+    game = Game(session, COLORS, GameRules(king_kicks_pieces_on_path=True, seven_hopping=SevenHopping.DISABLED))
+    board = game.board
+
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "1")
+    alice.setBoard(board)
+    bob.setBoard(board)
+
+    origin = place_track_piece(board, alice, "red", 1)
+    passedPiece = place_track_piece(board, bob, "red", 5)
+    target = board.getSpotFromDistance(origin, 13)
+    move = Move("MOVE", origin, target, Card("♥️", "K"), alice, alice, 13)
+
+    asyncio.run(game.resolveMove(move))
+
+    pathKickMessages = [message for message in session.messages if message["type"] == "path-kicks"]
+
+    assert pathKickMessages == [{"type": "path-kicks", "positions": [str(passedPiece)]}]

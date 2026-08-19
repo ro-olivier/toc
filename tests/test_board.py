@@ -449,12 +449,39 @@ def test_seven_is_available_with_complete_open_route():
 	player = make_player("Alice", "red")
 	player.setBoard(board)
 
-	place_piece(board, player, "red", 5)
+	origin = place_piece(board, player, "red", 5)
 
 	options = board.getMoveOptions(player, Card("♥️", "7"))
 
 	assert any(move.ID == "SEVEN" for move in options)
+	assert not any(move.ID == "MOVE" and move.originSpot == origin for move in options)
 
+def test_seven_moves_normally_when_splitting_is_disabled():
+	board = Board(COLORS, GameRules(seven_can_split=False))
+	player = make_player("Alice", "red")
+	player.setBoard(board)
+
+	origin = place_piece(board, player, "red", 5)
+	target = board.getSpotFromDistance(origin, 7)
+
+	options = board.getMoveOptions(player, Card("♥️", "7"))
+
+	assert any(move.ID == "MOVE" and move.originSpot == origin and move.targetSpot == target for move in options)
+	assert not any(move.ID == "SEVEN" for move in options)
+
+def test_non_split_seven_can_enter_house():
+	board = Board(COLORS, GameRules(seven_can_split=False))
+	player = make_player("Alice", "red")
+	player.setBoard(board)
+
+	entrySpot = board.getFirstSpot(player.color)
+	originSpot = board.getSpotFromDistance(entrySpot, -4)
+	origin = place_piece(board, player, originSpot.color, originSpot.number)
+	target = board.getHouse(player.color, 2)
+
+	options = board.getMoveOptions(player, Card("♥️", "7"))
+
+	assert any(move.ID == "ENTER" and move.originSpot == origin and move.targetSpot == target for move in options)
 
 def test_seven_is_not_available_when_only_three_house_steps_remain():
 	board = Board(COLORS)

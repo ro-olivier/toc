@@ -268,6 +268,13 @@ async function connectToGame(gameId, name, rejoin = false) {
         movePieceFromSpotToSpot(data.movedPlayerId, data.origin, data.target);
         break;
 
+      case "path-kicks":
+        data.positions.forEach((positionId) => {
+          const position = document.getElementById(positionId);
+          if (position) resetEmptyPosition(position);
+        });
+        break;
+
       case "query-origin":
         activeRequestId = data.requestId;
         setCancelSelectionVisible(Boolean(data.canCancel));

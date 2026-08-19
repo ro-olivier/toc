@@ -146,7 +146,7 @@ class Board:
 			# Pieces on the circular track can either remain on the track
 			# or enter their house lane when both moves are legal.
 			for piece in boardPieces:
-				trackMove = Move("MOVE", piece, self.getSpotFromDistance(piece, distance), card, player, pieceOwner)
+				trackMove = Move("MOVE", piece, self.getSpotFromDistance(piece, distance), card, player, pieceOwner, distance)
 
 				if self.isMoveValid(trackMove):
 					options.append(trackMove)
@@ -154,7 +154,7 @@ class Board:
 				availableHouse = self.getHouseFromDistance(piece, distance, pieceOwner)
 
 				if availableHouse is not None:
-					houseMove = Move("ENTER", piece, availableHouse, card, player, pieceOwner)
+					houseMove = Move("ENTER", piece, availableHouse, card, player, pieceOwner, distance)
 
 					if self.isMoveValid(houseMove):
 						options.append(houseMove)
@@ -165,7 +165,7 @@ class Board:
 				availableHouse = self.getHouseFromDistance(piece, distance, pieceOwner)
 
 				if availableHouse is not None:
-					houseMove = Move("ENTER", piece, availableHouse, card, player, pieceOwner)
+					houseMove = Move("ENTER", piece, availableHouse, card, player, pieceOwner, distance)
 
 					if self.isMoveValid(houseMove):
 						options.append(houseMove)
@@ -283,8 +283,14 @@ class Board:
 						if any(house.isOccupied for house in housesBeforeTarget):
 							result = False
 		elif move.ID == "SEVEN":
-			if move.pieceOwner.piecesOnTheBoard == 0 or not self.getSevenStepOptions(move.player, 7, move.pieceOwner):
+			if self._rules.seven_split_kicks_pieces_on_path:
+				sevenOptions = self.getSevenStepOptions(move.player, 7, move.pieceOwner)
+			else:
+				sevenOptions = self.getSevenAllocationOptions(move.player, 7, move.pieceOwner)
+
+			if move.pieceOwner.piecesOnTheBoard == 0 or not sevenOptions:
 				result = False
+
 		return result
 
 	def getMoveOptions(self, player: Player, card: Card, pieceOwner: Player = None) -> Optional[list[Move]]:
@@ -346,10 +352,14 @@ class Board:
 								options.append(backwardHouseMove)
 
 		elif card.value == "7":
-			sevenMove = Move("SEVEN", None, None, card, player, pieceOwner)
+			if self._rules.seven_can_split:
+				sevenMove = Move("SEVEN", None, None, card, player, pieceOwner)
 
-			if self.isMoveValid(sevenMove):
-				options.append(sevenMove)
+				if self.isMoveValid(sevenMove):
+					options.append(sevenMove)
+
+			else:
+				options.extend(self.getForwardMoveOptions(player, card, [7], pieceOwner))
 
 		elif card.value == "5":
 			if self._rules.five_behaviour in (FiveBehaviour.FORCE_MOVE_OPPONENT, FiveBehaviour.BOTH):
@@ -408,6 +418,38 @@ class Board:
 		regionLength = len(self._spots) // len(self._colors)
 		return self.getSpotFromDistance(originSpot, direction * regionLength)
 
+	def getSevenAllocationOptions(self, player: Player, stepsRemaining: int, pieceOwner: Player = None, movedPiecePositions: set[Spot] = None) -> list[Move]:
+		if stepsRemaining <= 0:
+			return []
+
+		pieceOwner = pieceOwner if pieceOwner is not None else player
+		movedPiecePositions = set() if movedPiecePositions is None else movedPiecePositions
+		candidates = []
+
+		for distance in range(1, stepsRemaining + 1):
+			candidates.extend(self.getForwardMoveOptions(player, Card("", "1"), [distance], pieceOwner))
+
+		candidates = [move for move in candidates if move.originSpot not in movedPiecePositions]
+		viableOptions = []
+
+		for move in candidates:
+			if move.steps == stepsRemaining:
+				viableOptions.append(move)
+				continue
+
+			snapshot = self.getPositionSnapshot()
+			self.applySimulatedMove(move)
+
+			nextMovedPiecePositions = movedPiecePositions.copy()
+			nextMovedPiecePositions.add(move.targetSpot)
+
+			if self.getSevenAllocationOptions(player, stepsRemaining - move.steps, pieceOwner, nextMovedPiecePositions):
+				viableOptions.append(move)
+
+			self.restorePositionSnapshot(snapshot)
+
+		return viableOptions
+
 	def getSevenHopMove(self, triggeringMove: Move) -> Optional[Move]:
 		allowedMoveTypes = ["MOVE", "BACK", "FIVE"]
 
@@ -426,3 +468,27 @@ class Board:
 		target = self.getNextSevenSpot(origin, direction)
 
 		return Move("HOP", origin, target, triggeringMove.card, triggeringMove.player, triggeringMove.pieceOwner)
+
+	def getPositionsCrossedByMove(self, move: Move) -> list[Spot]:
+		if move.steps is None or move.steps <= 1:
+			return []
+
+		if move.ID == "MOVE":
+			return [self.getSpotFromDistance(move.originSpot, distance) for distance in range(1, move.steps)]
+
+		if move.ID != "ENTER":
+			return []
+
+		if isinstance(move.originSpot, House):
+			houses = self.getHousesByColor(move.pieceOwner.color)
+			return houses[move.originSpot.number + 1:move.targetSpot.number]
+
+		entrySpot = self.getFirstSpot(move.pieceOwner.color)
+		originIndex = self._spots.index(move.originSpot)
+		entryIndex = self._spots.index(entrySpot)
+		stepsToEntry = (entryIndex - originIndex) % self._boardSize
+
+		trackPositions = [self.getSpotFromDistance(move.originSpot, distance) for distance in range(1, stepsToEntry + 1)]
+		housePositions = self.getHousesByColor(move.pieceOwner.color)[:move.targetSpot.number]
+
+		return trackPositions + housePositions

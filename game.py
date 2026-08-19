@@ -226,9 +226,19 @@ class Game:
 				self._deck.recycleDiscardPile(shuffle=self.shouldShuffleRecycledDeck())
 				await self.nextDealer()
 
-	def applyMove(self, move: Move) -> None:
+	def applyMove(self, move: Move) -> list:
 		origin = move.originSpot
 		target = move.targetSpot
+
+		pathKickPositions = []
+
+		if self._rules.king_kicks_pieces_on_path and move.card is not None and move.card.value == "K" and move.ID in ["MOVE", "ENTER"]:
+			for position in self._board.getPositionsCrossedByMove(move):
+				if position.isOccupied:
+					kickedPlayer = position.occupant
+					position.setEmpty()
+					kickedPlayer.removeAPieceFromTheBoard()
+					pathKickPositions.append(position)
 
 		if move.ID == "OUT":
 			kickedPlayer = target.setOccupant(move.pieceOwner, True)
@@ -256,8 +266,14 @@ class Game:
 		else:
 			raise ValueError(f"Cannot apply move of type {move.ID}")
 
+		return pathKickPositions
+
 	async def playSeven(self, player: Player, pieceOwner: Player = None) -> None:
 		pieceOwner = pieceOwner if pieceOwner is not None else player
+
+		if not self._rules.seven_split_kicks_pieces_on_path:
+			await self.playSevenWithoutPathKicks(player, pieceOwner)
+			return
 
 		for stepsRemaining in range(7, 0, -1):
 			options = self._board.getSevenStepOptions(player, stepsRemaining, pieceOwner)
@@ -272,6 +288,28 @@ class Game:
 
 			if stepsRemaining == 1:
 				await self.playSevenHop(move)
+
+	async def playSevenWithoutPathKicks(self, player: Player, pieceOwner: Player) -> None:
+		stepsRemaining = 7
+		movedPiecePositions = set()
+		lastMove = None
+
+		while stepsRemaining > 0:
+			options = self._board.getSevenAllocationOptions(player, stepsRemaining, pieceOwner, movedPiecePositions)
+
+			if not options:
+				raise RuntimeError("Seven split reached a state with no complete legal continuation")
+
+			move = await player.getSevenStepChoiceFromPlayer(options)
+			self.applyMove(move)
+			stepsRemaining -= move.steps
+			movedPiecePositions.add(move.targetSpot)
+			lastMove = move
+
+			await self.broadcast({"type": "seven-step", "playerId": player.name, "movedPlayerId": move.pieceOwner.name, "origin": str(move.originSpot), "target": str(move.targetSpot), "stepsUsed": move.steps, "stepsRemaining": stepsRemaining})
+
+		if lastMove is not None:
+			await self.playSevenHop(lastMove)
 
 	async def playSevenHop(self, triggeringMove: Move) -> Optional[Move]:
 		if self._rules.seven_hopping is SevenHopping.DISABLED:
@@ -361,7 +399,11 @@ class Game:
 		if move.ID == "SEVEN":
 			await self.playSeven(move.player, move.pieceOwner)
 		else:
-			self.applyMove(move)
+			pathKickPositions = self.applyMove(move)
+
+			if pathKickPositions:
+				await self.broadcast({"type": "path-kicks", "positions": [str(position) for position in pathKickPositions]})
+
 			await self.playSevenHop(move)
 
 		await self.finishGameIfWon()
