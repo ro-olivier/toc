@@ -3,6 +3,7 @@ from game import Game
 from move import Move
 from params import COLORS
 from player import Player
+from rules import FiveHopDecider, GameRules, SevenHopping
 	
 import asyncio
 
@@ -477,3 +478,66 @@ def test_ordinary_turn_finishing_team_triggers_victory_immediately():
 	gameOverMessages = [message for message in session.messages if message["type"] == "game-over"]
 	assert len(gameOverMessages) == 1
 	assert gameOverMessages[0]["winners"] == ["Alice", "Bob"]
+
+def test_seven_hop_is_not_offered_when_disabled():
+    session = FakeGameSession()
+    rules = GameRules(seven_hopping=SevenHopping.DISABLED)
+    game = Game(session, COLORS, rules)
+    alice = AutomaticHopPlayer("TEST-Alice", "Alice", "0", "red", True)
+    alice.setBoard(game.board)
+
+    origin = game.board.getSpot("red", 7)
+    target = game.board.getSpot("blue", 7)
+    origin.setOccupant(alice)
+    alice.addAPieceOnTheBoard()
+
+    triggeringMove = Move("MOVE", game.board.getSpot("red", 5), origin, Card("♥️", "2"), alice)
+    result = asyncio.run(game.playSevenHop(triggeringMove))
+
+    assert result is None
+    assert origin.occupant is alice
+    assert not target.isOccupied
+    assert alice.hopRequests == []
+
+def test_seven_hop_is_applied_without_prompt_when_forced():
+    session = FakeGameSession()
+    rules = GameRules(seven_hopping=SevenHopping.FORCED)
+    game = Game(session, COLORS, rules)
+    alice = AutomaticHopPlayer("TEST-Alice", "Alice", "0", "red", False)
+    alice.setBoard(game.board)
+
+    origin = game.board.getSpot("red", 7)
+    target = game.board.getSpot("blue", 7)
+    origin.setOccupant(alice)
+    alice.addAPieceOnTheBoard()
+
+    triggeringMove = Move("MOVE", game.board.getSpot("red", 5), origin, Card("♥️", "2"), alice)
+    result = asyncio.run(game.playSevenHop(triggeringMove))
+
+    assert result is not None
+    assert not origin.isOccupied
+    assert target.occupant is alice
+    assert alice.hopRequests == []
+
+def test_piece_owner_decides_optional_five_hop_when_configured():
+    session = FakeGameSession()
+    rules = GameRules(five_hop_decider=FiveHopDecider.PIECE_OWNER)
+    game = Game(session, COLORS, rules)
+    alice = AutomaticHopPlayer("TEST-Alice", "Alice", "0", "red", False)
+    bob = AutomaticHopPlayer("TEST-Bob", "Bob", "1", "blue", True)
+
+    alice.setBoard(game.board)
+    bob.setBoard(game.board)
+
+    origin = game.board.getSpot("red", 7)
+    target = game.board.getSpot("blue", 7)
+    origin.setOccupant(bob)
+    bob.addAPieceOnTheBoard()
+
+    triggeringMove = Move("FIVE", game.board.getSpot("red", 2), origin, Card("♥️", "5"), alice, bob)
+    result = asyncio.run(game.playSevenHop(triggeringMove))
+
+    assert result is not None
+    assert alice.hopRequests == []
+    assert bob.hopRequests == [(origin, target)]
+    assert target.occupant is bob

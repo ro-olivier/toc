@@ -9,7 +9,7 @@ from hand import Hand
 from params import *
 from player import Player
 from move import Move
-from rules import GameRules, MONTSURVENT_RULES
+from rules import FiveHopDecider, GameRules, MONTSURVENT_RULES, SevenHopping
 
 
 class Game:
@@ -251,12 +251,21 @@ class Game:
 				await self.playSevenHop(move)
 
 	async def playSevenHop(self, triggeringMove: Move) -> Optional[Move]:
+		if self._rules.seven_hopping is SevenHopping.DISABLED:
+			return None
+
 		hopMove = self._board.getSevenHopMove(triggeringMove)
 		if hopMove is None:
 			return None
 
-		if not await triggeringMove.player.getSevenHopChoiceFromPlayer(hopMove.originSpot, hopMove.targetSpot):
-			return None
+		if self._rules.seven_hopping is SevenHopping.OPTIONAL:
+			decidingPlayer = triggeringMove.player
+
+			if triggeringMove.ID == "FIVE" and self._rules.five_hop_decider is FiveHopDecider.PIECE_OWNER:
+				decidingPlayer = triggeringMove.pieceOwner
+
+			if not await decidingPlayer.getSevenHopChoiceFromPlayer(hopMove.originSpot, hopMove.targetSpot):
+				return None
 
 		self.applyMove(hopMove)
 		await self.broadcast({"type": "seven-hop", "playerId": hopMove.player.name, "movedPlayerId": hopMove.pieceOwner.name, "origin": str(hopMove.originSpot), "target": str(hopMove.targetSpot)})

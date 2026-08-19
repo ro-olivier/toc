@@ -356,18 +356,31 @@ class Board:
 
 		return viableOptions
 
-	def getNextSevenSpot(self, originSpot: Spot) -> Spot:
+	def getNextSevenSpot(self, originSpot: Spot, direction: int = 1) -> Spot:
 		if originSpot not in self._spots or originSpot.number != 7:
 			raise ValueError("A seven-hop must start on a track position numbered 7.")
-		return self.getSpotFromDistance(originSpot, SPOTS_PER_REGION)
+
+		if direction not in [-1, 1]:
+			raise ValueError("A seven-hop direction must be either 1 or -1.")
+
+		regionLength = len(self._spots) // len(self._colors)
+		return self.getSpotFromDistance(originSpot, direction * regionLength)
 
 	def getSevenHopMove(self, triggeringMove: Move) -> Optional[Move]:
-		if triggeringMove.ID not in ["MOVE", "BACK", "FIVE"]:
+		allowedMoveTypes = ["MOVE", "BACK", "FIVE"]
+
+		if self._rules.jacks_can_switch_then_seven_hop:
+			allowedMoveTypes.append("SWITCH")
+
+		if triggeringMove.ID not in allowedMoveTypes:
 			return None
 
 		origin = triggeringMove.targetSpot
+
 		if origin not in self._spots or origin.number != 7:
 			return None
 
-		target = self.getNextSevenSpot(origin)
+		direction = -1 if triggeringMove.ID == "BACK" and self._rules.seven_hopping_on_four_backward_goes_backward else 1
+		target = self.getNextSevenSpot(origin, direction)
+
 		return Move("HOP", origin, target, triggeringMove.card, triggeringMove.player, triggeringMove.pieceOwner)

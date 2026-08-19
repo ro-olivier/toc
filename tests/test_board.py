@@ -5,6 +5,7 @@ from cards import Card
 from params import COLORS
 from player import Player
 from move import Move
+from rules import GameRules
 
 
 def make_player(name="Alice", color="red", team="0"):
@@ -567,3 +568,32 @@ def test_jack_switch_does_not_offer_seven_hop():
 	trigger = Move("SWITCH", board.getSpot("red", 2), board.getSpot("red", 7), Card("♥️", "J"), alice, bob)
 
 	assert board.getSevenHopMove(trigger) is None
+
+def test_backward_four_can_hop_to_previous_seven():
+	rules = GameRules(seven_hopping_on_four_backward_goes_backward=True)
+	board = Board(COLORS, rules)
+	alice = make_player("Alice", "red", "0")
+	alice.setBoard(board)
+
+	origin = board.getSpot("red", 7)
+	trigger = Move("BACK", board.getSpot("red", 11), origin, Card("♥️", "4"), alice)
+
+	hop = board.getSevenHopMove(trigger)
+
+	assert hop is not None
+	assert hop.targetSpot is board.getSpot("yellow", 7)
+
+def test_jack_switch_can_offer_seven_hop_when_enabled():
+	rules = GameRules(jacks_can_switch_then_seven_hop=True)
+	board = Board(COLORS, rules)
+	alice = make_player("Alice", "red", "0")
+	alice.setBoard(board)
+
+	trigger = Move("SWITCH", board.getSpot("blue", 3), board.getSpot("yellow", 7), Card("♥️", "J"), alice)
+
+	hop = board.getSevenHopMove(trigger)
+
+	assert hop is not None
+	assert hop.pieceOwner is alice
+	assert hop.originSpot is board.getSpot("yellow", 7)
+	assert hop.targetSpot is board.getSpot("red", 7)
