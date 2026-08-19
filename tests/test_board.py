@@ -135,7 +135,7 @@ def test_player_can_choose_between_track_and_house():
 
 
 def test_backward_four_cannot_enter_house():
-	board = Board(COLORS)
+	board = Board(COLORS, GameRules(can_enter_house_backward=False))
 	player = make_player("Alice", "red")
 	player.setBoard(board)
 
@@ -148,6 +148,33 @@ def test_backward_four_cannot_enter_house():
 		and move.originSpot == origin
 		for move in options
 	)
+
+def test_backward_four_can_enter_house_when_enabled():
+	board = Board(COLORS, GameRules(can_enter_house_backward=True))
+	player = make_player("Alice", "red")
+	player.setBoard(board)
+
+	origin = place_piece(board, player, "red", 3)
+	trackTarget = board.getSpotFromDistance(origin, -4)
+	houseTarget = board.getHouse("red", 0)
+
+	options = board.getMoveOptions(player, Card("♥️", "4"))
+
+	assert any(move.ID == "BACK" and move.originSpot == origin and move.targetSpot == trackTarget for move in options)
+	assert any(move.ID == "ENTER" and move.originSpot == origin and move.targetSpot == houseTarget for move in options)
+
+
+def test_backward_four_cannot_enter_house_through_blocking_exit():
+	board = Board(COLORS, GameRules(can_enter_house_backward=True))
+	player = make_player("Alice", "red")
+	player.setBoard(board)
+
+	origin = place_piece(board, player, "red", 3)
+	place_piece(board, player, "red", 0, blocking=True)
+
+	options = board.getMoveOptions(player, Card("♥️", "4"))
+
+	assert not any(move.ID == "ENTER" and move.originSpot == origin for move in options)
 
 
 def test_piece_inside_house_can_move_forward():
@@ -308,6 +335,21 @@ def test_four_can_move_forward_or_backward():
 
 	assert board.getSpot("red", 12) in targets
 	assert board.getSpot("red", 4) in targets
+
+
+def test_four_cannot_move_backward_when_rule_is_disabled():
+	board = Board(COLORS, GameRules(four_can_move_backward=False))
+	player = make_player()
+	player.setBoard(board)
+
+	origin = place_piece(board, player, "red", 8)
+
+	options = board.getMoveOptions(player, Card("♥️", "4"))
+
+	forwardTarget = board.getSpot("red", 12)
+
+	assert any(move.ID == "MOVE" and move.originSpot == origin and move.targetSpot == forwardTarget for move in options)
+	assert not any(move.ID == "BACK" for move in options)
 
 
 def test_jack_can_switch_with_another_player():

@@ -14,6 +14,7 @@ class Board:
 		self._rules = rules
 		self._spots = []
 		self._colors = colors
+
 		for color in colors:
 			for i in range(SPOTS_PER_REGION):
 				self._spots.append(Spot(color, i))
@@ -28,6 +29,10 @@ class Board:
 	@property
 	def rules(self) -> GameRules:
 		return self._rules
+
+	@property 
+	def _boardSize(self) -> int:
+		return len(self._spots)
 
 	def __str__(self) -> str:
 		s = ''
@@ -90,9 +95,8 @@ class Board:
 		return [{"spotIndex": str(house), "playerId": house.occupant.name} for house in self._houses if house.isOccupied] + [{"spotIndex": str(spot), "playerId": spot.occupant.name} for spot in self._spots if spot.isOccupied]
 
 	def getSpotFromDistance(self, originSpot: Spot, distance: int) -> Spot:
-		boardSize = len(self._spots)
 		originIndex = self._spots.index(originSpot)
-		targetIndex = (originIndex + distance) % boardSize
+		targetIndex = (originIndex + distance) % self._boardSize
 
 		return self._spots[targetIndex]
 
@@ -117,11 +121,10 @@ class Board:
 			if entrySpot.isBlocking:
 					return None
 
-			boardSize = len(self._spots)
 			originIndex = self._spots.index(originSpot)
 			entryIndex = self._spots.index(entrySpot)
 
-			stepsToEntry = (entryIndex - originIndex) % boardSize
+			stepsToEntry = (entryIndex - originIndex) % self._boardSize
 
 			# Reaching the entry position is still an ordinary track move.
 			# House zero requires one additional forward step.
@@ -180,6 +183,27 @@ class Board:
 			if occupant is not None:
 				position.setOccupant(occupant, isBlocking)
 
+	def getHouseFromBackwardDistance(self, originSpot: Spot, distance: int, player: Player) -> Optional[House]:
+		if distance <= 0 or isinstance(originSpot, House):
+			return None
+
+		entrySpot = self.getFirstSpot(player.color)
+
+		# A freshly deployed piece cannot immediately enter its houses.
+		# A protected entry also prevents another piece from entering.
+		if entrySpot.isBlocking:
+			return None
+
+		originIndex = self._spots.index(originSpot)
+		entryIndex = self._spots.index(entrySpot)
+
+		stepsToEntry = (originIndex - entryIndex) % self._boardSize
+		targetHouseNumber = distance - stepsToEntry - 1
+
+		if 0 <= targetHouseNumber < len(self.getHousesByColor(player.color)):
+			return self.getHouse(player.color, targetHouseNumber)
+
+		return None
 
 	def applySimulatedMove(self, move: Move) -> None:
 		move.originSpot.setEmpty()
@@ -301,11 +325,21 @@ class Board:
 			options.extend(self.getForwardMoveOptions(player, card, [4], pieceOwner))
 
 			# Backward four applies only to pieces on the circular track.
-			for piece in self.getOccupiedSpotsOnTheBoard(pieceOwner.name):
-				backwardMove = Move("BACK", piece, self.getSpotFromDistance(piece, -4), card, player, pieceOwner)
+			if self._rules.four_can_move_backward:
+				for piece in self.getOccupiedSpotsOnTheBoard(pieceOwner.name):
+					backwardMove = Move("BACK", piece, self.getSpotFromDistance(piece, -4), card, player, pieceOwner)
 
-				if self.isMoveValid(backwardMove):
-					options.append(backwardMove)
+					if self.isMoveValid(backwardMove):
+						options.append(backwardMove)
+
+					if self._rules.can_enter_house_backward:
+						availableHouse = self.getHouseFromBackwardDistance(piece, 4, pieceOwner)
+
+						if availableHouse is not None:
+							backwardHouseMove = Move("ENTER", piece, availableHouse, card, player, pieceOwner)
+
+							if self.isMoveValid(backwardHouseMove):
+								options.append(backwardHouseMove)
 
 		elif card.value == "7":
 			sevenMove = Move("SEVEN", None, None, card, player, pieceOwner)
