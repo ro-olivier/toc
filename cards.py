@@ -38,7 +38,7 @@ class Deck:
 	def discardCards(self, hand: Hand) -> None:
 		self._discardPile.extend(hand.cards)
 
-	def recycleDiscardPile(self) -> None:
+	def recycleDiscardPile(self, shuffle: bool = False) -> None:
 		if self._cards:
 			raise RuntimeError("Cannot recycle the discard pile while cards remain in the deck")
 
@@ -49,6 +49,9 @@ class Deck:
 
 		self._cards = self._discardPile
 		self._discardPile = []
+
+		if shuffle:
+			random.shuffle(self._cards)
 
 
 class Card:

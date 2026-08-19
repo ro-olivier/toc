@@ -41,3 +41,17 @@ def test_drawing_all_cards_empties_deck():
         deck.drawCard()
 
     assert deck.size == 0
+
+def test_recycled_discard_pile_can_be_shuffled(monkeypatch):
+    deck = Deck()
+    drawnCards = [deck.drawCard() for _ in range(52)]
+
+    for card in drawnCards:
+        deck.discardCard(card)
+
+    shuffleCalls = []
+    monkeypatch.setattr("cards.random.shuffle", lambda cards: shuffleCalls.append(cards.copy()))
+
+    deck.recycleDiscardPile(shuffle=True)
+
+    assert shuffleCalls == [drawnCards]

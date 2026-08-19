@@ -3,7 +3,7 @@ from game import Game
 from move import Move
 from params import COLORS
 from player import Player
-from rules import FiveHopDecider, GameRules, MONTSURVENT_RULES, SevenHopping
+from rules import FiveHopDecider, GameRules, MONTSURVENT_RULES, Rotation, SevenHopping, ShuffleMode
 	
 import asyncio
 import pytest
@@ -595,3 +595,87 @@ def test_round_skips_card_exchange_when_disabled():
     asyncio.run(game.runRound("Test round", 4))
 
     assert game.exchangeRequests == []
+
+@pytest.mark.parametrize(("shuffleMode", "expected"), [(ShuffleMode.NEVER, False), (ShuffleMode.ON_DEALER_CHANGE, True)])
+def test_shuffle_decision_after_dealer_change(shuffleMode, expected):
+    game = Game(FakeGameSession(), COLORS, GameRules(shuffle_cards=shuffleMode))
+    game.setPlayers([
+        make_player("Alice", "red", "0"),
+        make_player("Bob", "blue", "1"),
+        make_player("Charlie", "green", "0"),
+        make_player("Diana", "yellow", "1"),
+    ])
+
+    assert game.shouldShuffleRecycledDeck() is expected
+
+@pytest.mark.parametrize("rotation", [Rotation.CLOCKWISE, Rotation.COUNTERCLOCKWISE])
+def test_dealer_cycle_mode_shuffles_only_when_token_returns_to_first_dealer(rotation):
+    game = Game(FakeGameSession(), COLORS, GameRules(shuffle_cards=ShuffleMode.ON_DEALER_CYCLE, rotation=rotation))
+    game.setPlayers([
+        make_player("Alice", "red", "0"),
+        make_player("Bob", "blue", "1"),
+        make_player("Charlie", "green", "0"),
+        make_player("Diana", "yellow", "1"),
+    ])
+
+    shuffleDecisions = []
+
+    for _ in range(5):
+        shuffleDecisions.append(game.shouldShuffleRecycledDeck())
+        asyncio.run(game.nextDealer())
+
+    assert shuffleDecisions == [False, False, False, True, False]
+
+def test_cards_can_be_dealt_counterclockwise():
+    game = Game(FakeGameSession(), COLORS, GameRules(rotation=Rotation.COUNTERCLOCKWISE))
+    players = [
+        QuietPlayer("TEST-Alice", "Alice", "0", "red"),
+        QuietPlayer("TEST-Bob", "Bob", "1", "blue"),
+        QuietPlayer("TEST-Charlie", "Charlie", "0", "green"),
+        QuietPlayer("TEST-Diana", "Diana", "1", "yellow"),
+    ]
+    game.setPlayers(players)
+
+    orderedCards = [Card("", str(index)) for index in range(16)]
+    game.deck._cards = orderedCards.copy()
+
+    asyncio.run(game.drawHands(4))
+
+    assert players[3].hand.cards == [orderedCards[0], orderedCards[4], orderedCards[8], orderedCards[12]]
+    assert players[2].hand.cards == [orderedCards[1], orderedCards[5], orderedCards[9], orderedCards[13]]
+    assert players[1].hand.cards == [orderedCards[2], orderedCards[6], orderedCards[10], orderedCards[14]]
+    assert players[0].hand.cards == [orderedCards[3], orderedCards[7], orderedCards[11], orderedCards[15]]
+    assert game.deck.size == 0
+
+def test_players_can_take_turns_counterclockwise():
+    game = Game(FakeGameSession(), COLORS, GameRules(rotation=Rotation.COUNTERCLOCKWISE))
+    players = [
+        make_player("Alice", "red", "0"),
+        make_player("Bob", "blue", "1"),
+        make_player("Charlie", "green", "0"),
+        make_player("Diana", "yellow", "1"),
+    ]
+    game.setPlayers(players)
+    game.resetActivePlayerIndex()
+
+    turnOrder = [game.advanceActivePlayer() for _ in range(4)]
+
+    assert turnOrder == [players[3], players[2], players[1], players[0]]
+
+def test_dealer_can_rotate_counterclockwise():
+    session = FakeGameSession()
+    game = Game(session, COLORS, GameRules(rotation=Rotation.COUNTERCLOCKWISE))
+    players = [
+        make_player("Alice", "red", "0"),
+        make_player("Bob", "blue", "1"),
+        make_player("Charlie", "green", "0"),
+        make_player("Diana", "yellow", "1"),
+    ]
+    game.setPlayers(players)
+
+    asyncio.run(game.nextDealer())
+
+    assert game.dealer is players[3]
+    assert players[3].isDealer
+    assert not players[0].isDealer
+    assert session.messages[-1] == {"type": "dealer", "playerId": "Diana"}

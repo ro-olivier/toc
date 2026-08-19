@@ -9,7 +9,7 @@ from hand import Hand
 from params import *
 from player import Player
 from move import Move
-from rules import FiveHopDecider, GameRules, MONTSURVENT_RULES, SevenHopping
+from rules import FiveHopDecider, GameRules, MONTSURVENT_RULES, Rotation, SevenHopping, ShuffleMode
 
 
 class Game:
@@ -25,6 +25,7 @@ class Game:
 		self._handsFinished = 0
 		self._activePlayerIndex = -1
 		self._activePlayer = None
+		self._dealerRotationCount = 0
 
 	def __str__(self) -> str:
 		s = f'This game has {self._numPlayers} players.\r\n'
@@ -129,13 +130,14 @@ class Game:
 		if not self._players:
 			raise RuntimeError("Cannot select an active player before players have joined")
 
-		self._activePlayerIndex = (self._activePlayerIndex + 1) % self._numPlayers
+		rotationStep = 1 if self._rules.rotation is Rotation.CLOCKWISE else -1
+		self._activePlayerIndex = (self._activePlayerIndex + rotationStep) % self._numPlayers
 		self._activePlayer = self._players[self._activePlayerIndex]
 
 		return self._activePlayer
 
 	def setPlayers(self, players : list[Player]) -> None:
-		# self._players is an ordered array, where the first element is always the dealer and where the players are always positioned in the order in which they play
+		# self._players is ordered clockwise around the board, with the dealer first.
 		self._numPlayers = len(players)
 		self._players = players
 		self._players[0].setDealer()
@@ -144,13 +146,33 @@ class Game:
 
 	async def nextDealer(self) -> None:
 		self._players[0].setDealer(False)
-		self._players = self._players[1:] + self._players[:1]
+		
+		if self._rules.rotation is Rotation.CLOCKWISE:
+			self._players = self._players[1:] + self._players[:1]
+		else:
+			self._players = self._players[-1:] + self._players[:-1]
+
 		self._players[0].setDealer()
+		self._dealerRotationCount += 1
+		
 		await self.broadcast({"type": "dealer", "playerId": self._players[0].name})
+
+	def shouldShuffleRecycledDeck(self) -> bool:
+		if self._rules.shuffle_cards is ShuffleMode.ON_DEALER_CHANGE:
+			return True
+
+		if self._rules.shuffle_cards is ShuffleMode.ON_DEALER_CYCLE:
+			rotationCountAfterDealerChange = self._dealerRotationCount + 1
+			return self._numPlayers > 0 and rotationCountAfterDealerChange % self._numPlayers == 0
+
+		return False
 
 	async def drawHands(self, cardsPerPlayer: int) -> None:
 		cardsByPlayer = {player: [] for player in self._players}
-		dealOrder = self._players[1:] + self._players[:1]
+		if self._rules.rotation is Rotation.CLOCKWISE:
+			dealOrder = self._players[1:] + self._players[:1]
+		else:
+			dealOrder = list(reversed(self._players[1:])) + self._players[:1]
 
 		for _ in range(cardsPerPlayer):
 			for player in dealOrder:
@@ -201,7 +223,7 @@ class Game:
 			await self.runDeckCycle()
 
 			if not self._isFinished:
-				self._deck.recycleDiscardPile()
+				self._deck.recycleDiscardPile(shuffle=self.shouldShuffleRecycledDeck())
 				await self.nextDealer()
 
 	def applyMove(self, move: Move) -> None:

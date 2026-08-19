@@ -38,8 +38,7 @@ class GameRules:
 	landing_on_occupied_spot_kicks_piece: bool = True
 
 	shuffle_cards: ShuffleMode = ShuffleMode.NEVER
-	dealer_rotation: Rotation = Rotation.CLOCKWISE
-	play_rotation: Rotation = Rotation.CLOCKWISE
+	rotation: Rotation = Rotation.CLOCKWISE
 	deal_card_counts: tuple[int, ...] = (5, 4, 4)
 
 	track_region_length: int = 18
