@@ -4,7 +4,7 @@ from typing import Optional
 from move import Move
 from spot import Spot, House
 from cards import Card
-from rules import GameRules, MONTSURVENT_RULES
+from rules import FiveBehaviour, GameRules, MONTSURVENT_RULES
 
 from params import *
 
@@ -298,7 +298,7 @@ class Board:
 			if self.isMoveValid(exitMove):
 				options.append(exitMove)
 
-			options.extend(self.getForwardMoveOptions(player, card, [1, 11], pieceOwner))
+			options.extend(self.getForwardMoveOptions(player, card, list(self._rules.ace_values), pieceOwner))
 
 		elif card.value == "K":
 			exitSpot = self.getFirstSpot(pieceOwner.color)
@@ -310,15 +310,19 @@ class Board:
 			options.extend(self.getForwardMoveOptions(player, card, [13], pieceOwner))
 
 		elif card.value == "J":
-			ownPieces = self.getOccupiedSpotsOnTheBoard(pieceOwner.name)
-			otherPieces = self.getOtherPiecesOnTheBoard(pieceOwner)
+			if self._rules.jacks_can_switch:
+				ownPieces = self.getOccupiedSpotsOnTheBoard(pieceOwner.name)
+				otherPieces = self.getOtherPiecesOnTheBoard(pieceOwner)
 
-			for ownPiece in ownPieces:
-				for otherPiece in otherPieces:
-					switchMove = Move("SWITCH", ownPiece, otherPiece, card, player, pieceOwner)
+				for ownPiece in ownPieces:
+					for otherPiece in otherPieces:
+						switchMove = Move("SWITCH", ownPiece, otherPiece, card, player, pieceOwner)
 
-					if self.isMoveValid(switchMove):
-						options.append(switchMove)
+						if self.isMoveValid(switchMove):
+							options.append(switchMove)
+
+			else:
+				options.extend(self.getForwardMoveOptions(player, card, [11], pieceOwner))
 
 		elif card.value == "4":
 			# Forward four uses the ordinary forward and house rules.
@@ -348,15 +352,19 @@ class Board:
 				options.append(sevenMove)
 
 		elif card.value == "5":
-			opponentPieces = self.getOpponentPiecesOnTheBoard(player)
+			if self._rules.five_behaviour in (FiveBehaviour.FORCE_MOVE_OPPONENT, FiveBehaviour.BOTH):
+				opponentPieces = self.getOpponentPiecesOnTheBoard(player)
 
-			for piece in opponentPieces:
-				movedPieceOwner = piece.occupant
-				target = self.getSpotFromDistance(piece, 5)
-				potentialMove = Move("FIVE", piece, target, card, player, movedPieceOwner)
+				for piece in opponentPieces:
+					movedPieceOwner = piece.occupant
+					target = self.getSpotFromDistance(piece, 5)
+					potentialMove = Move("FIVE", piece, target, card, player, movedPieceOwner)
 
-				if self.isMoveValid(potentialMove):
-					options.append(potentialMove)
+					if self.isMoveValid(potentialMove):
+						options.append(potentialMove)
+
+			if self._rules.five_behaviour in (FiveBehaviour.NORMAL_MOVE_BY_FIVE, FiveBehaviour.BOTH):
+				options.extend(self.getForwardMoveOptions(player, card, [5], pieceOwner))
 
 		# Internal one-step card used to calculate and execute seven-split steps.
 		elif card.value == "1":
@@ -403,7 +411,7 @@ class Board:
 	def getSevenHopMove(self, triggeringMove: Move) -> Optional[Move]:
 		allowedMoveTypes = ["MOVE", "BACK", "FIVE"]
 
-		if self._rules.jacks_can_switch_then_seven_hop:
+		if self._rules.jacks_can_switch and self._rules.jacks_can_switch_then_seven_hop:
 			allowedMoveTypes.append("SWITCH")
 
 		if triggeringMove.ID not in allowedMoveTypes:

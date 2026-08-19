@@ -5,7 +5,7 @@ from cards import Card
 from params import COLORS
 from player import Player
 from move import Move
-from rules import GameRules
+from rules import FiveBehaviour, GameRules
 
 
 def make_player(name="Alice", color="red", team="0"):
@@ -372,6 +372,36 @@ def test_jack_can_switch_with_another_player():
 		and move.targetSpot == bob_spot
 		for move in options
 	)
+	assert not any(move.ID == "MOVE" and move.originSpot == alice_spot for move in options)
+
+
+def test_jack_moves_eleven_and_cannot_switch_when_rule_is_disabled():
+	board = Board(COLORS, GameRules(jacks_can_switch=False))
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	aliceSpot = place_piece(board, alice, "red", 3)
+	bobSpot = place_piece(board, bob, "red", 7)
+	expectedTarget = board.getSpotFromDistance(aliceSpot, 11)
+
+	options = board.getMoveOptions(alice, Card("♥️", "J"))
+
+	assert any(move.ID == "MOVE" and move.originSpot == aliceSpot and move.targetSpot == expectedTarget for move in options)
+	assert not any(move.ID == "SWITCH" and move.originSpot == aliceSpot and move.targetSpot == bobSpot for move in options)
+
+
+def test_jack_switch_cannot_offer_seven_hop_when_switching_is_disabled():
+	rules = GameRules(jacks_can_switch=False, jacks_can_switch_then_seven_hop=True)
+	board = Board(COLORS, rules)
+	alice = make_player("Alice", "red", "0")
+	alice.setBoard(board)
+	trigger = Move("SWITCH", board.getSpot("blue", 3), board.getSpot("yellow", 7), Card("♥️", "J"), alice)
+
+	assert board.getSevenHopMove(trigger) is None
 
 
 def test_piece_cannot_cross_blocking_starting_spot():
@@ -478,6 +508,7 @@ def test_five_can_move_opponent_piece():
 	alice.setBoard(board)
 	bob.setBoard(board)
 
+	ownedOrigin = place_piece(board, alice, "blue", 3)
 	origin = place_piece(board, bob, "red", 5)
 	target = board.getSpot("red", 10)
 
@@ -491,6 +522,61 @@ def test_five_can_move_opponent_piece():
 		and move.targetSpot == target
 		for move in options
 	)
+	assert not any(move.ID == "MOVE" and move.originSpot == ownedOrigin for move in options)
+
+
+def test_normal_five_moves_own_piece_and_does_not_force_opponent():
+	board = Board(COLORS, GameRules(five_behaviour=FiveBehaviour.NORMAL_MOVE_BY_FIVE))
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	aliceOrigin = place_piece(board, alice, "red", 3)
+	bobOrigin = place_piece(board, bob, "red", 10)
+	aliceTarget = board.getSpotFromDistance(aliceOrigin, 5)
+
+	options = board.getMoveOptions(alice, Card("♥️", "5"))
+
+	assert any(move.ID == "MOVE" and move.originSpot == aliceOrigin and move.targetSpot == aliceTarget for move in options)
+	assert not any(move.ID == "FIVE" and move.originSpot == bobOrigin for move in options)
+
+
+def test_normal_five_can_enter_own_house():
+	board = Board(COLORS, GameRules(five_behaviour=FiveBehaviour.NORMAL_MOVE_BY_FIVE))
+	alice = make_player("Alice", "red", "0")
+	alice.setBoard(board)
+
+	entrySpot = board.getFirstSpot(alice.color)
+	originSpot = board.getSpotFromDistance(entrySpot, -2)
+	origin = place_piece(board, alice, originSpot.color, originSpot.number)
+	houseTarget = board.getHouse(alice.color, 2)
+
+	options = board.getMoveOptions(alice, Card("♥️", "5"))
+
+	assert any(move.ID == "ENTER" and move.originSpot == origin and move.targetSpot == houseTarget for move in options)
+
+
+def test_both_five_behaviours_are_offered():
+	board = Board(COLORS, GameRules(five_behaviour=FiveBehaviour.BOTH))
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	aliceOrigin = place_piece(board, alice, "red", 3)
+	bobOrigin = place_piece(board, bob, "red", 10)
+	aliceTarget = board.getSpotFromDistance(aliceOrigin, 5)
+	bobTarget = board.getSpotFromDistance(bobOrigin, 5)
+
+	options = board.getMoveOptions(alice, Card("♥️", "5"))
+
+	assert any(move.ID == "MOVE" and move.originSpot == aliceOrigin and move.targetSpot == aliceTarget for move in options)
+	assert any(move.ID == "FIVE" and move.originSpot == bobOrigin and move.targetSpot == bobTarget for move in options)
 
 
 def test_five_cannot_move_partner_piece():
@@ -639,3 +725,26 @@ def test_jack_switch_can_offer_seven_hop_when_enabled():
 	assert hop.pieceOwner is alice
 	assert hop.originSpot is board.getSpot("yellow", 7)
 	assert hop.targetSpot is board.getSpot("red", 7)
+
+@pytest.mark.parametrize(
+	("aceValues", "expectedDistances"),
+	[
+		((1,), (1,)),
+		((11,), (11,)),
+		((1, 11), (1, 11)),
+	],
+)
+def test_ace_movement_uses_configured_values(aceValues, expectedDistances):
+	board = Board(COLORS, GameRules(ace_values=aceValues))
+	player = make_player()
+	player.setBoard(board)
+
+	origin = place_piece(board, player, "red", 3)
+
+	options = board.getMoveOptions(player, Card("♥️", "A"))
+
+	actualTargets = {move.targetSpot for move in options if move.ID == "MOVE" and move.originSpot == origin}
+	expectedTargets = {board.getSpotFromDistance(origin, distance) for distance in expectedDistances}
+
+	assert actualTargets == expectedTargets
+	assert any(move.ID == "OUT" for move in options)
