@@ -16,8 +16,6 @@ class Board:
 		self._colors = colors
 
 		self._regionLength = rules.track_region_length
-		if not 1 <= rules.enter_house_at_spot <= self._regionLength:
-			raise ValueError("House entry position must be within the track region")
 
 		for color in colors:
 			for i in range(self._regionLength):

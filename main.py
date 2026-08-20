@@ -1,7 +1,7 @@
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from typing import Dict
 import asyncio
 import string
@@ -13,7 +13,7 @@ import uuid
 from game import Game
 from player import Player
 from params import *
-from rules import GameRules, MONTSURVENT_RULES
+from rules import *
 
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
@@ -123,18 +123,19 @@ class ConnectionManager:
 			if game_id not in self.games:
 				return game_id
 
-	def create_game(self, msg_router, rules: GameRules = MONTSURVENT_RULES) -> str:
+	def create_game(self, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None) -> str:
 		game_id = self._generate_game_id()
-		self.games[game_id] = GameSession(game_id, msg_router, rules)
+		self.games[game_id] = GameSession(game_id, msg_router, rules, rulesetName)
 		return game_id
 
 	def get_game(self, game_id: str):
 		return self.games.get(game_id)
 
 class GameSession:
-	def __init__(self, game_id: str, msg_router, rules: GameRules = MONTSURVENT_RULES):
+	def __init__(self, game_id: str, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None):
 		self.id = game_id
 		self._rules = rules
+		self._rulesetName = rulesetName if rulesetName is not None else get_matching_preset_name(rules)
 		self.players: Dict = {}
 		self.started = False
 		self.lock = asyncio.Lock()
@@ -146,6 +147,13 @@ class GameSession:
 	@property
 	def rules(self) -> GameRules:
 		return self._rules
+
+	@property
+	def rulesetName(self) -> str:
+		return self._rulesetName
+
+	def ruleset_state(self) -> dict:
+		return {"preset": self._rulesetName, "values": self._rules.to_dict()}
 
 	def fullUI(self) -> dict:
 		if self.game:
@@ -168,7 +176,8 @@ class GameSession:
 				"pieces": self.game.board.getAllPiecesOnTheBoard(), 
 				"active_player": active_player_name,
 				"trackRegionLength": self._rules.track_region_length,
-				"enterHouseAtSpot": self._rules.enter_house_at_spot
+				"enterHouseAtSpot": self._rules.enter_house_at_spot,
+				"ruleset": self.ruleset_state()
 				}
 		else:
 			return {
@@ -185,7 +194,8 @@ class GameSession:
 				"pieces": [], 
 				"active_player": "",
 				"trackRegionLength": self._rules.track_region_length,
-				"enterHouseAtSpot": self._rules.enter_house_at_spot
+				"enterHouseAtSpot": self._rules.enter_house_at_spot,
+				"ruleset": self.ruleset_state()
 				}
 
 
@@ -224,7 +234,8 @@ class GameSession:
 			"teamCounts": teamCounts, 
 			"teamCapacity": NUMBER_OF_PLAYERS // NUMBER_OF_TEAMS,
 			"trackRegionLength": self._rules.track_region_length,
-			"enterHouseAtSpot": self._rules.enter_house_at_spot
+			"enterHouseAtSpot": self._rules.enter_house_at_spot,
+			"ruleset": self.ruleset_state()
 			}
 
 	async def broadcast_lobby_state(self) -> None:
@@ -452,8 +463,28 @@ manager = ConnectionManager()
 async def root():
 	return {"message": "Game backend is running."}
 
+@app.get("/toc/api/rule-presets")
+async def get_rule_presets():
+	return {"default": DEFAULT_RULE_PRESET, "presets": {name: rules.to_dict() for name, rules in RULE_PRESETS.items()}, "schema": get_rule_schema()}
 
 @app.post("/toc/api/create-game")
-async def create_game():
-	game_id = manager.create_game(router)
-	return {"game_id": game_id}
+async def create_game(payload: dict = None):
+	if payload is None:
+		payload = {}
+
+	if type(payload) is not dict:
+		raise HTTPException(status_code=422, detail="Game creation data must be an object")
+
+	unknownFields = set(payload) - {"preset", "rules"}
+	if unknownFields:
+		raise HTTPException(status_code=422, detail=f"Unknown game creation fields: {', '.join(sorted(unknownFields))}")
+
+	presetName = payload.get("preset", DEFAULT_RULE_PRESET)
+
+	try:
+		rules = resolve_ruleset(presetName, payload.get("rules"))
+	except ValueError as error:
+		raise HTTPException(status_code=422, detail=str(error)) from error
+
+	game_id = manager.create_game(router, rules, presetName)
+	return {"game_id": game_id, "preset": presetName, "rules": rules.to_dict()}

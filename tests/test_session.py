@@ -1,6 +1,7 @@
 import asyncio
 
-from main import ConnectionManager, GameSession, PlayerInputRouter
+from main import ConnectionManager, GameSession, PlayerInputRouter, create_game as create_game_endpoint, get_rule_presets, manager
+from rules import GameRules, MONTSURVENT_RULES
 from player import Player
 from rules import GameRules
 
@@ -21,6 +22,38 @@ def test_connection_manager_passes_rules_to_session():
 	gameId = manager.create_game(router, rules)
 
 	assert manager.get_game(gameId).rules is rules
+	assert manager.get_game(gameId).rulesetName == "custom"
+
+def test_rule_presets_endpoint_returns_serialized_presets():
+	result = asyncio.run(get_rule_presets())
+
+	assert result["default"] == "montsurvent"
+	assert result["presets"]["montsurvent"]["rotation"] == "clockwise"
+	assert result["presets"]["montsurvent"]["deal_card_counts"] == [5, 4, 4]
+	assert result["schema"]["seven_hopping"]["options"] == ["disabled", "optional", "forced"]
+
+
+def test_create_game_endpoint_accepts_custom_rules():
+	result = asyncio.run(create_game_endpoint({"preset": "custom", "rules": {"card_exchange": False}}))
+	session = manager.get_game(result["game_id"])
+
+	try:
+		assert result["preset"] == "custom"
+		assert result["rules"]["card_exchange"] is False
+		assert session.rules.card_exchange is False
+		assert session.rulesetName == "custom"
+	finally:
+		manager.games.pop(result["game_id"], None)
+
+def test_create_game_endpoint_remains_backward_compatible():
+	result = asyncio.run(create_game_endpoint())
+	session = manager.get_game(result["game_id"])
+
+	try:
+		assert result["preset"] == "montsurvent"
+		assert session.rules is MONTSURVENT_RULES
+	finally:
+		manager.games.pop(result["game_id"], None)
 
 
 def test_player_configuration_is_validated_and_broadcast():
@@ -204,9 +237,13 @@ def test_router_ignores_input_for_an_old_prompt():
 	asyncio.run(scenario())
 
 
-def test_session_states_report_configured_track_region_length():
+def test_session_states_report_configured_rules():
 	router = PlayerInputRouter()
-	session = GameSession("TEST", router, GameRules(track_region_length=16))
+	session = GameSession("TEST", router, GameRules(track_region_length=16, enter_house_at_spot=16))
 
 	assert session.lobby_state()["trackRegionLength"] == 16
+	assert session.lobby_state()["enterHouseAtSpot"] == 16
 	assert session.fullUI()["trackRegionLength"] == 16
+	assert session.fullUI()["enterHouseAtSpot"] == 16
+	assert session.lobby_state()["ruleset"] == {"preset": "custom", "values": session.rules.to_dict()}
+	assert session.fullUI()["ruleset"] == {"preset": "custom", "values": session.rules.to_dict()}
