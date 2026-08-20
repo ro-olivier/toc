@@ -13,6 +13,17 @@ const lobbyGameId = document.getElementById("lobby-game-id");
 const lobbyPlayerCount = document.getElementById("lobby-player-count");
 const lobbyPlayers = document.getElementById("lobby-players");
 const lobbyChoiceForm = document.getElementById("lobby-choice-form");
+const rulePresetSelect = document.getElementById("rule-preset-select");
+const rulePresetSummary = document.getElementById("rule-preset-summary");
+const customRulesEditor = document.getElementById("custom-rules-editor");
+const customRulesFields = document.getElementById("custom-rules-fields");
+const resetCustomRules = document.getElementById("reset-custom-rules");
+const lobbyRulesPanel = document.getElementById("lobby-rules-panel");
+const lobbyRulesPreset = document.getElementById("lobby-rules-preset");
+const lobbyRulesList = document.getElementById("lobby-rules-list");
+const gameRulesPanel = document.getElementById("game-rules-panel");
+const gameRulesPreset = document.getElementById("game-rules-preset");
+const gameRulesList = document.getElementById("game-rules-list");
 const teamSelect = document.getElementById("team-select");
 const colorSelect = document.getElementById("color-select");
 const confirmLobbyChoice = document.getElementById("confirm-lobby-choice");
@@ -30,6 +41,7 @@ const localHandSlot = document.getElementById("local-hand-slot");
 const emptyHandMessage = document.getElementById("empty-hand-message");
 const board = document.getElementById('board');
 
+
 const selectableSpotHandlers = new Map();
 
 let ws = null;
@@ -39,6 +51,40 @@ let local_player = null;
 let local_card_box = null;
 let local_info_box = null;
 let currentLobbyState = null;
+
+let ruleConfiguration = null;
+
+const RULE_GROUPS = {
+  round: "Round and cards",
+  board: "Board",
+  special: "Special cards",
+  seven: "Seven and hopping",
+};
+
+const RULE_UI = {
+  card_exchange: {group: "round", label: "Exchange cards with teammate", description: "At the beginning of each deal, teammates choose and exchange one card."},
+  shuffle_cards: {group: "round", label: "Shuffle cards", description: "Controls when the discard pile is shuffled before being used as the next deck."},
+  rotation: {group: "round", label: "Rotation direction", description: "Sets the direction used for turns, dealing and dealer rotation."},
+  deal_card_counts: {group: "round", label: "Dealing schedule", description: "Sets how many cards each player receives during the three deals of a deck cycle."},
+  cannot_play_folds_entire_hand: {group: "round", label: "No move folds entire hand", description: "When enabled, a player with no legal move discards their whole hand. Otherwise they choose one card to discard."},
+  exit_spot_is_protected_and_blocking: {group: "board", label: "Exit spots are protected and blocking", description: "A newly deployed piece cannot be kicked or Jack-switched and blocks pieces from crossing its position. A Five can still force it forward."},
+  house_spots_are_blocking_and_protected: {group: "board", label: "House spots are protected and blocking", description: "Pieces cannot cross or land on occupied house spots. When disabled, landing on an occupied house spot kicks its piece."},
+  landing_on_occupied_spot_kicks_piece: {group: "board", label: "Landing on an occupied spot kicks", description: "When enabled, the occupying piece is kicked, even if it belongs to the acting player or their teammate. Otherwise the move is illegal."},
+  track_region_length: {group: "board", label: "Spots per region", description: "Sets the number of ordinary track positions associated with each player colour."},
+  enter_house_at_spot: {group: "board", label: "House entry position", description: "Sets the track position from which a piece may branch into its house lane."},
+  four_can_move_backward: {group: "special", label: "Four can move backward", description: "Allows a Four to move a piece either four positions forward or four positions backward."},
+  can_enter_house_backward: {group: "special", label: "Allow backward house entry", description: "Allows a backward move crossing the configured house entrance to enter the house lane."},
+  five_behaviour: {group: "special", label: "Five behaviour", description: "A Five can force an opponent piece forward, move one of the player's pieces normally, or allow both behaviours."},
+  jacks_can_switch: {group: "special", label: "Jacks can switch pieces", description: "Allows a Jack to switch one of the player's track pieces with another player's track piece. Otherwise a Jack moves eleven positions."},
+  jacks_can_switch_then_seven_hop: {group: "special", label: "Jack switch can seven-hop", description: "Allows the acting player's switched piece to seven-hop when the switch places it on a seventh position."},
+  ace_values: {group: "special", label: "Ace movement values", description: "Sets whether an Ace moves one position, eleven positions, or offers either value."},
+  king_kicks_pieces_on_path: {group: "special", label: "King kicks pieces on its path", description: "When a King moves thirteen positions, every unprotected piece crossed on the way is kicked."},
+  seven_can_split: {group: "seven", label: "Seven can be split", description: "Allows the seven forward steps to be distributed among several pieces. All seven steps must still be completed."},
+  seven_split_kicks_pieces_on_path: {group: "seven", label: "Seven split kicks pieces on path", description: "When enabled, pieces are kicked after every step. Otherwise only each moved piece's final position can kick."},
+  seven_hopping: {group: "seven", label: "Seven-hopping", description: "Controls whether landing on a seventh position may or must hop the piece to the next seventh position."},
+  five_hop_decider: {group: "seven", label: "Who decides hopping after a Five", description: "When a Five forces an opponent onto a seventh position, this chooses who decides whether the optional hop occurs."},
+  seven_hopping_on_four_backward_goes_backward: {group: "seven", label: "Backward Four hops backward", description: "Makes a seven-hop triggered by a backward Four go to the previous seventh position instead of the next one."},
+};
 
 let stored_player_name = window.localStorage.getItem("session_player_name");
 let stored_game_id = window.localStorage.getItem("session_game_ID");
@@ -126,6 +172,7 @@ async function connectToGame(gameId, name, rejoin = false) {
     ws = new WebSocket(wsUrl);
   } catch (err) {
     console.error(err);
+    createBtn.disabled = ruleConfiguration === null;
     showError("Failed to construct WebSocket URL.");
     return;
   }
@@ -172,6 +219,7 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case "full-ui-state":
         configureBoardGeometry(data.trackRegionLength, data.enterHouseAtSpot);
+        renderRulesetDisplays(data.ruleset);
 
         data.players.forEach(p => {
           assignPlayer(p.name, p.team, p.color);
@@ -339,6 +387,7 @@ async function connectToGame(gameId, name, rejoin = false) {
 	clearSpotSelection();
 	connectionStatus.classList.remove("connected");
 	connectionStatusText.textContent = "Disconnected";
+  createBtn.disabled = ruleConfiguration === null;
 
     switch (event.code) {
       case 4001:
@@ -363,6 +412,247 @@ async function connectToGame(gameId, name, rejoin = false) {
   };
 }
 
+function formatPresetName(name) {
+  return name.charAt(0).toUpperCase() + name.slice(1).replaceAll("_", " ");
+}
+
+function formatRuleChoice(ruleName, value) {
+  const labels = {
+    never: "Never",
+    on_dealer_change: "When dealer changes",
+    on_dealer_cycle: "After a dealer cycle",
+    clockwise: "Clockwise",
+    counterclockwise: "Counterclockwise",
+    force_move_opponent: "Force an opponent forward",
+    normal_move_by_five: "Normal five-step move",
+    both: "Both behaviours",
+    disabled: "Disabled",
+    optional: "Optional",
+    forced: "Forced",
+    acting_player: "Acting player",
+    piece_owner: "Piece owner",
+  };
+
+  if (ruleName === "deal_card_counts") return value.join(" / ");
+  if (ruleName === "ace_values") return value.join(" or ");
+  if (ruleName === "track_region_length") return `${value} spots`;
+  if (ruleName === "enter_house_at_spot") return `Spot ${value}`;
+  return labels[value] || String(value).replaceAll("_", " ");
+}
+
+function createRuleTitle(ruleName, controlId = null) {
+  const metadata = RULE_UI[ruleName];
+  const title = document.createElement("div");
+  title.className = "rule-title";
+
+  const label = document.createElement(controlId ? "label" : "span");
+  label.textContent = metadata.label;
+  if (controlId) label.htmlFor = controlId;
+  title.appendChild(label);
+
+  if (metadata.description) {
+    const helpWrapper = document.createElement("span");
+    helpWrapper.className = "rule-help-wrapper";
+
+    const help = document.createElement("button");
+    help.type = "button";
+    help.className = "rule-help-trigger";
+    help.textContent = "?";
+    help.setAttribute("aria-label", `${metadata.label}: ${metadata.description}`);
+
+    const tooltip = document.createElement("span");
+    tooltip.className = "rule-tooltip";
+    tooltip.setAttribute("role", "tooltip");
+    tooltip.textContent = metadata.description;
+
+    helpWrapper.append(help, tooltip);
+    title.appendChild(helpWrapper);
+  }
+
+  return title;
+}
+
+function synchronizeHouseEntryControls() {
+  const trackControl = customRulesFields.querySelector('[data-rule-name="track_region_length"]');
+  const entryControl = customRulesFields.querySelector('[data-rule-name="enter_house_at_spot"]');
+  if (!trackControl || !entryControl) return;
+
+  const regionLength = JSON.parse(trackControl.value);
+
+  Array.from(entryControl.options).forEach(option => {
+    option.disabled = JSON.parse(option.value) > regionLength;
+  });
+
+  if (JSON.parse(entryControl.value) > regionLength) entryControl.value = JSON.stringify(regionLength);
+}
+
+function applyRuleValues(values) {
+  customRulesFields.querySelectorAll("[data-rule-name]").forEach(control => {
+    const value = values[control.dataset.ruleName];
+
+    if (control.type === "checkbox") {
+      control.checked = value;
+    } else {
+      control.value = JSON.stringify(value);
+    }
+  });
+
+  synchronizeHouseEntryControls();
+}
+
+function renderCustomRuleControls(schema, values) {
+  customRulesFields.replaceChildren();
+
+  Object.entries(RULE_GROUPS).forEach(([groupName, groupLabel]) => {
+    const ruleNames = Object.keys(schema).filter(ruleName => RULE_UI[ruleName]?.group === groupName);
+    if (ruleNames.length === 0) return;
+
+    const group = document.createElement("section");
+    group.className = "rule-group";
+
+    const heading = document.createElement("h3");
+    heading.textContent = groupLabel;
+    group.appendChild(heading);
+
+    ruleNames.forEach(ruleName => {
+      const definition = schema[ruleName];
+      const row = document.createElement("div");
+      row.className = "rule-control";
+      const controlId = `rule-control-${ruleName}`;
+      row.appendChild(createRuleTitle(ruleName, controlId));
+
+      let control;
+
+      if (definition.type === "boolean") {
+        control = document.createElement("input");
+        control.type = "checkbox";
+      } else {
+        control = document.createElement("select");
+        control.className = "rule-choice";
+
+        definition.options.forEach(value => {
+          const option = document.createElement("option");
+          option.value = JSON.stringify(value);
+          option.textContent = formatRuleChoice(ruleName, value);
+          control.appendChild(option);
+        });
+      }
+
+      control.id = controlId;
+      control.dataset.ruleName = ruleName;
+      row.appendChild(control);
+      group.appendChild(row);
+    });
+
+    customRulesFields.appendChild(group);
+  });
+
+  const renderedRuleNames = new Set(Array.from(customRulesFields.querySelectorAll("[data-rule-name]"), control => control.dataset.ruleName));
+  const missingRuleNames = Object.keys(schema).filter(ruleName => !renderedRuleNames.has(ruleName));
+
+  if (missingRuleNames.length > 0) throw new Error(`Missing rule UI definitions: ${missingRuleNames.join(", ")}`);
+
+  applyRuleValues(values);
+  customRulesFields.querySelector('[data-rule-name="track_region_length"]').addEventListener("change", synchronizeHouseEntryControls);
+}
+
+function collectCustomRuleValues() {
+  const values = {};
+
+  customRulesFields.querySelectorAll("[data-rule-name]").forEach(control => {
+    values[control.dataset.ruleName] = control.type === "checkbox" ? control.checked : JSON.parse(control.value);
+  });
+
+  return values;
+}
+
+function renderRulesetDisplay(panel, badge, list, ruleset) {
+  if (!ruleset?.values) {
+    panel.classList.add("hidden");
+    return;
+  }
+
+  panel.classList.remove("hidden");
+  badge.textContent = formatPresetName(ruleset.preset);
+  list.replaceChildren();
+
+  Object.entries(RULE_GROUPS).forEach(([groupName, groupLabel]) => {
+    const ruleNames = Object.keys(ruleset.values).filter(ruleName => RULE_UI[ruleName]?.group === groupName);
+    if (ruleNames.length === 0) return;
+
+    const group = document.createElement("section");
+    group.className = "rules-display-group";
+
+    const heading = document.createElement("h3");
+    heading.textContent = groupLabel;
+    group.appendChild(heading);
+
+    ruleNames.forEach(ruleName => {
+      const value = ruleset.values[ruleName];
+      const row = document.createElement("div");
+      const displayedValue = document.createElement("span");
+
+      row.className = "rules-display-row";
+      displayedValue.className = `rules-display-value${typeof value === "boolean" ? value ? " enabled" : " disabled" : ""}`;
+      displayedValue.textContent = typeof value === "boolean" ? value ? "Enabled" : "Disabled" : formatRuleChoice(ruleName, value);
+
+      row.append(createRuleTitle(ruleName), displayedValue);
+      group.appendChild(row);
+    });
+
+    list.appendChild(group);
+  });
+}
+
+function renderRulesetDisplays(ruleset) {
+  renderRulesetDisplay(lobbyRulesPanel, lobbyRulesPreset, lobbyRulesList, ruleset);
+  renderRulesetDisplay(gameRulesPanel, gameRulesPreset, gameRulesList, ruleset);
+}
+
+function updateRulesetEditorVisibility() {
+  const isCustom = rulePresetSelect.value === "custom";
+  customRulesEditor.classList.toggle("hidden", !isCustom);
+  rulePresetSummary.textContent = isCustom ? "Configure every rule for this game." : `Uses the ${formatPresetName(rulePresetSelect.value)} preset.`;
+}
+
+async function initializeRuleSelector() {
+  try {
+    const response = await fetch("/toc/api/rule-presets");
+    if (!response.ok) throw new Error("Could not load rule presets.");
+
+    ruleConfiguration = await response.json();
+    const defaultValues = ruleConfiguration.presets[ruleConfiguration.default];
+
+    rulePresetSelect.replaceChildren();
+
+    Object.keys(ruleConfiguration.presets).forEach(presetName => {
+      const option = document.createElement("option");
+      option.value = presetName;
+      option.textContent = formatPresetName(presetName);
+      rulePresetSelect.appendChild(option);
+    });
+
+    const customOption = document.createElement("option");
+    customOption.value = "custom";
+    customOption.textContent = "Custom rules";
+    rulePresetSelect.appendChild(customOption);
+
+    renderCustomRuleControls(ruleConfiguration.schema, defaultValues);
+    rulePresetSelect.value = ruleConfiguration.default;
+    rulePresetSelect.disabled = false;
+    createBtn.disabled = false;
+    updateRulesetEditorVisibility();
+  } catch (err) {
+    console.error(err);
+    rulePresetSummary.textContent = "Rules could not be loaded.";
+    showError("Could not load game rules. Please reload the page.");
+  }
+}
+
+rulePresetSelect.addEventListener("change", updateRulesetEditorVisibility);
+resetCustomRules.addEventListener("click", () => applyRuleValues(ruleConfiguration.presets[ruleConfiguration.default]));
+initializeRuleSelector();
+
 createBtn.addEventListener("click", async () => {
   const name = nameInput.value.trim();
   if (!name) {
@@ -371,16 +661,27 @@ createBtn.addEventListener("click", async () => {
   }
 
   clearError();
+  createBtn.disabled = true;
+
   try {
+    const payload = {preset: rulePresetSelect.value};
+    if (rulePresetSelect.value === "custom") payload.rules = collectCustomRuleValues();
+
     const res = await fetch("/toc/api/create-game", {
-      method: "POST"
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
     });
+
+    if (!res.ok) throw new Error(data.detail || "Failed to create game.");
     const data = await res.json();
+
     const gameId = data.game_id;
     log(`Created game ID: ${gameId}`);
     await connectToGame(gameId, name);
   } catch (err) {
-    showError("Failed to create game.");
+    showError(err.message || "Failed to create game.");
+    createBtn.disabled = false;
   }
 });
 
@@ -472,6 +773,7 @@ function renderLobbyState(state) {
   lobbyGameId.textContent = state.gameId;
   lobbyPlayerCount.textContent = `${state.players.length} / 4 players`;
   lobbyPlayers.replaceChildren();
+  renderRulesetDisplays(state.ruleset);
 
   state.players.forEach((player) => {
     const row = document.createElement("div");

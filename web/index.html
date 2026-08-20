@@ -19,8 +19,33 @@
       <input id="game-id-input" type="text" placeholder="Enter Game ID (for joining)"
              class="w-full p-2 bg-gray-800 border border-gray-600 rounded" />
 
+      <section class="rules-setup">
+        <div class="rules-preset-row">
+          <div>
+            <label for="rule-preset-select">Rules for the new game</label>
+            <p id="rule-preset-summary">Loading available rules…</p>
+          </div>
+
+          <select id="rule-preset-select" disabled>
+            <option>Loading…</option>
+          </select>
+        </div>
+
+        <div id="custom-rules-editor" class="custom-rules-editor hidden">
+          <div class="custom-rules-heading">
+            <div>
+              <h2>Custom rules</h2>
+              <p>Settings start from the default preset.</p>
+            </div>
+            <button id="reset-custom-rules" type="button">Reset</button>
+          </div>
+
+          <div id="custom-rules-fields" class="custom-rules-fields"></div>
+        </div>
+      </section>
+
       <div class="flex space-x-2">
-        <button id="create-btn" class="w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+        <button id="create-btn" class="w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" disabled>
           Create Game
         </button>
         <button id="join-btn" class="w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50" disabled>
@@ -42,6 +67,14 @@
       </div>
 
       <div id="lobby-players" class="lobby-players"></div>
+
+      <details id="lobby-rules-panel" class="rules-display-panel">
+        <summary>
+          <span>Game rules</span>
+          <span id="lobby-rules-preset" class="ruleset-badge"></span>
+        </summary>
+        <div id="lobby-rules-list" class="rules-display-list"></div>
+      </details>
 
       <form id="lobby-choice-form" class="lobby-choice-form">
         <h2 class="text-xl font-bold">Choose your seat</h2>
@@ -114,6 +147,14 @@
             </div>
             <div id="terminal" class="activity-log"></div>
           </section>
+
+          <details id="game-rules-panel" class="rules-display-panel game-rules-panel">
+            <summary>
+              <span>Game rules</span>
+              <span id="game-rules-preset" class="ruleset-badge"></span>
+            </summary>
+            <div id="game-rules-list" class="rules-display-list"></div>
+          </details>
 
           <details class="debug-panel">
             <summary>Debug tools</summary>
