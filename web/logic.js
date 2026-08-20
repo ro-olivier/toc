@@ -53,37 +53,38 @@ let local_info_box = null;
 let currentLobbyState = null;
 
 let ruleConfiguration = null;
+let displayedRuleset = null;
 
 const RULE_GROUPS = {
-  round: "Round and cards",
-  board: "Board",
-  special: "Special cards",
-  seven: "Seven and hopping",
+  round: "rules.groups.round",
+  board: "rules.groups.board",
+  special: "rules.groups.special",
+  seven: "rules.groups.seven",
 };
 
 const RULE_UI = {
-  card_exchange: {group: "round", label: "Exchange cards with teammate", description: "At the beginning of each deal, teammates choose and exchange one card."},
-  shuffle_cards: {group: "round", label: "Shuffle cards", description: "Controls when the discard pile is shuffled before being used as the next deck."},
-  rotation: {group: "round", label: "Rotation direction", description: "Sets the direction used for turns, dealing and dealer rotation."},
-  deal_card_counts: {group: "round", label: "Dealing schedule", description: "Sets how many cards each player receives during the three deals of a deck cycle."},
-  cannot_play_folds_entire_hand: {group: "round", label: "No move folds entire hand", description: "When enabled, a player with no legal move discards their whole hand. Otherwise they choose one card to discard."},
-  exit_spot_is_protected_and_blocking: {group: "board", label: "Exit spots are protected and blocking", description: "A newly deployed piece cannot be kicked or Jack-switched and blocks pieces from crossing its position. A Five can still force it forward."},
-  house_spots_are_blocking_and_protected: {group: "board", label: "House spots are protected and blocking", description: "Pieces cannot cross or land on occupied house spots. When disabled, landing on an occupied house spot kicks its piece."},
-  landing_on_occupied_spot_kicks_piece: {group: "board", label: "Landing on an occupied spot kicks", description: "When enabled, the occupying piece is kicked, even if it belongs to the acting player or their teammate. Otherwise the move is illegal."},
-  track_region_length: {group: "board", label: "Spots per region", description: "Sets the number of ordinary track positions associated with each player colour."},
-  enter_house_at_spot: {group: "board", label: "House entry position", description: "Sets the track position from which a piece may branch into its house lane."},
-  four_can_move_backward: {group: "special", label: "Four can move backward", description: "Allows a Four to move a piece either four positions forward or four positions backward."},
-  can_enter_house_backward: {group: "special", label: "Allow backward house entry", description: "Allows a backward move crossing the configured house entrance to enter the house lane."},
-  five_behaviour: {group: "special", label: "Five behaviour", description: "A Five can force an opponent piece forward, move one of the player's pieces normally, or allow both behaviours."},
-  jacks_can_switch: {group: "special", label: "Jacks can switch pieces", description: "Allows a Jack to switch one of the player's track pieces with another player's track piece. Otherwise a Jack moves eleven positions."},
-  jacks_can_switch_then_seven_hop: {group: "special", label: "Jack switch can seven-hop", description: "Allows the acting player's switched piece to seven-hop when the switch places it on a seventh position."},
-  ace_values: {group: "special", label: "Ace movement values", description: "Sets whether an Ace moves one position, eleven positions, or offers either value."},
-  king_kicks_pieces_on_path: {group: "special", label: "King kicks pieces on its path", description: "When a King moves thirteen positions, every unprotected piece crossed on the way is kicked."},
-  seven_can_split: {group: "seven", label: "Seven can be split", description: "Allows the seven forward steps to be distributed among several pieces. All seven steps must still be completed."},
-  seven_split_kicks_pieces_on_path: {group: "seven", label: "Seven split kicks pieces on path", description: "When enabled, pieces are kicked after every step. Otherwise only each moved piece's final position can kick."},
-  seven_hopping: {group: "seven", label: "Seven-hopping", description: "Controls whether landing on a seventh position may or must hop the piece to the next seventh position."},
-  five_hop_decider: {group: "seven", label: "Who decides hopping after a Five", description: "When a Five forces an opponent onto a seventh position, this chooses who decides whether the optional hop occurs."},
-  seven_hopping_on_four_backward_goes_backward: {group: "seven", label: "Backward Four hops backward", description: "Makes a seven-hop triggered by a backward Four go to the previous seventh position instead of the next one."},
+  card_exchange: {group: "round"},
+  shuffle_cards: {group: "round"},
+  rotation: {group: "round"},
+  deal_card_counts: {group: "round"},
+  cannot_play_folds_entire_hand: {group: "round"},
+  exit_spot_is_protected_and_blocking: {group: "board"},
+  house_spots_are_blocking_and_protected: {group: "board"},
+  landing_on_occupied_spot_kicks_piece: {group: "board"},
+  track_region_length: {group: "board"},
+  enter_house_at_spot: {group: "board"},
+  four_can_move_backward: {group: "special"},
+  can_enter_house_backward: {group: "special"},
+  five_behaviour: {group: "special"},
+  jacks_can_switch: {group: "special"},
+  jacks_can_switch_then_seven_hop: {group: "special"},
+  ace_values: {group: "special"},
+  king_kicks_pieces_on_path: {group: "special"},
+  seven_can_split: {group: "seven"},
+  seven_split_kicks_pieces_on_path: {group: "seven"},
+  seven_hopping: {group: "seven"},
+  five_hop_decider: {group: "seven"},
+  seven_hopping_on_four_backward_goes_backward: {group: "seven"},
 };
 
 let stored_player_name = window.localStorage.getItem("session_player_name");
@@ -94,6 +95,82 @@ let activeRequestId = null;
 nameInput.value = stored_player_name !== null ? stored_player_name : '';
 gameIdInput.value = stored_game_id !== null ? stored_game_id : '';
 joinBtn.disabled = (stored_player_name && stored_game_id) !== null ? false : true;
+
+const tocI18n = window.tocI18n;
+const languageSelect = document.getElementById("language-select");
+
+function translateStaticInterface() {
+  document.title = tocI18n.t("app.title");
+
+  document.querySelectorAll("[data-i18n]").forEach(element => {
+    element.textContent = tocI18n.t(element.dataset.i18n);
+  });
+
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(element => {
+    element.placeholder = tocI18n.t(element.dataset.i18nPlaceholder);
+  });
+
+  document.querySelectorAll("[data-i18n-dynamic]").forEach(element => {
+    const parameters = element.dataset.i18nParameters ? JSON.parse(element.dataset.i18nParameters) : {};
+    element.textContent = tocI18n.t(element.dataset.i18nDynamic, parameters);
+  });
+
+  document.querySelectorAll("[data-i18n-title]").forEach(element => {
+    const translation = tocI18n.t(element.dataset.i18nTitle);
+    element.title = translation;
+    element.setAttribute("aria-label", translation);
+  });
+}
+
+function refreshLanguageInterface() {
+  translateStaticInterface();
+
+  Array.from(languageSelect.options).forEach(option => {
+    option.textContent = tocI18n.t(`language.${option.value}`);
+  });
+
+  if (ruleConfiguration) {
+    const customValues = customRulesFields.querySelector("[data-rule-name]") ? collectCustomRuleValues() : ruleConfiguration.presets[ruleConfiguration.default];
+    const customOption = Array.from(rulePresetSelect.options).find(option => option.value === "custom");
+
+    if (customOption) customOption.textContent = tocI18n.t("rules.custom_option");
+
+    renderCustomRuleControls(ruleConfiguration.schema, customValues);
+    updateRulesetEditorVisibility();
+  }
+
+  if (displayedRuleset) renderRulesetDisplays(displayedRuleset);
+
+  if (currentLobbyState && !lobbyScreen.classList.contains("hidden")) renderLobbyState(currentLobbyState);
+}
+
+function initializeLanguageInterface() {
+  console.log("initializeLanguageInterface was executed");
+  tocI18n.supportedLanguages.forEach(language => {
+    const option = document.createElement("option");
+    option.value = language;
+    languageSelect.appendChild(option);
+  });
+
+  languageSelect.value = tocI18n.getLanguage();
+  refreshLanguageInterface();
+
+  languageSelect.addEventListener("change", () => tocI18n.setLanguage(languageSelect.value));
+  window.addEventListener("toc-language-change", refreshLanguageInterface);
+}
+
+function setTranslatedText(element, key, parameters = {}) {
+  element.dataset.i18nDynamic = key;
+  element.dataset.i18nParameters = JSON.stringify(parameters);
+  element.textContent = tocI18n.t(key, parameters);
+}
+
+function setRawText(element, text) {
+  delete element.dataset.i18nDynamic;
+  delete element.dataset.i18nParameters;
+  element.textContent = text;
+}
+
 
 function buildWebSocketUrl(gameId, playerName) {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
@@ -112,13 +189,13 @@ function log(msg) {
 }
 
 function query(msg) {
-  turnInstruction.textContent = msg;
+  setRawText(turnInstruction, msg);
   turnInstruction.classList.remove("error-state");
   log(msg);
 }
 
 function error(msg) {
-  turnInstruction.textContent = msg;
+  setRawText(turnInstruction, msg);
   turnInstruction.classList.add("error-state");
   log(`Error: ${msg}`);
 }
@@ -173,7 +250,7 @@ async function connectToGame(gameId, name, rejoin = false) {
   } catch (err) {
     console.error(err);
     createBtn.disabled = ruleConfiguration === null;
-    showError("Failed to construct WebSocket URL.");
+    showError(tocI18n.t("errors.websocket_error"));
     return;
   }
 
@@ -193,12 +270,12 @@ async function connectToGame(gameId, name, rejoin = false) {
 
     switch (data.type) {
       case 'ready':
-        log(`Connected to game ${gameId} as ${name}`);
+        log(tocI18n.t("connection.connected_as", {gameId, player: name}));
+        setTranslatedText(connectionStatusText, "connection.connected");
         local_player_name = name;
         local_game_Id = gameId;
         gameIdDisplay.textContent = gameId;
         connectionStatus.classList.add("connected");
-        connectionStatusText.textContent = "Connected";
         showLobbyUI();
         break;
 
@@ -251,7 +328,7 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case "dealer":
         toogleDealerOnPlayerBlock(data.playerId);
-        dealerName.textContent = data.playerId;
+        setRawText(dealerName, data.playerId);
         break;
 
       case "receive-card-from-friend":
@@ -334,14 +411,14 @@ async function connectToGame(gameId, name, rejoin = false) {
       case "query-origin":
         activeRequestId = data.requestId;
         setCancelSelectionVisible(Boolean(data.canCancel));
-        query(data.msg || "Choose the piece you want to move.");
+        query(data.msg || tocI18n.t("game.choose_piece"));
         requestSpotSelection(data.originOptions);
         break;
 
       case "query-target":
         activeRequestId = data.requestId;
         setCancelSelectionVisible(Boolean(data.canCancel));
-        query(data.msg || "Choose the destination.");
+        query(data.msg || tocI18n.t("game.choose_destination"));
         requestSpotSelection(data.targetOptions);
         break;
 
@@ -349,7 +426,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         activeRequestId = data.requestId;
         setCancelSelectionVisible(false);
         clearSpotSelection();
-        query(data.msg || "Choose a card to play.");
+        query(data.msg || tocI18n.t("game.choose_card"));
         showAllCardUp();
         requestCardSelection();
         break;
@@ -368,8 +445,8 @@ async function connectToGame(gameId, name, rejoin = false) {
         setCancelSelectionVisible(false);
         clearSpotSelection();
         displayNoActivePlayers();
-        currentPlayerName.textContent = "Game over";
-        turnInstruction.textContent = data.msg;
+        setTranslatedText(currentPlayerName, "game.game_over");
+        setRawText(turnInstruction, data.msg);
         log(data.msg);
         break;
 
@@ -386,71 +463,64 @@ async function connectToGame(gameId, name, rejoin = false) {
 	setCancelSelectionVisible(false);
 	clearSpotSelection();
 	connectionStatus.classList.remove("connected");
-	connectionStatusText.textContent = "Disconnected";
+	setTranslatedText(connectionStatusText, "connection.disconnected");
   createBtn.disabled = ruleConfiguration === null;
 
     switch (event.code) {
       case 4001:
-        showError("Invalid game ID.");
+        showError(tocI18n.t("errors.invalid_game_id"));
         break;
       case 4002:
-        showError("Player name already taken.");
+        showError(tocI18n.t("errors.player_name_taken"));
         break;
       case 4004:
-        showError("This game already has four players.");
+        showError(tocI18n.t("errors.game_full"));
         break;
       case 1006:
-        showError("Could not connect to server.");
+        showError(tocI18n.t("errors.server_unreachable"));
         break;
       default:
-        showError(`Connection closed (code ${event.code}).`);
+        showError(tocI18n.t("errors.connection_closed", {code: event.code}));
     }
   };
 
   ws.onerror = () => {
-    showError("WebSocket Error!");
+    showError(tocI18n.t("errors.websocket_error"));
   };
 }
 
 function formatPresetName(name) {
-  return name.charAt(0).toUpperCase() + name.slice(1).replaceAll("_", " ");
+  const translationKey = `rules.presets.${name}`;
+  const translatedName = tocI18n.t(translationKey);
+  return translatedName === translationKey ? name.charAt(0).toUpperCase() + name.slice(1).replaceAll("_", " ") : translatedName;
+}
+
+function formatColorName(color) {
+  const translationKey = `colors.${color}`;
+  const translatedColor = tocI18n.t(translationKey);
+  return translatedColor === translationKey ? color : translatedColor;
 }
 
 function formatRuleChoice(ruleName, value) {
-  const labels = {
-    never: "Never",
-    on_dealer_change: "When dealer changes",
-    on_dealer_cycle: "After a dealer cycle",
-    clockwise: "Clockwise",
-    counterclockwise: "Counterclockwise",
-    force_move_opponent: "Force an opponent forward",
-    normal_move_by_five: "Normal five-step move",
-    both: "Both behaviours",
-    disabled: "Disabled",
-    optional: "Optional",
-    forced: "Forced",
-    acting_player: "Acting player",
-    piece_owner: "Piece owner",
-  };
-
-  if (ruleName === "deal_card_counts") return value.join(" / ");
-  if (ruleName === "ace_values") return value.join(" or ");
-  if (ruleName === "track_region_length") return `${value} spots`;
-  if (ruleName === "enter_house_at_spot") return `Spot ${value}`;
-  return labels[value] || String(value).replaceAll("_", " ");
+  const valueKey = Array.isArray(value) ? value.join("_") : String(value);
+  const translationKey = `rules.choices.${ruleName}.${valueKey}`;
+  const translatedValue = tocI18n.t(translationKey);
+  return translatedValue === translationKey ? String(value).replaceAll("_", " ") : translatedValue;
 }
 
 function createRuleTitle(ruleName, controlId = null) {
-  const metadata = RULE_UI[ruleName];
+  const labelText = tocI18n.t(`rules.labels.${ruleName}`);
+  const description = tocI18n.t(`rules.descriptions.${ruleName}`);
+
   const title = document.createElement("div");
   title.className = "rule-title";
 
   const label = document.createElement(controlId ? "label" : "span");
-  label.textContent = metadata.label;
+  label.textContent = labelText;
   if (controlId) label.htmlFor = controlId;
   title.appendChild(label);
 
-  if (metadata.description) {
+  if (description !== `rules.descriptions.${ruleName}`) {
     const helpWrapper = document.createElement("span");
     helpWrapper.className = "rule-help-wrapper";
 
@@ -458,12 +528,12 @@ function createRuleTitle(ruleName, controlId = null) {
     help.type = "button";
     help.className = "rule-help-trigger";
     help.textContent = "?";
-    help.setAttribute("aria-label", `${metadata.label}: ${metadata.description}`);
+    help.setAttribute("aria-label", `${labelText}: ${description}`);
 
     const tooltip = document.createElement("span");
     tooltip.className = "rule-tooltip";
     tooltip.setAttribute("role", "tooltip");
-    tooltip.textContent = metadata.description;
+    tooltip.textContent = description;
 
     helpWrapper.append(help, tooltip);
     title.appendChild(helpWrapper);
@@ -511,7 +581,7 @@ function renderCustomRuleControls(schema, values) {
     group.className = "rule-group";
 
     const heading = document.createElement("h3");
-    heading.textContent = groupLabel;
+    heading.textContent = tocI18n.t(groupLabel);
     group.appendChild(heading);
 
     ruleNames.forEach(ruleName => {
@@ -584,7 +654,7 @@ function renderRulesetDisplay(panel, badge, list, ruleset) {
     group.className = "rules-display-group";
 
     const heading = document.createElement("h3");
-    heading.textContent = groupLabel;
+    heading.textContent = tocI18n.t(groupLabel);
     group.appendChild(heading);
 
     ruleNames.forEach(ruleName => {
@@ -594,7 +664,7 @@ function renderRulesetDisplay(panel, badge, list, ruleset) {
 
       row.className = "rules-display-row";
       displayedValue.className = `rules-display-value${typeof value === "boolean" ? value ? " enabled" : " disabled" : ""}`;
-      displayedValue.textContent = typeof value === "boolean" ? value ? "Enabled" : "Disabled" : formatRuleChoice(ruleName, value);
+      displayedValue.textContent = typeof value === "boolean" ? value ? tocI18n.t("common.enabled") : tocI18n.t("common.disabled") : formatRuleChoice(ruleName, value);
 
       row.append(createRuleTitle(ruleName), displayedValue);
       group.appendChild(row);
@@ -605,6 +675,7 @@ function renderRulesetDisplay(panel, badge, list, ruleset) {
 }
 
 function renderRulesetDisplays(ruleset) {
+  displayedRuleset = ruleset;
   renderRulesetDisplay(lobbyRulesPanel, lobbyRulesPreset, lobbyRulesList, ruleset);
   renderRulesetDisplay(gameRulesPanel, gameRulesPreset, gameRulesList, ruleset);
 }
@@ -612,7 +683,7 @@ function renderRulesetDisplays(ruleset) {
 function updateRulesetEditorVisibility() {
   const isCustom = rulePresetSelect.value === "custom";
   customRulesEditor.classList.toggle("hidden", !isCustom);
-  rulePresetSummary.textContent = isCustom ? "Configure every rule for this game." : `Uses the ${formatPresetName(rulePresetSelect.value)} preset.`;
+  rulePresetSummary.textContent = isCustom ? tocI18n.t("rules.custom_summary") : tocI18n.t("rules.preset_summary", {preset: formatPresetName(rulePresetSelect.value)});
 }
 
 async function initializeRuleSelector() {
@@ -634,7 +705,7 @@ async function initializeRuleSelector() {
 
     const customOption = document.createElement("option");
     customOption.value = "custom";
-    customOption.textContent = "Custom rules";
+    customOption.textContent = tocI18n.t("rules.custom_option");
     rulePresetSelect.appendChild(customOption);
 
     renderCustomRuleControls(ruleConfiguration.schema, defaultValues);
@@ -644,10 +715,12 @@ async function initializeRuleSelector() {
     updateRulesetEditorVisibility();
   } catch (err) {
     console.error(err);
-    rulePresetSummary.textContent = "Rules could not be loaded.";
-    showError("Could not load game rules. Please reload the page.");
+    rulePresetSummary.textContent = tocI18n.t("rules.load_error");
+    showError(tocI18n.t("errors.rules_load_failed"));
   }
 }
+
+initializeLanguageInterface();
 
 rulePresetSelect.addEventListener("change", updateRulesetEditorVisibility);
 resetCustomRules.addEventListener("click", () => applyRuleValues(ruleConfiguration.presets[ruleConfiguration.default]));
@@ -656,7 +729,7 @@ initializeRuleSelector();
 createBtn.addEventListener("click", async () => {
   const name = nameInput.value.trim();
   if (!name) {
-    showError("Please enter your name.");
+    showError(tocI18n.t("errors.name_required"));
     return;
   }
 
@@ -673,14 +746,14 @@ createBtn.addEventListener("click", async () => {
       body: JSON.stringify(payload),
     });
 
-    if (!res.ok) throw new Error(data.detail || "Failed to create game.");
     const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || tocI18n.t("errors.game_creation_failed"));
 
     const gameId = data.game_id;
-    log(`Created game ID: ${gameId}`);
+    log(tocI18n.t("connection.created_game", {gameId}));
     await connectToGame(gameId, name);
   } catch (err) {
-    showError(err.message || "Failed to create game.");
+    showError(err.message || tocI18n.t("errors.game_creation_failed"));
     createBtn.disabled = false;
   }
 });
@@ -689,7 +762,7 @@ joinBtn.addEventListener("click", async () => {
   const name = nameInput.value.trim();
   const gameId = gameIdInput.value.trim();
   if (!name || !gameId) {
-    showError("Please enter both your name and a Game ID.");
+    showError(tocI18n.t("errors.name_and_game_id_required"));
     return;
   }
   await connectToGame(gameId, name);
@@ -705,7 +778,7 @@ if (cancelCardSelection) {
     ws.send(JSON.stringify(message));
     setCancelSelectionVisible(false);
     clearSpotSelection();
-    turnInstruction.textContent = "Returning to card selection...";
+    setTranslatedText(turnInstruction, "game.returning_to_cards");
   });
 }
 
@@ -755,14 +828,14 @@ lobbyChoiceForm.addEventListener("submit", (event) => {
   event.preventDefault();
 
   if (!ws || ws.readyState !== WebSocket.OPEN) {
-    lobbyError.textContent = "The connection is not open.";
+    lobbyError.textContent = tocI18n.t("errors.connection_not_open");
     lobbyError.classList.remove("hidden");
     return;
   }
 
   lobbyError.classList.add("hidden");
   confirmLobbyChoice.disabled = true;
-  lobbyStatus.textContent = "Confirming your choices...";
+  lobbyStatus.textContent = tocI18n.t("lobby.confirming");
 
   const message = {"id": crypto.randomUUID(), "type": "configure-player", "team": teamSelect.value, "color": colorSelect.value};
   ws.send(JSON.stringify(message));
@@ -771,7 +844,7 @@ lobbyChoiceForm.addEventListener("submit", (event) => {
 function renderLobbyState(state) {
   currentLobbyState = state;
   lobbyGameId.textContent = state.gameId;
-  lobbyPlayerCount.textContent = `${state.players.length} / 4 players`;
+  lobbyPlayerCount.textContent = tocI18n.t("lobby.players_count", {count: state.players.length, capacity: 4});
   lobbyPlayers.replaceChildren();
   renderRulesetDisplays(state.ruleset);
 
@@ -785,8 +858,8 @@ function renderLobbyState(state) {
     connection.className = `lobby-connection${player.connected ? " connected" : ""}`;
     name.className = "lobby-player-name";
     choice.className = "lobby-player-choice";
-    name.textContent = player.name === local_player_name ? `${player.name} (you)` : player.name;
-    choice.textContent = player.configured ? `Team ${player.team} · ${player.color}` : "Choosing...";
+    name.textContent = player.name === local_player_name ? tocI18n.t("game.player_you", {player: player.name}) : player.name;
+    choice.textContent = player.configured ? tocI18n.t("lobby.configured_choice", {team: player.team, color: formatColorName(player.color)}) : tocI18n.t("lobby.choosing");
 
     row.append(connection, name, choice);
     lobbyPlayers.appendChild(row);
@@ -804,7 +877,7 @@ function renderLobbyState(state) {
 
   if (!localPlayer || localPlayer.configured) {
     lobbyChoiceForm.classList.add("hidden");
-    lobbyStatus.textContent = localPlayer ? "Your choices are confirmed. Waiting for the other players..." : "Joining lobby...";
+    lobbyStatus.textContent = localPlayer ? tocI18n.t("lobby.confirmed_waiting") : tocI18n.t("lobby.joining");
     return;
   }
 
@@ -825,12 +898,12 @@ function renderLobbyState(state) {
   state.availableColors.forEach((color) => {
     const option = document.createElement("option");
     option.value = color;
-    option.textContent = color;
+    option.textContent = formatColorName(color);
     colorSelect.appendChild(option);
   });
 
   confirmLobbyChoice.disabled = state.availableColors.length === 0;
-  lobbyStatus.textContent = state.players.length < 4 ? "Choose your team and colour while the other players join." : "Choose your team and colour to start the game.";
+  lobbyStatus.textContent = state.players.length < 4 ? tocI18n.t("lobby.choose_while_waiting") : tocI18n.t("lobby.choose_to_start");
 }
 
 function sendCardSelection(player_name, rank, suit) {
@@ -854,7 +927,7 @@ function sendSevenHopChoice(result) {
 }
 
 function requestSevenHop(originSpot, targetSpot) {
-  const shouldHop = window.confirm(`Do you want to seven-hop from ${originSpot} to ${targetSpot}?`);
+  const shouldHop = window.confirm(tocI18n.t("game.seven_hop_question", {origin: originSpot, target: targetSpot}));
   sendSevenHopChoice(shouldHop);
 }
 
@@ -1115,7 +1188,7 @@ function hideCardBlock(playerId) {
   positionMap[player.position].card_box.style.display = 'none';
 
   if (playerId === local_player_name) {
-    emptyHandMessage.textContent = "Waiting for the next deal.";
+    setTranslatedText(emptyHandMessage, "game.waiting_for_next_deal");
     emptyHandMessage.classList.remove("hidden");
   }
 }
@@ -1130,16 +1203,16 @@ function updatePlayerBlock(player, isDealer = false) {
   name.className = "player-name";
   team.className = "player-team";
   name.textContent = player.name;
-  team.textContent = `Team ${player.team}`;
+  setTranslatedText(team, `lobby.team_${player.team}`);
   identity.append(name, team);
   block.replaceChildren(identity);
 
   if (isDealer) {
     const dealerBadge = document.createElement("span");
     dealerBadge.className = "dealer-badge";
-    dealerBadge.textContent = "D";
-    dealerBadge.title = "Dealer";
-    dealerBadge.setAttribute("aria-label", "Dealer");
+    dealerBadge.dataset.i18nTitle = "game.dealer";
+    dealerBadge.title = tocI18n.t("game.dealer");
+    dealerBadge.setAttribute("aria-label", tocI18n.t("game.dealer"));
     block.appendChild(dealerBadge);
   }
 
@@ -1170,12 +1243,18 @@ function toogleDealerOnPlayerBlock(playerId) {
 
 function displayActivePlayer(playerId) {
   if (!playerId) {
-    currentPlayerName.textContent = "Waiting for the game to start";
+    setTranslatedText(currentPlayerName, "game.waiting_to_start");
+    setTranslatedText(turnInstruction, "game.next_action");
     return;
   }
 
-  currentPlayerName.textContent = playerId === local_player_name ? `${playerId} (you)` : playerId;
-  turnInstruction.textContent = playerId === local_player_name ? "It is your turn." : `Waiting for ${playerId} to play.`;
+  if (playerId === local_player_name) {
+    setTranslatedText(currentPlayerName, "game.player_you", {player: playerId});
+    setTranslatedText(turnInstruction, "game.your_turn");
+  } else {
+    setRawText(currentPlayerName, playerId);
+    setTranslatedText(turnInstruction, "game.waiting_for_player", {player: playerId});
+  }
   turnInstruction.classList.remove("error-state");
   turnBanner.classList.toggle("your-turn", playerId === local_player_name);
 
@@ -1190,7 +1269,7 @@ function displayActivePlayer(playerId) {
 }
 
 function displayNoActivePlayers() {
-	currentPlayerName.textContent = "No active player";
+	setTranslatedText(currentPlayerName, "game.no_active_player");
 	turnBanner.classList.remove("your-turn");
 
   playerAssignments.forEach(p => {
@@ -1283,7 +1362,7 @@ function foldAllCardsOfPlayer(playerId) {
   });
 
   if (playerId === local_player_name) {
-    emptyHandMessage.textContent = "Waiting for the next deal.";
+    setTranslatedText(emptyHandMessage, "game.waiting_for_next_deal");
     emptyHandMessage.classList.remove("hidden");
   }
 }
@@ -1321,79 +1400,79 @@ function removeCard(playerId, value, suit) {
 
 //// Listeners and interaction functions ////
 function switchCardClickListener(event) {
-    const rank = event.currentTarget.rank;
-    const suit = event.currentTarget.suit;
-    const playerId = event.currentTarget.playerId;
-    const cardContainer = event.currentTarget;
+  const rank = event.currentTarget.rank;
+  const suit = event.currentTarget.suit;
+  const playerId = event.currentTarget.playerId;
+  const cardContainer = event.currentTarget;
 
-    event.stopPropagation(); // Prevent document click from firing
-    if (selectedCard === event.currentTarget) {
-      // Second click confirms selection
-      cardContainer.classList.remove('selected');
-      cardContainer.classList.remove('flip');
-      window.flipped_card = cardContainer // storing that for later when we receive the new card from the team-mate
-      selectedCard = null;
-      // we loop over all cards and remove the switchCardClickListener event listener now that the switch has been triggered.
-      event.currentTarget.parentElement.querySelectorAll('.card-container').forEach(c => {
-          c.removeEventListener('click', switchCardClickListener);
-          console.log('[switchCardClickListener] Removed switchCardClickListener.');
-      });
-      // only triggering the WS call to replace the card after twice the amount of time it takes for the front-to-back flip animation to execute, to make sure we do play the animation
-      setTimeout(() => {
-        sendCardSelection(playerId, rank, suit);
-      }, 500);
+  event.stopPropagation(); // Prevent document click from firing
+  if (selectedCard === event.currentTarget) {
+    // Second click confirms selection
+    cardContainer.classList.remove('selected');
+    cardContainer.classList.remove('flip');
+    window.flipped_card = cardContainer // storing that for later when we receive the new card from the team-mate
+    selectedCard = null;
+    // we loop over all cards and remove the switchCardClickListener event listener now that the switch has been triggered.
+    event.currentTarget.parentElement.querySelectorAll('.card-container').forEach(c => {
+        c.removeEventListener('click', switchCardClickListener);
+        console.log('[switchCardClickListener] Removed switchCardClickListener.');
+    });
+    // only triggering the WS call to replace the card after twice the amount of time it takes for the front-to-back flip animation to execute, to make sure we do play the animation
+    setTimeout(() => {
+      sendCardSelection(playerId, rank, suit);
+    }, 500);
 
-    } else {
-      // First click triggers highlight
-      if (selectedCard) selectedCard.classList.remove('selected');
-      selectedCard = cardContainer;
-      cardContainer.classList.add('selected');
-    }
+  } else {
+    // First click triggers highlight
+    if (selectedCard) selectedCard.classList.remove('selected');
+    selectedCard = cardContainer;
+    cardContainer.classList.add('selected');
+  }
+}
+
+function clickCardClickListener(event) {
+  // This triggers when any block within the card is clicked, so the event.currentTarget can be the card-suit, card-value or card-front containers.
+  // It is fine, we are just going to go up one container if we're hitting on the card-suit or card-value
+  event.stopPropagation(); // Prevent document click from firing
+
+  switch (event.currentTarget.classList[0]) {
+
+  case 'card-value':
+  case 'card-suit':
+    var cardContainer = event.currentTarget.parentElement.parentElement.parentElement;
+    break;
+  
+  case 'card-front':
+    var cardContainer = event.currentTarget.parentElement.parentElement;
+    break;
+
+  case 'card':
+    var cardContainer = event.currentTarget.parentElement;
+    break;
+
+  case 'card-container':
+  case 'flip':
+  case 'selected':
+    var cardContainer = event.currentTarget
+    break;
   }
 
-  function clickCardClickListener(event) {
-    // This triggers when any block within the card is clicked, so the event.currentTarget can be the card-suit, card-value or card-front containers.
-    // It is fine, we are just going to go up one container if we're hitting on the card-suit or card-value
-    event.stopPropagation(); // Prevent document click from firing
+  const t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit').innerHTML;
+  const t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
 
-    switch (event.currentTarget.classList[0]) {
-
-    case 'card-value':
-    case 'card-suit':
-      var cardContainer = event.currentTarget.parentElement.parentElement.parentElement;
-      break;
-    
-    case 'card-front':
-      var cardContainer = event.currentTarget.parentElement.parentElement;
-      break;
-
-    case 'card':
-      var cardContainer = event.currentTarget.parentElement;
-      break;
-
-    case 'card-container':
-    case 'flip':
-    case 'selected':
-      var cardContainer = event.currentTarget
-      break;
-    }
-
-    const t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit').innerHTML;
-    const t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
-
-    if (selectedCard === cardContainer) {
-      // Second click confirms selection
-      cardContainer.classList.remove('selected');
-      cardContainer.classList.remove('flip');
-      selectedCard = null;
-      sendCardSelection(local_player_name, t_value, t_suit);
-    } else {
-      // First click triggers highlight
-      if (selectedCard) selectedCard.classList.add('selected');
-      selectedCard = cardContainer;
-      cardContainer.classList.add('selected');
-    }
+  if (selectedCard === cardContainer) {
+    // Second click confirms selection
+    cardContainer.classList.remove('selected');
+    cardContainer.classList.remove('flip');
+    selectedCard = null;
+    sendCardSelection(local_player_name, t_value, t_suit);
+  } else {
+    // First click triggers highlight
+    if (selectedCard) selectedCard.classList.add('selected');
+    selectedCard = cardContainer;
+    cardContainer.classList.add('selected');
   }
+}
 
 function requestSpotSelection(spotOptions) {
   clearSpotSelection();
