@@ -150,3 +150,15 @@ def test_cancelling_origin_returns_to_card_selection():
 
 	assert result is options[2]
 	assert [message[1]["type"] for message in router.outputs].count("query-card") == 2
+
+
+def test_card_choice_can_use_custom_prompt():
+	card = Card("♥️", "2")
+	router = FakeRouter([{"type": "card_selection", "suit": "♥️", "value": "2"}])
+	player = make_player(router)
+	player.hand.addToHand(card)
+
+	result = asyncio.run(player.getCardChoiceFromPlayer("Choose one card to discard."))
+
+	assert result == card
+	assert router.outputs[0][1] == {"type": "query-card", "msg": "Choose one card to discard."}

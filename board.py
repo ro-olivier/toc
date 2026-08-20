@@ -15,9 +15,15 @@ class Board:
 		self._spots = []
 		self._colors = colors
 
+		self._regionLength = rules.track_region_length
+		if not 1 <= rules.enter_house_at_spot <= self._regionLength:
+			raise ValueError("House entry position must be within the track region")
+
 		for color in colors:
-			for i in range(SPOTS_PER_REGION):
+			for i in range(self._regionLength):
 				self._spots.append(Spot(color, i))
+
+		self._boardSize = len(self._spots)
 
 		self._houses = []
 		for color in colors:
@@ -30,9 +36,13 @@ class Board:
 	def rules(self) -> GameRules:
 		return self._rules
 
-	@property 
-	def _boardSize(self) -> int:
-		return len(self._spots)
+	@property
+	def regionLength(self) -> int:
+		return self._regionLength
+
+	@property
+	def boardSize(self) -> int:
+		return self._boardSize
 
 	def __str__(self) -> str:
 		s = ''
@@ -62,7 +72,10 @@ class Board:
 			return self._colors[colorIndex - 1]
 
 	def getSpot(self, color : str, number : int) -> Spot:
-		return self._spots[self._colors.index(color)*SPOTS_PER_REGION + number]
+		if not 0 <= number < self._regionLength:
+			raise ValueError(f"Position number {number} is outside a region of length {self._regionLength}")
+
+		return self._spots[self._colors.index(color) * self._regionLength + number]
 
 	def getSpotById(self, spotId : str) -> Spot:
 		return [spot for spot in self._spots if str(spot) == spotId][0]
@@ -75,6 +88,12 @@ class Board:
 
 	def getFirstSpot(self, color : str) -> Optional[Spot]:
 		return [spot for spot in self._spots if spot.color == color and spot.number == 0][0]
+
+	def getHouseEntrySpot(self, color: str) -> Spot:
+		if self._rules.enter_house_at_spot == self._regionLength:
+			return self.getFirstSpot(color)
+
+		return self.getSpot(self.getPreviousColor(color), self._rules.enter_house_at_spot)
 
 	def getOccupiedSpotsOnTheBoard(self, player) -> list[Spot]:
 		return [spot for spot in self._spots if not spot.occupant is None and spot.occupant.name == player]
@@ -114,17 +133,25 @@ class Board:
 			targetHouseNumber = originSpot.number + distance
 
 		else:
-			entrySpot = self.getFirstSpot(player.color)
+			entrySpot = self.getHouseEntrySpot(player.color)
+			exitSpot = self.getFirstSpot(player.color)
 
 			# A freshly deployed piece cannot immediately enter its houses.
-			# A protected entry also prevents another piece from entering.
+			if originSpot is exitSpot and exitSpot.isFreshlyDeployed:
+				return None
+
+			# A protected entry prevents every piece from entering.
 			if entrySpot.isBlocking:
-					return None
+				return None
 
 			originIndex = self._spots.index(originSpot)
 			entryIndex = self._spots.index(entrySpot)
 
 			stepsToEntry = (entryIndex - originIndex) % self._boardSize
+
+			for step in range(1, stepsToEntry + 1):
+				if self.getSpotFromDistance(originSpot, step).isBlocking:
+					return None
 
 			# Reaching the entry position is still an ordinary track move.
 			# House zero requires one additional forward step.
@@ -173,31 +200,36 @@ class Board:
 		return options
 
 	def getPositionSnapshot(self) -> list[tuple]:
-		return [(position, position.occupant, position.isBlocking) for position in self._spots + self._houses]
+		return [(position, position.occupant, position.isBlocking, position.isFreshlyDeployed) for position in self._spots + self._houses]
 
 
 	def restorePositionSnapshot(self, snapshot: list[tuple]) -> None:
-		for position, occupant, isBlocking in snapshot:
+		for position, occupant, isBlocking, isFreshlyDeployed in snapshot:
 			position.setEmpty()
 
 			if occupant is not None:
-				position.setOccupant(occupant, isBlocking)
+				position.setOccupant(occupant, isFreshlyDeployed, isBlocking)
 
 	def getHouseFromBackwardDistance(self, originSpot: Spot, distance: int, player: Player) -> Optional[House]:
 		if distance <= 0 or isinstance(originSpot, House):
 			return None
 
-		entrySpot = self.getFirstSpot(player.color)
+		entrySpot = self.getHouseEntrySpot(player.color)
+		exitSpot = self.getFirstSpot(player.color)
 
 		# A freshly deployed piece cannot immediately enter its houses.
-		# A protected entry also prevents another piece from entering.
-		if entrySpot.isBlocking:
+		if originSpot is exitSpot and exitSpot.isFreshlyDeployed:
 			return None
 
 		originIndex = self._spots.index(originSpot)
 		entryIndex = self._spots.index(entrySpot)
-
 		stepsToEntry = (originIndex - entryIndex) % self._boardSize
+
+		# A protected exit spot crossed on the way blocks the movement.
+		for step in range(1, stepsToEntry + 1):
+			if self.getSpotFromDistance(originSpot, -step).isBlocking:
+				return None
+
 		targetHouseNumber = distance - stepsToEntry - 1
 
 		if 0 <= targetHouseNumber < len(self.getHousesByColor(player.color)):
@@ -212,6 +244,13 @@ class Board:
 	def isMoveValid(self, move : Move) -> bool:
 		##debug##print(f'call isMoveValid with move = {move.ID}, originSpot = {move.originSpot}, targetSpot = {move.targetSpot}')
 		result = True
+		
+		landingMoveTypes = ("OUT", "MOVE", "BACK", "FIVE", "HOP", "ENTER")
+		isPathKickingSevenStep = move.card is not None and move.card.suit == "" and move.card.value == "1" and self._rules.seven_split_kicks_pieces_on_path
+
+		if not self._rules.landing_on_occupied_spot_kicks_piece and move.ID in landingMoveTypes and move.targetSpot is not None and move.targetSpot.isOccupied and not isPathKickingSevenStep:
+			return False
+
 		if move.ID == 'SWITCH' and (move.originSpot.isBlocking or move.targetSpot.isBlocking):
 			# Cannot do a SWITCH move where one of the pieces is on a blocking spots
 			result = False
@@ -254,30 +293,29 @@ class Board:
 			elif target.color != move.pieceOwner.color:
 				result = False
 
-			elif target.isOccupied:
-				# House pieces cannot be kicked or stacked.
-				result = False
-
 			else:
 				houses = self.getHousesByColor(target.color)
 
+				if target.isOccupied and self._rules.house_spots_are_blocking_and_protected:
+					result = False
+
 				if isinstance(origin, House):
 					# A piece already inside the lane can only move forward.
-					if (origin.color != target.color or target.number <= origin.number):
+					if origin.color != target.color or target.number <= origin.number:
 						result = False
 
-					else:
+					elif self._rules.house_spots_are_blocking_and_protected:
 						housesBetween = houses[origin.number + 1:target.number]
 
 						if any(house.isOccupied for house in housesBetween):
 							result = False
 
 				else:
-					# A protected entry position blocks house entry.
-					if self.getFirstSpot(target.color).isBlocking:
+					# A protected exit position still blocks house entry.
+					if self.getHouseEntrySpot(target.color).isBlocking:
 						result = False
 
-					else:
+					elif self._rules.house_spots_are_blocking_and_protected:
 						housesBeforeTarget = houses[:target.number]
 
 						if any(house.isOccupied for house in housesBeforeTarget):
@@ -415,8 +453,7 @@ class Board:
 		if direction not in [-1, 1]:
 			raise ValueError("A seven-hop direction must be either 1 or -1.")
 
-		regionLength = len(self._spots) // len(self._colors)
-		return self.getSpotFromDistance(originSpot, direction * regionLength)
+		return self.getSpotFromDistance(originSpot, direction * self._regionLength)
 
 	def getSevenAllocationOptions(self, player: Player, stepsRemaining: int, pieceOwner: Player = None, movedPiecePositions: set[Spot] = None) -> list[Move]:
 		if stepsRemaining <= 0:
@@ -467,7 +504,9 @@ class Board:
 		direction = -1 if triggeringMove.ID == "BACK" and self._rules.seven_hopping_on_four_backward_goes_backward else 1
 		target = self.getNextSevenSpot(origin, direction)
 
-		return Move("HOP", origin, target, triggeringMove.card, triggeringMove.player, triggeringMove.pieceOwner)
+		hopMove = Move("HOP", origin, target, triggeringMove.card, triggeringMove.player, triggeringMove.pieceOwner)
+
+		return hopMove if self.isMoveValid(hopMove) else None
 
 	def getPositionsCrossedByMove(self, move: Move) -> list[Spot]:
 		if move.steps is None or move.steps <= 1:
@@ -483,7 +522,7 @@ class Board:
 			houses = self.getHousesByColor(move.pieceOwner.color)
 			return houses[move.originSpot.number + 1:move.targetSpot.number]
 
-		entrySpot = self.getFirstSpot(move.pieceOwner.color)
+		entrySpot = self.getHouseEntrySpot(move.pieceOwner.color)
 		originIndex = self._spots.index(move.originSpot)
 		entryIndex = self._spots.index(entrySpot)
 		stepsToEntry = (entryIndex - originIndex) % self._boardSize

@@ -241,7 +241,7 @@ class Game:
 					pathKickPositions.append(position)
 
 		if move.ID == "OUT":
-			kickedPlayer = target.setOccupant(move.pieceOwner, True)
+			kickedPlayer = target.setOccupant(move.pieceOwner, isOwnPlayerTakingAPieceOut=True, isBlocking=self._rules.exit_spot_is_protected_and_blocking)
 			move.pieceOwner.addAPieceOnTheBoard()
 
 			if kickedPlayer is not None:
@@ -261,7 +261,10 @@ class Game:
 
 		elif move.ID == "ENTER":
 			origin.setEmpty()
-			target.setOccupant(move.pieceOwner)
+			kickedPlayer = target.setOccupant(move.pieceOwner)
+
+			if kickedPlayer is not None:
+				kickedPlayer.removeAPieceFromTheBoard()
 
 		else:
 			raise ValueError(f"Cannot apply move of type {move.ID}")
@@ -342,10 +345,15 @@ class Game:
 			moveOptions = self._activePlayer.hand.getAllPossibleMoves(self._board, controlledPlayer)
 
 			if len(moveOptions) == 0:
-				# player has no available move, he must fold his hand
-				await self.broadcast({"type": "fold", "playerId": self._activePlayer.name, "msg": f"Player has no available move and must fold."})
-				self._deck.discardCards(self._activePlayer.hand)
-				await self._activePlayer.foldHand()
+				if self._rules.cannot_play_folds_entire_hand:
+					await self.broadcast({"type": "fold", "playerId": self._activePlayer.name, "msg": "Player has no available move and must fold."})
+					self._deck.discardCards(self._activePlayer.hand)
+					await self._activePlayer.foldHand()
+				else:
+					cardChoice = await self._activePlayer.getCardChoiceFromPlayer("You cannot make a move. Choose one card to discard.")
+					self._activePlayer.discard(cardChoice)
+					self._deck.discardCard(cardChoice)
+					await self.broadcast({"type": "discard", "playerId": self._activePlayer.name, "value": cardChoice.value, "suit": cardChoice.suit, "msg": f"Player {self._activePlayer.name} cannot make a move and discards one card."})
 			else:
 				if len(moveOptions) == 1:
 					# player has only one move and therefore MUST play it

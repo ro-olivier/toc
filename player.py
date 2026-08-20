@@ -99,14 +99,16 @@ class Player:
 	async def foldHand(self) -> None:
 		 self._hand.fold()
 
-	async def getCardChoiceFromPlayer(self) -> Card:
-		await self.send_message_to_user({"type": "query-card", "msg": 'What card do you want to play?'})
-		cardChoice = await self.get_input_from_prompt('What card do you want to play?')
+	async def getCardChoiceFromPlayer(self, prompt: str = 'What card do you want to play?') -> Card:
+		await self.send_message_to_user({"type": "query-card", "msg": prompt})
+		cardChoice = await self.get_input_from_prompt(prompt)
+
 		while not cardChoice or (not 'type' in cardChoice.keys()) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
-			cardChoice = await self.get_input_from_prompt('What card do you want to play?')
+			cardChoice = await self.get_input_from_prompt(prompt)
+
 		chosenCard = Card(cardChoice['suit'], cardChoice['value'])
 		self._router.clear_pending_prompt(self._id)
-		print(f'Card chosen by {self._name} for his/her next move: {chosenCard}')
+		print(f'Card chosen by {self._name}: {chosenCard}')
 		return chosenCard
 
 	async def getMoveChoiceFromPlayer(self, options : list[Move]) -> Move:

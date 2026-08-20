@@ -156,6 +156,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case 'lobby-state':
+        configureBoardGeometry(data.trackRegionLength, data.enterHouseAtSpot);
         renderLobbyState(data);
         break;
 
@@ -170,6 +171,8 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "full-ui-state":
+        configureBoardGeometry(data.trackRegionLength, data.enterHouseAtSpot);
+
         data.players.forEach(p => {
           assignPlayer(p.name, p.team, p.color);
           if (p.number_of_cards == 0) {
@@ -213,6 +216,11 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case 'fold':
         foldAllCardsOfPlayer(data.playerId);
+        log(data.msg);
+        break;
+
+      case 'discard':
+        removeCard(data.playerId, data.value, data.suit);
         log(data.msg);
         break;
 
@@ -552,8 +560,9 @@ function requestSevenHop(originSpot, targetSpot) {
 ////// User Interface handling //////
 const regions = ['red', 'green', 'yellow', 'blue'];
 const totalRegions = 4;
-const spotsPerRegion = 18;
-const totalSpots = totalRegions * spotsPerRegion;
+let spotsPerRegion = 18;
+let enterHouseAtSpot = 18;
+let totalSpots = totalRegions * spotsPerRegion;
 
 const radius = 250;
 const centerX = 300;
@@ -587,6 +596,21 @@ document.addEventListener('click', () => {
 });
 
 
+function configureBoardGeometry(regionLength, houseEntryPosition) {
+  if (!Number.isInteger(regionLength) || regionLength <= 0) return;
+  if (!Number.isInteger(houseEntryPosition) || houseEntryPosition < 1 || houseEntryPosition > regionLength) return;
+  if (regionLength === spotsPerRegion && houseEntryPosition === enterHouseAtSpot) return;
+
+  if (spotElements.length > 0) {
+    console.error("Cannot change board geometry after the board has been drawn.");
+    return;
+  }
+
+  spotsPerRegion = regionLength;
+  totalSpots = totalRegions * spotsPerRegion;
+  enterHouseAtSpot = houseEntryPosition;
+}
+
 //// Board and pieces drawing and update functions ////
 function drawQuadrant(position, color) {
   const regionIndex = positionMap[position].index;
@@ -612,10 +636,13 @@ function drawQuadrant(position, color) {
     if (i === 0) {
       spot.classList.add('out-spot');
 
+      const houseEntryOffset = enterHouseAtSpot - spotsPerRegion;
+      const houseAngle = angleOffset + (houseEntryOffset / totalSpots) * 2 * Math.PI;
+
       for (let j = 0; j < totalRegions; j++) {
         const innerRadius = radius - houseDistance * (j + 1);
-        const gx = centerX + innerRadius * Math.cos(angle) - 15;
-        const gy = centerY + innerRadius * Math.sin(angle) - 15;
+        const gx = centerX + innerRadius * Math.cos(houseAngle) - 15;
+        const gy = centerY + innerRadius * Math.sin(houseAngle) - 15;
 
         const houseSpot = document.createElement('div');
         houseSpot.className = `spot house ${color}`;

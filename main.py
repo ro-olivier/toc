@@ -154,9 +154,39 @@ class GameSession:
 			else:
 				active_player_name = ""
 
-			return {"type": "full-ui-state", "players": [{"name": self.players[p]["name"], "team": self.players[p]["team"], "color": self.players[p]["color"], "number_of_cards": self.players[p]["object"].hand.size} for p in self.players], "pieces": self.game.board.getAllPiecesOnTheBoard(), "active_player": active_player_name}
+			return {
+				"type": "full-ui-state", 
+				"players": [
+						{
+						"name": self.players[p]["name"], 
+						"team": self.players[p]["team"], 
+						"color": self.players[p]["color"], 
+						"number_of_cards": self.players[p]["object"].hand.size
+						}
+					for p in self.players
+					], 
+				"pieces": self.game.board.getAllPiecesOnTheBoard(), 
+				"active_player": active_player_name,
+				"trackRegionLength": self._rules.track_region_length,
+				"enterHouseAtSpot": self._rules.enter_house_at_spot
+				}
 		else:
-			return {"type": "full-ui-state", "players": [{"name": self.players[p]["name"], "team": self.players[p]["team"], "color": self.players[p]["color"], "number_of_cards": self.players[p]["object"].hand.size} for p in self.players], "pieces": [], "active_player": ""}
+			return {
+				"type": "full-ui-state", 
+				"players": [
+						{
+						"name": self.players[p]["name"], 
+						"team": self.players[p]["team"], 
+						"color": self.players[p]["color"], 
+						"number_of_cards": self.players[p]["object"].hand.size
+						}
+					for p in self.players
+					], 
+				"pieces": [], 
+				"active_player": "",
+				"trackRegionLength": self._rules.track_region_length,
+				"enterHouseAtSpot": self._rules.enter_house_at_spot
+				}
 
 
 	def team_is_full(self, team: str) -> bool:
@@ -170,9 +200,32 @@ class GameSession:
 		return [color for color in COLORS if color not in usedColors]
 
 	def lobby_state(self) -> dict:
-		players = [{"name": playerData["name"], "team": playerData.get("team", ""), "color": playerData.get("color", ""), "connected": playerData.get("active", False), "configured": playerData.get("configured", False)} for playerData in self.players.values()]
-		teamCounts = {team: sum(playerData.get("team") == team for playerData in self.players.values()) for team in ["0", "1"]}
-		return {"type": "lobby-state", "gameId": self.id, "started": self.started, "players": players, "availableColors": self.available_colors(), "teamCounts": teamCounts, "teamCapacity": NUMBER_OF_PLAYERS // NUMBER_OF_TEAMS}
+		players = [
+				{
+				"name": playerData["name"], 
+				"team": playerData.get("team", ""), 
+				"color": playerData.get("color", ""), 
+				"connected": playerData.get("active", False), 
+				"configured": playerData.get("configured", False)
+				} 
+			for playerData in self.players.values()
+			]
+
+		teamCounts = {
+			team: sum(playerData.get("team") == team for playerData in self.players.values()) for team in ["0", "1"]
+			}
+		
+		return {
+			"type": "lobby-state", 
+			"gameId": self.id, 
+			"started": self.started, 
+			"players": players, 
+			"availableColors": self.available_colors(), 
+			"teamCounts": teamCounts, 
+			"teamCapacity": NUMBER_OF_PLAYERS // NUMBER_OF_TEAMS,
+			"trackRegionLength": self._rules.track_region_length,
+			"enterHouseAtSpot": self._rules.enter_house_at_spot
+			}
 
 	async def broadcast_lobby_state(self) -> None:
 		await self.broadcast(self.lobby_state())

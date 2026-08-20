@@ -761,6 +761,7 @@ def test_jack_switch_can_offer_seven_hop_when_enabled():
 		((1, 11), (1, 11)),
 	],
 )
+
 def test_ace_movement_uses_configured_values(aceValues, expectedDistances):
 	board = Board(COLORS, GameRules(ace_values=aceValues))
 	player = make_player()
@@ -775,3 +776,174 @@ def test_ace_movement_uses_configured_values(aceValues, expectedDistances):
 
 	assert actualTargets == expectedTargets
 	assert any(move.ID == "OUT" for move in options)
+
+
+def test_piece_cannot_land_on_occupied_spot_when_kicking_is_disabled():
+	board = Board(COLORS, GameRules(landing_on_occupied_spot_kicks_piece=False))
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	origin = place_piece(board, alice, "red", 5)
+	occupiedTarget = place_piece(board, bob, "red", 7)
+
+	options = board.getMoveOptions(alice, Card("♥️", "2"))
+
+	assert not any(move.ID == "MOVE" and move.originSpot == origin and move.targetSpot == occupiedTarget for move in options)
+
+def test_piece_cannot_exit_onto_occupied_spot_when_kicking_is_disabled():
+	board = Board(COLORS, GameRules(landing_on_occupied_spot_kicks_piece=False))
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	exitSpot = place_piece(board, bob, "red", 0)
+
+	options = board.getMoveOptions(alice, Card("♥️", "A"))
+
+	assert not any(move.ID == "OUT" and move.targetSpot == exitSpot for move in options)
+
+def test_jack_can_still_switch_when_landing_kicks_are_disabled():
+	board = Board(COLORS, GameRules(landing_on_occupied_spot_kicks_piece=False))
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	aliceSpot = place_piece(board, alice, "red", 3)
+	bobSpot = place_piece(board, bob, "red", 7)
+
+	options = board.getMoveOptions(alice, Card("♥️", "J"))
+
+	assert any(move.ID == "SWITCH" and move.originSpot == aliceSpot and move.targetSpot == bobSpot for move in options)
+
+def test_seven_path_kicking_still_allows_crossing_occupied_spot_when_landing_kicks_are_disabled():
+	rules = GameRules(landing_on_occupied_spot_kicks_piece=False, seven_split_kicks_pieces_on_path=True)
+	board = Board(COLORS, rules)
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	place_piece(board, alice, "red", 5)
+	place_piece(board, bob, "red", 6)
+
+	options = board.getMoveOptions(alice, Card("♥️", "7"))
+
+	assert any(move.ID == "SEVEN" for move in options)
+
+def test_seven_hop_cannot_land_on_occupied_spot_when_kicking_is_disabled():
+	rules = GameRules(landing_on_occupied_spot_kicks_piece=False)
+	board = Board(COLORS, rules)
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	origin = board.getSpot("red", 7)
+	place_piece(board, bob, "blue", 7)
+	trigger = Move("MOVE", board.getSpot("red", 6), origin, Card("♥️", "A"), alice)
+
+	assert board.getSevenHopMove(trigger) is None
+
+def test_piece_can_jump_over_occupied_house_when_protection_is_disabled():
+	board = Board(COLORS, GameRules(house_spots_are_blocking_and_protected=False))
+	player = make_player("Alice", "red")
+	player.setBoard(board)
+
+	origin = place_house_piece(board, player, 0)
+	passedHouse = place_house_piece(board, player, 1)
+	target = board.getHouse("red", 2)
+
+	options = board.getMoveOptions(player, Card("♥️", "2"))
+
+	assert any(move.ID == "ENTER" and move.originSpot == origin and move.targetSpot == target for move in options)
+	assert passedHouse.occupant is player
+
+def test_piece_cannot_land_on_unprotected_occupied_house_when_landing_kicks_are_disabled():
+	rules = GameRules(house_spots_are_blocking_and_protected=False, landing_on_occupied_spot_kicks_piece=False)
+	board = Board(COLORS, rules)
+	player = make_player("Alice", "red")
+	player.setBoard(board)
+
+	origin = place_house_piece(board, player, 0)
+	occupiedTarget = place_house_piece(board, player, 2)
+
+	options = board.getMoveOptions(player, Card("♥️", "2"))
+
+	assert not any(move.ID == "ENTER" and move.originSpot == origin and move.targetSpot == occupiedTarget for move in options)
+
+def test_track_region_length_controls_board_geometry():
+	board = Board(COLORS, GameRules(track_region_length=16, enter_house_at_spot=16))
+
+	assert board.regionLength == 16
+	assert board.boardSize == len(COLORS) * 16
+	assert board.getSpotFromDistance(board.getSpot("yellow", 15), 1) is board.getSpot("red", 0)
+
+	with pytest.raises(ValueError):
+		board.getSpot("red", 16)
+
+def test_seven_hop_uses_configured_track_region_length():
+	board = Board(COLORS, GameRules(track_region_length=16, enter_house_at_spot=16))
+	alice = make_player("Alice", "red", "0")
+	alice.setBoard(board)
+	origin = board.getSpot("red", 7)
+	trigger = Move("MOVE", board.getSpot("red", 6), origin, Card("♥️", "A"), alice)
+
+	hop = board.getSevenHopMove(trigger)
+
+	assert hop is not None
+	assert hop.targetSpot is board.getSpot("blue", 7)
+
+def test_house_entry_at_sixteen_offers_house_or_track_move_with_one():
+	board = Board(COLORS, GameRules(track_region_length=18, enter_house_at_spot=16))
+	player = make_player("Alice", "red")
+	player.setBoard(board)
+	origin = place_piece(board, player, "yellow", 16)
+	houseTarget = board.getHouse("red", 0)
+	trackTarget = board.getSpot("yellow", 17)
+
+	options = board.getMoveOptions(player, Card("♥️", "A"))
+
+	assert any(move.ID == "ENTER" and move.originSpot is origin and move.targetSpot is houseTarget for move in options)
+	assert any(move.ID == "MOVE" and move.originSpot is origin and move.targetSpot is trackTarget for move in options)
+
+
+def test_house_entry_at_sixteen_skips_remaining_track_positions_with_two():
+	board = Board(COLORS, GameRules(track_region_length=18, enter_house_at_spot=16))
+	player = make_player("Alice", "red")
+	player.setBoard(board)
+	origin = place_piece(board, player, "yellow", 16)
+	houseTarget = board.getHouse("red", 1)
+	trackTarget = board.getSpot("red", 0)
+
+	options = board.getMoveOptions(player, Card("♥️", "2"))
+
+	assert any(move.ID == "ENTER" and move.originSpot is origin and move.targetSpot is houseTarget for move in options)
+	assert any(move.ID == "MOVE" and move.originSpot is origin and move.targetSpot is trackTarget for move in options)
+
+
+def test_house_entry_equal_to_region_length_uses_exit_spot():
+	board = Board(COLORS, GameRules(track_region_length=16, enter_house_at_spot=16))
+
+	assert board.getHouseEntrySpot("red") is board.getFirstSpot("red")
+
+
+def test_house_entry_cannot_exceed_region_length():
+	with pytest.raises(ValueError):
+		Board(COLORS, GameRules(track_region_length=16, enter_house_at_spot=18))
+
+
+def test_backward_house_entry_uses_configured_entry_spot():
+	rules = GameRules(track_region_length=18, enter_house_at_spot=16, can_enter_house_backward=True)
+	board = Board(COLORS, rules)
+	player = make_player("Alice", "red")
+	player.setBoard(board)
+	origin = place_piece(board, player, "red", 1)
+	target = board.getHouse("red", 0)
+
+	options = board.getMoveOptions(player, Card("♥️", "4"))
+
+	assert any(move.ID == "ENTER" and move.originSpot is origin and move.targetSpot is target for move in options)

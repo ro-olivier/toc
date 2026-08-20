@@ -202,3 +202,11 @@ def test_router_ignores_input_for_an_old_prompt():
 		assert await router.wait_for_input(playerId) == currentInput
 
 	asyncio.run(scenario())
+
+
+def test_session_states_report_configured_track_region_length():
+	router = PlayerInputRouter()
+	session = GameSession("TEST", router, GameRules(track_region_length=16))
+
+	assert session.lobby_state()["trackRegionLength"] == 16
+	assert session.fullUI()["trackRegionLength"] == 16

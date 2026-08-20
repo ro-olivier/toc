@@ -47,6 +47,19 @@ class QuietPlayer(Player):
     async def setHand(self, hand):
         self._hand = hand
 
+class DiscardChoosingPlayer(Player):
+    def __init__(self, identifier, name, team, color, cardToDiscard):
+        super().__init__(identifier, name, team, color)
+        self.cardToDiscard = cardToDiscard
+        self.discardPrompts = []
+
+    async def getCardChoiceFromPlayer(self, prompt='What card do you want to play?'):
+        self.discardPrompts.append(prompt)
+        return self.cardToDiscard
+
+    async def send_message_to_user(self, message):
+        pass
+
 class ExchangeRecordingGame(Game):
     def __init__(self, rules):
         super().__init__(FakeGameSession(), COLORS, rules)
@@ -847,3 +860,205 @@ def test_resolve_king_move_broadcasts_crossed_positions():
     pathKickMessages = [message for message in session.messages if message["type"] == "path-kicks"]
 
     assert pathKickMessages == [{"type": "path-kicks", "positions": [str(passedPiece)]}]
+
+def test_deployed_piece_is_blocking_when_exit_protection_is_enabled():
+    game = Game(None, COLORS, GameRules(exit_spot_is_protected_and_blocking=True))
+    alice = make_player("Alice", "red", "0")
+    alice.setBoard(game.board)
+    exitSpot = game.board.getFirstSpot(alice.color)
+    move = Move("OUT", exitSpot, exitSpot, Card("♥️", "A"), alice)
+
+    game.applyMove(move)
+
+    assert exitSpot.isBlocking
+    assert exitSpot.isFreshlyDeployed
+
+def test_deployed_piece_is_not_blocking_when_exit_protection_is_disabled():
+    game = Game(None, COLORS, GameRules(exit_spot_is_protected_and_blocking=False))
+    alice = make_player("Alice", "red", "0")
+    alice.setBoard(game.board)
+    exitSpot = game.board.getFirstSpot(alice.color)
+    move = Move("OUT", exitSpot, exitSpot, Card("♥️", "A"), alice)
+
+    game.applyMove(move)
+
+    assert not exitSpot.isBlocking
+    assert exitSpot.isFreshlyDeployed
+
+def test_unprotected_freshly_deployed_piece_still_cannot_enter_house():
+    game = Game(None, COLORS, GameRules(exit_spot_is_protected_and_blocking=False))
+    alice = make_player("Alice", "red", "0")
+    alice.setBoard(game.board)
+    exitSpot = game.board.getFirstSpot(alice.color)
+    game.applyMove(Move("OUT", exitSpot, exitSpot, Card("♥️", "A"), alice))
+
+    options = game.board.getMoveOptions(alice, Card("♥️", "A"))
+
+    assert not any(move.ID == "ENTER" and move.originSpot == exitSpot for move in options)
+
+def test_unprotected_exit_piece_can_be_kicked():
+    game = Game(None, COLORS, GameRules(exit_spot_is_protected_and_blocking=False))
+    board = game.board
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "1")
+    alice.setBoard(board)
+    bob.setBoard(board)
+
+    exitSpot = board.getFirstSpot(alice.color)
+    game.applyMove(Move("OUT", exitSpot, exitSpot, Card("♥️", "A"), alice))
+    originSpot = board.getSpotFromDistance(exitSpot, -2)
+    origin = place_track_piece(board, bob, originSpot.color, originSpot.number)
+
+    options = board.getMoveOptions(bob, Card("♥️", "2"))
+    move = next(move for move in options if move.ID == "MOVE" and move.originSpot == origin and move.targetSpot == exitSpot)
+    game.applyMove(move)
+
+    assert exitSpot.occupant is bob
+    assert alice.piecesOnTheBoard == 0
+    assert bob.piecesOnTheBoard == 1
+
+def test_protected_exit_piece_can_be_forced_with_five():
+    game = Game(None, COLORS, GameRules(exit_spot_is_protected_and_blocking=True))
+    board = game.board
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "1")
+    alice.setBoard(board)
+    bob.setBoard(board)
+
+    exitSpot = board.getFirstSpot(bob.color)
+    game.applyMove(Move("OUT", exitSpot, exitSpot, Card("♥️", "A"), bob))
+    target = board.getSpotFromDistance(exitSpot, 5)
+
+    options = board.getMoveOptions(alice, Card("♥️", "5"))
+
+    assert any(move.ID == "FIVE" and move.originSpot == exitSpot and move.targetSpot == target for move in options)
+
+def test_protected_exit_piece_cannot_be_switched():
+    game = Game(None, COLORS, GameRules(exit_spot_is_protected_and_blocking=True))
+    board = game.board
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "1")
+    alice.setBoard(board)
+    bob.setBoard(board)
+
+    aliceSpot = place_track_piece(board, alice, "red", 3)
+    exitSpot = board.getFirstSpot(bob.color)
+    game.applyMove(Move("OUT", exitSpot, exitSpot, Card("♥️", "A"), bob))
+
+    options = board.getMoveOptions(alice, Card("♥️", "J"))
+
+    assert not any(move.ID == "SWITCH" and move.originSpot == aliceSpot and move.targetSpot == exitSpot for move in options)
+
+def test_unprotected_exit_piece_can_be_switched():
+    game = Game(None, COLORS, GameRules(exit_spot_is_protected_and_blocking=False))
+    board = game.board
+    alice = make_player("Alice", "red", "0")
+    bob = make_player("Bob", "blue", "1")
+    alice.setBoard(board)
+    bob.setBoard(board)
+
+    aliceSpot = place_track_piece(board, alice, "red", 3)
+    exitSpot = board.getFirstSpot(bob.color)
+    game.applyMove(Move("OUT", exitSpot, exitSpot, Card("♥️", "A"), bob))
+
+    options = board.getMoveOptions(alice, Card("♥️", "J"))
+
+    assert any(move.ID == "SWITCH" and move.originSpot == aliceSpot and move.targetSpot == exitSpot for move in options)
+
+def test_piece_can_kick_occupied_house_when_protection_is_disabled():
+    game = Game(None, COLORS, GameRules(house_spots_are_blocking_and_protected=False))
+    board = game.board
+    alice = make_player("Alice", "red", "0")
+    alice.setBoard(board)
+
+    origin = place_house_piece(board, alice, 0)
+    occupiedTarget = place_house_piece(board, alice, 2)
+    options = board.getMoveOptions(alice, Card("♥️", "2"))
+    move = next(move for move in options if move.ID == "ENTER" and move.originSpot == origin and move.targetSpot == occupiedTarget)
+
+    game.applyMove(move)
+
+    assert not origin.isOccupied
+    assert occupiedTarget.occupant is alice
+    assert alice.piecesOnTheBoard == 1
+
+def test_king_kicks_crossed_house_pieces_when_protection_is_disabled():
+    rules = GameRules(king_kicks_pieces_on_path=True, house_spots_are_blocking_and_protected=False)
+    game = Game(None, COLORS, rules)
+    board = game.board
+    alice = make_player("Alice", "red", "0")
+    alice.setBoard(board)
+
+    entrySpot = board.getFirstSpot(alice.color)
+    originSpot = board.getSpotFromDistance(entrySpot, -10)
+    origin = place_track_piece(board, alice, originSpot.color, originSpot.number)
+    firstCrossedHouse = place_house_piece(board, alice, 0)
+    secondCrossedHouse = place_house_piece(board, alice, 1)
+    target = board.getHouse(alice.color, 2)
+
+    options = board.getMoveOptions(alice, Card("♥️", "K"))
+    move = next(move for move in options if move.ID == "ENTER" and move.originSpot == origin and move.targetSpot == target)
+
+    kickedPositions = game.applyMove(move)
+
+    assert not firstCrossedHouse.isOccupied
+    assert not secondCrossedHouse.isOccupied
+    assert target.occupant is alice
+    assert alice.piecesOnTheBoard == 1
+    assert kickedPositions == [firstCrossedHouse, secondCrossedHouse]
+
+def test_unplayable_hand_is_folded_when_rule_is_enabled():
+    session = FakeGameSession()
+    game = Game(session, COLORS, GameRules(cannot_play_folds_entire_hand=True))
+    alice = make_player("Alice", "red", "0")
+    cardTwo = Card("♥️", "2")
+    cardThree = Card("♠️", "3")
+    alice.hand.addToHand(cardTwo)
+    alice.hand.addToHand(cardThree)
+    game.setPlayers([alice])
+
+    asyncio.run(game.nextPlayer())
+
+    assert alice.hand.size == 0
+    assert game.deck.discardPile == [cardTwo, cardThree]
+    assert game._handsFinished == 1
+    assert any(message["type"] == "fold" for message in session.messages)
+
+def test_unplayable_hand_discards_only_selected_card_when_rule_is_disabled():
+    session = FakeGameSession()
+    cardTwo = Card("♥️", "2")
+    cardThree = Card("♠️", "3")
+    alice = DiscardChoosingPlayer("TEST-Alice", "Alice", "0", "red", cardTwo)
+    alice.hand.addToHand(cardTwo)
+    alice.hand.addToHand(cardThree)
+    game = Game(session, COLORS, GameRules(cannot_play_folds_entire_hand=False))
+    game.setPlayers([alice])
+
+    asyncio.run(game.nextPlayer())
+
+    assert alice.hand.cards == [cardThree]
+    assert game.deck.discardPile == [cardTwo]
+    assert game._handsFinished == 0
+    assert alice.discardPrompts == ["You cannot make a move. Choose one card to discard."]
+    assert any(message["type"] == "discard" for message in session.messages)
+    assert not any(message["type"] == "fold" for message in session.messages)
+
+def test_player_can_play_on_later_turn_after_discarding_one_card():
+    session = FakeGameSession()
+    cardTwo = Card("♥️", "2")
+    cardThree = Card("♠️", "3")
+    alice = DiscardChoosingPlayer("TEST-Alice", "Alice", "0", "red", cardTwo)
+    alice.hand.addToHand(cardTwo)
+    alice.hand.addToHand(cardThree)
+    game = Game(session, COLORS, GameRules(cannot_play_folds_entire_hand=False))
+    game.setPlayers([alice])
+
+    asyncio.run(game.nextPlayer())
+
+    place_track_piece(game.board, alice, "red", 1)
+    asyncio.run(game.nextPlayer())
+
+    assert game.board.getSpot("red", 4).occupant is alice
+    assert alice.hand.size == 0
+    assert game._handsFinished == 1
+    assert game.deck.discardPile == [cardTwo, cardThree]
