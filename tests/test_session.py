@@ -81,7 +81,13 @@ def test_player_configuration_rejects_a_color_already_in_use():
 		assert not await session.configure_player(bobId, "1", "red")
 		assert bob.team == ""
 		assert bob.color == ""
-		assert await router.get_output(bobId) == {"type": "lobby-error", "msg": "The color red has already been selected."}
+		message = await router.get_output(bobId)
+
+		assert message["type"] == "lobby-error"
+		assert message["messageKey"] == "lobby.errors.color_taken"
+		assert message["parameters"] == {"color": "red"}
+		assert message["fallback"] == "The colour red has already been selected."
+		assert "msg" not in message
 
 	asyncio.run(scenario())
 

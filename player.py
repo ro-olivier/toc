@@ -4,6 +4,7 @@ import random
 
 from cards import Card
 from hand import Hand
+from messages import build_message
 
 import json
 
@@ -34,8 +35,8 @@ class Player:
 	async def send_message_to_user(self, message: str) -> None:
 		await self._router.send_output(self._id, message)
 
-	async def get_input_from_prompt(self, prompt: str) -> str:
-		await self.send_message_to_user({"type": "query", "msg": prompt})
+	async def get_input_from_prompt(self, messageKey: str, fallback: str, parameters: dict = None) -> str:
+		await self.send_message_to_user(build_message("query", messageKey, fallback, parameters))
 		print(f"[Player] Waiting for input from {self._name}...")
 		return await self._router.wait_for_input(self._id)
 		
@@ -99,12 +100,12 @@ class Player:
 	async def foldHand(self) -> None:
 		 self._hand.fold()
 
-	async def getCardChoiceFromPlayer(self, prompt: str = 'What card do you want to play?') -> Card:
-		await self.send_message_to_user({"type": "query-card", "msg": prompt})
-		cardChoice = await self.get_input_from_prompt(prompt)
+	async def getCardChoiceFromPlayer(self, messageKey: str = "prompts.choose_card", fallback: str = "What card do you want to play?") -> Card:
+		await self.send_message_to_user(build_message("query-card", messageKey, fallback))
+		cardChoice = await self.get_input_from_prompt(messageKey, fallback)
 
 		while not cardChoice or (not 'type' in cardChoice.keys()) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
-			cardChoice = await self.get_input_from_prompt(prompt)
+			cardChoice = await self.get_input_from_prompt(messageKey, fallback)
 
 		chosenCard = Card(cardChoice['suit'], cardChoice['value'])
 		self._router.clear_pending_prompt(self._id)
@@ -127,7 +128,7 @@ class Player:
 			for m in possibleMoves:
 				print(f'[getMoveChoiceFromPlayer] {str(m)} ---- origin: {m.originSpot} {id(m.originSpot)}, target: {m.targetSpot} {id(m.targetSpot)}, card: {m.card} {id(m.card)}')
 			if len(possibleMoves) == 0:
-				await self.send_message_to_user({"type": "reject-card-selection", "msg": f'You cannot play that card right now!'})
+				await self.send_message_to_user(build_message("reject-card-selection", "prompts.card_unplayable", "You cannot play that card right now!"))
 				cardChoice = await self.getCardChoiceFromPlayer()
 			elif len(possibleMoves) == 1:
 				moveChoice = possibleMoves[0]
@@ -163,16 +164,14 @@ class Player:
 		return moveChoice
 
 	async def getOriginChoiceFromPlayer(self, possibleOrigins, canCancel: bool = False) -> Spot:
-		await self.send_message_to_user({
-			"type": "query-origin",
-			"msg": "What piece do you want to play this card on?",
-			"originOptions": [str(origin) for origin in possibleOrigins],
-			"canCancel": canCancel,
-		})
+		messageKey = "prompts.choose_origin"
+		fallback = "What piece do you want to play this card on?"
+
+		await self.send_message_to_user(build_message("query-origin", messageKey, fallback, originOptions=[str(origin) for origin in possibleOrigins], canCancel=canCancel))
 
 		originsById = {str(origin): origin for origin in possibleOrigins}
 		while True:
-			spotChoice = await self.get_input_from_prompt("What piece do you want to play this card on?")
+			spotChoice = await self.get_input_from_prompt(messageKey, fallback)
 			if canCancel and isinstance(spotChoice, dict) and spotChoice.get("type") == "cancel_move_selection":
 				self._router.clear_pending_prompt(self._id)
 				return None
@@ -181,16 +180,14 @@ class Player:
 				return originsById[spotChoice["result"]]
 
 	async def getTargetChoiceFromPlayer(self, possibleTargets, canCancel: bool = False) -> Spot:
-		await self.send_message_to_user({
-			"type": "query-target",
-			"msg": "Where do you want to move this piece?",
-			"targetOptions": [str(target) for target in possibleTargets],
-			"canCancel": canCancel,
-		})
+		messageKey = "prompts.choose_target"
+		fallback = "Where do you want to move this piece?"
+
+		await self.send_message_to_user(build_message("query-target", messageKey, fallback, targetOptions=[str(target) for target in possibleTargets], canCancel=canCancel))
 
 		targetsById = {str(target): target for target in possibleTargets}
 		while True:
-			spotChoice = await self.get_input_from_prompt("Where do you want to move this piece?")
+			spotChoice = await self.get_input_from_prompt(messageKey, fallback)
 			if canCancel and isinstance(spotChoice, dict) and spotChoice.get("type") == "cancel_move_selection":
 				self._router.clear_pending_prompt(self._id)
 				return None
@@ -225,10 +222,21 @@ class Player:
 		self._hand.discardFromHand(card)
 
 	async def requestCardExchange(self) -> Card:
-		cardChoice = await self.get_input_from_prompt('Please choose a card to give to your team-mate.')
-		while not cardChoice or (not 'type' in cardChoice.keys()) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
-			cardChoice = await self.get_input_from_prompt('Please choose a card to give to your team-mate.')
-		chosenCard = Card(cardChoice['suit'], cardChoice['value'])
+		messageKey = "prompts.exchange_card"
+		fallback = "Please choose a card to give to your teammate."
+		message = build_message("query-card-exchange", messageKey, fallback)
+
+		while True:
+			await self.send_message_to_user(message)
+			cardChoice = await self._router.wait_for_input(self._id)
+
+			if isinstance(cardChoice, dict) and cardChoice.get("type") == "card_selection":
+				chosenCard = Card(cardChoice.get("suit"), cardChoice.get("value"))
+
+				if chosenCard in self._hand.cards:
+					break
+
+		self._router.clear_pending_prompt(self._id)
 		print(f'Card chosen by {self._name} for card exchange: {chosenCard}')
 		return chosenCard
 
@@ -236,7 +244,16 @@ class Player:
 		self._hand.discardFromHand(card1)
 		self._hand.addToHand(card2)
 		await self.send_message_to_user({"type": "receive-card-from-friend", "value": card2.value, "suit": card2.suit})
-		await self.send_message_to_user({"type": "log", "msg": f"Successfully given {card1.suit}{card1.value} to your team-mate who has given you {card2.suit}{card2.value} in exchange. Round will start as soon as the other team exchanges cards.\n"})
+		
+		givenCard = f"{card1.suit}{card1.value}"
+		receivedCard = f"{card2.suit}{card2.value}"
+
+		await self.send_message_to_user(build_message(
+			"log",
+			"gameplay.card_exchange_complete",
+			f"You gave {givenCard} to your teammate and received {receivedCard}. The round will start when the other team finishes exchanging cards.",
+			{"givenCard": givenCard, "receivedCard": receivedCard},
+		))
 
 	async def forceRandomMove(self) -> None:
 		r = random.choice(self.hand.cards)
@@ -246,7 +263,9 @@ class Player:
 		await self._router.add_input(self._id, cmd)
 
 	async def getSevenHopChoiceFromPlayer(self, originSpot: Spot, targetSpot: Spot) -> bool:
-		message = {"type": "query-seven-hop", "msg": f"Do you want to seven-hop from {originSpot} to {targetSpot}?", "origin": str(originSpot), "target": str(targetSpot)}
+		origin = str(originSpot)
+		target = str(targetSpot)
+		message = build_message("query-seven-hop", "prompts.seven_hop", f"Do you want to seven-hop from {origin} to {target}?", {"origin": origin, "target": target}, origin=origin, target=target)
 
 		while True:
 			await self.send_message_to_user(message)

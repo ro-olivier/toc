@@ -142,6 +142,12 @@ function refreshLanguageInterface() {
   if (displayedRuleset) renderRulesetDisplays(displayedRuleset);
 
   if (currentLobbyState && !lobbyScreen.classList.contains("hidden")) renderLobbyState(currentLobbyState);
+
+    backendMessageElements.forEach((message, element) => {
+    element.textContent = getMessage(message);
+  });
+
+  renderActivityLog();
 }
 
 function initializeLanguageInterface() {
@@ -160,12 +166,14 @@ function initializeLanguageInterface() {
 }
 
 function setTranslatedText(element, key, parameters = {}) {
+  backendMessageElements.delete(element);
   element.dataset.i18nDynamic = key;
   element.dataset.i18nParameters = JSON.stringify(parameters);
   element.textContent = tocI18n.t(key, parameters);
 }
 
 function setRawText(element, text) {
+  backendMessageElements.delete(element);
   delete element.dataset.i18nDynamic;
   delete element.dataset.i18nParameters;
   element.textContent = text;
@@ -183,21 +191,64 @@ function buildWebSocketUrl(gameId, playerName) {
 }
 
 ////// Input-Output / WebSocket handling //////
-function log(msg) {
-  terminal.textContent += msg + "\n";
+const backendMessageElements = new Map();
+const activityMessages = [];
+
+function getMessage(message) {
+  if (typeof message === "string") return message;
+
+  if (!message?.messageKey) {
+    console.warn("Received a player-facing message without messageKey:", message);
+    return message?.fallback || "";
+  }
+
+  const parameters = {...(message.parameters || {})};
+  if (parameters.color) parameters.color = formatColorName(parameters.color);
+
+  const translatedMessage = tocI18n.t(message.messageKey, parameters);
+
+  if (translatedMessage !== message.messageKey) return translatedMessage;
+
+  console.warn(`Missing translation: ${message.messageKey}`);
+  return message.fallback || message.messageKey;
+}
+
+function setMessageText(element, message) {
+  if (typeof message === "string") {
+    setRawText(element, message);
+    return;
+  }
+
+  delete element.dataset.i18nDynamic;
+  delete element.dataset.i18nParameters;
+  backendMessageElements.set(element, message);
+  element.textContent = getMessage(message);
+}
+
+function renderActivityLog() {
+  terminal.textContent = activityMessages.map(entry => {
+    const prefix = entry.isError ? tocI18n.t("common.error_prefix") : "";
+    return `${prefix}${getMessage(entry.message)}`;
+  }).join("\n");
+
   terminal.scrollTop = terminal.scrollHeight;
 }
 
-function query(msg) {
-  setRawText(turnInstruction, msg);
-  turnInstruction.classList.remove("error-state");
-  log(msg);
+function log(message, isError = false) {
+  activityMessages.push({message, isError});
+  renderActivityLog();
 }
 
-function error(msg) {
-  setRawText(turnInstruction, msg);
+function query(message) {
+  setMessageText(turnInstruction, message);
+  turnInstruction.classList.remove("error-state");
+  log(message);
+}
+
+function error(message) {
+  setMessageText(turnInstruction, message);
   turnInstruction.classList.add("error-state");
-  log(`Error: ${msg}`);
+  log(message, true);
 }
 
 function setCancelSelectionVisible(visible) {
@@ -221,7 +272,7 @@ function showLobbyUI() {
 
 function showError(message) {
   if (!lobbyScreen.classList.contains("hidden")) {
-    lobbyError.textContent = message;
+    setRawText(lobbyError, message);
     lobbyError.classList.remove("hidden");
     return;
   }
@@ -231,14 +282,14 @@ function showError(message) {
     return;
   }
 
-  errorMsg.textContent = message;
+  setRawText(errorMsg, message);
   errorMsg.classList.remove("hidden");
 }
 
 function clearError() {
-  errorMsg.textContent = "";
+  setRawText(errorMsg, "");
   errorMsg.classList.add("hidden");
-  lobbyError.textContent = "";
+  setRawText(lobbyError, "");
   lobbyError.classList.add("hidden");
 }
 
@@ -270,7 +321,11 @@ async function connectToGame(gameId, name, rejoin = false) {
 
     switch (data.type) {
       case 'ready':
-        log(tocI18n.t("connection.connected_as", {gameId, player: name}));
+        log({
+          messageKey: "connection.connected_as",
+          parameters: {gameId, player: name},
+          fallback: `Connected to game ${gameId} as ${name}.`,
+        });
         setTranslatedText(connectionStatusText, "connection.connected");
         local_player_name = name;
         local_game_Id = gameId;
@@ -285,7 +340,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case 'lobby-error':
-        lobbyError.textContent = data.msg;
+        setMessageText(lobbyError, data);
         lobbyError.classList.remove("hidden");
         confirmLobbyChoice.disabled = false;
         break;
@@ -339,29 +394,29 @@ async function connectToGame(gameId, name, rejoin = false) {
         placePieceOnSpot(data.playerId, data.spotIndex);
         break;
 
-      case 'fold':
+      case "fold":
         foldAllCardsOfPlayer(data.playerId);
-        log(data.msg);
+        log(data);
         break;
 
       case 'discard':
         removeCard(data.playerId, data.value, data.suit);
-        log(data.msg);
+        log(data);
         break;
 
-      case 'log':
-        log(data.msg);
+      case "log":
+        log(data);
         break;
 
       case 'forced-play':
-        log(data.msg);
+        log(data);
         break;
 
       case 'next-player':
         setCancelSelectionVisible(false);
         clearSpotSelection();
         displayActivePlayer(data.playerId);
-        log(data.msg);
+        log(data);
         break;
 
       case "play":
@@ -376,13 +431,13 @@ async function connectToGame(gameId, name, rejoin = false) {
           movePieceFromSpotToSpot(movedPlayerId, data.origin, data.target);
         }
 
-        log(data.msg);
+        log(data);
         break;
 
       case "seven-start":
         setCancelSelectionVisible(false);
         removeCard(data.playerId, data.value, data.suit);
-        log(data.msg);
+        log(data);
         break;
 
       case "seven-step":
@@ -393,7 +448,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         activeRequestId = data.requestId;
         setCancelSelectionVisible(false);
         clearSpotSelection();
-        query(data.msg);
+        query(data);
         requestSevenHop(data.origin, data.target);
         break;
 
@@ -411,14 +466,14 @@ async function connectToGame(gameId, name, rejoin = false) {
       case "query-origin":
         activeRequestId = data.requestId;
         setCancelSelectionVisible(Boolean(data.canCancel));
-        query(data.msg || tocI18n.t("game.choose_piece"));
+        query(data);
         requestSpotSelection(data.originOptions);
         break;
 
       case "query-target":
         activeRequestId = data.requestId;
         setCancelSelectionVisible(Boolean(data.canCancel));
-        query(data.msg || tocI18n.t("game.choose_destination"));
+        query(data);
         requestSpotSelection(data.targetOptions);
         break;
 
@@ -426,18 +481,26 @@ async function connectToGame(gameId, name, rejoin = false) {
         activeRequestId = data.requestId;
         setCancelSelectionVisible(false);
         clearSpotSelection();
-        query(data.msg || tocI18n.t("game.choose_card"));
+        query(data);
         showAllCardUp();
         requestCardSelection();
         break;
 
-      case 'query':
-        if (data.requestId) activeRequestId = data.requestId;
-        query(data.msg);
+      case "query-card-exchange":
+        activeRequestId = data.requestId;
+        setCancelSelectionVisible(false);
+        clearSpotSelection();
+        query(data);
+        showAllCardUp();
         break;
 
-      case 'reject-card-selection':
-        error(data.msg);
+      case "query":
+        if (data.requestId) activeRequestId = data.requestId;
+        query(data);
+        break;
+
+      case "reject-card-selection":
+        error(data);
         showAllCardUp();
         break;
 
@@ -447,11 +510,11 @@ async function connectToGame(gameId, name, rejoin = false) {
         displayNoActivePlayers();
         setTranslatedText(currentPlayerName, "game.game_over");
         setRawText(turnInstruction, data.msg);
-        log(data.msg);
+        log(data);
         break;
 
       case 'error':
-        error(data.msg);
+        error(data);
         break;
 
       default:
@@ -750,7 +813,11 @@ createBtn.addEventListener("click", async () => {
     if (!res.ok) throw new Error(data.detail || tocI18n.t("errors.game_creation_failed"));
 
     const gameId = data.game_id;
-    log(tocI18n.t("connection.created_game", {gameId}));
+    log({
+      messageKey: "connection.created_game",
+      parameters: {gameId},
+      fallback: `Created game ID: ${gameId}`,
+    });
     await connectToGame(gameId, name);
   } catch (err) {
     showError(err.message || tocI18n.t("errors.game_creation_failed"));
@@ -927,7 +994,7 @@ function sendSevenHopChoice(result) {
 }
 
 function requestSevenHop(originSpot, targetSpot) {
-  const shouldHop = window.confirm(tocI18n.t("game.seven_hop_question", {origin: originSpot, target: targetSpot}));
+  const shouldHop = window.confirm(tocI18n.t("prompts.seven_hop", {origin: originSpot, target: targetSpot}));
   sendSevenHopChoice(shouldHop);
 }
 

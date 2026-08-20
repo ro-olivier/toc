@@ -53,8 +53,8 @@ class DiscardChoosingPlayer(Player):
         self.cardToDiscard = cardToDiscard
         self.discardPrompts = []
 
-    async def getCardChoiceFromPlayer(self, prompt='What card do you want to play?'):
-        self.discardPrompts.append(prompt)
+    async def getCardChoiceFromPlayer(self, messageKey="prompts.choose_card", fallback="What card do you want to play?"):
+        self.discardPrompts.append(fallback)
         return self.cardToDiscard
 
     async def send_message_to_user(self, message):
@@ -468,7 +468,7 @@ def test_deck_cycle_uses_configured_deal_schedule(schedule):
 
     asyncio.run(game.runDeckCycle())
 
-    expectedRounds = [(f"Deal {roundNumber}", cardsPerPlayer) for roundNumber, cardsPerPlayer in enumerate(schedule, start=1)]
+    expectedRounds = [(roundNumber, cardsPerPlayer) for roundNumber, cardsPerPlayer in enumerate(schedule, start=1)]
 
     assert game.roundCalls == expectedRounds
 
@@ -550,6 +550,13 @@ def test_team_wins_when_both_house_lanes_are_full():
     assert game.isFinished
     assert session.messages[-1]["type"] == "game-over"
     assert session.messages[-1]["winners"] == ["Alice", "Bob"]
+
+    message = session.messages[-1]
+
+    assert message["messageKey"] == "gameplay.team_won"
+    assert message["parameters"] == {"playerOne": "Alice", "playerTwo": "Bob"}
+    assert message["fallback"] == "Alice and Bob win!"
+    assert "msg" not in message
 
 def test_ordinary_turn_finishing_team_triggers_victory_immediately():
 	session = FakeGameSession()

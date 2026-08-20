@@ -9,7 +9,8 @@ from hand import Hand
 from params import *
 from player import Player
 from move import Move
-from rules import FiveHopDecider, GameRules, MONTSURVENT_RULES, Rotation, SevenHopping, ShuffleMode
+from rules import *
+from messages import build_message
 
 
 class Game:
@@ -101,8 +102,15 @@ class Game:
 
 		self._isFinished = True
 		winnerNames = [player.name for player in winningTeam]
+		playerOne, playerTwo = winnerNames
 
-		await self.broadcast({"type": "game-over", "winners": winnerNames, "msg": f"Players {' and '.join(winnerNames)} win!"})
+		await self.broadcast(build_message(
+			"game-over",
+			"gameplay.team_won",
+			f"{playerOne} and {playerTwo} win!",
+			{"playerOne": playerOne, "playerTwo": playerTwo},
+			winners=winnerNames,
+		))
 		return True
 
 	@property
@@ -191,8 +199,8 @@ class Game:
 		await player1.switchCard(card1, card2)
 		await player2.switchCard(card2, card1)
 
-	async def runRound(self, roundName: str, cardsPerPlayer: int) -> None:
-		await self.broadcast({"type": "log", "msg": f"Starting {roundName} with player {self.dealer} as the dealer.\n"})
+	async def runRound(self, dealNumber: int, cardsPerPlayer: int) -> None:
+		await self.broadcast(build_message("log", "gameplay.deal_started", f"Deal {dealNumber} starts with {self.dealer.name} as dealer.", {"deal": dealNumber, "dealer": self.dealer.name}))
 		self.resetActivePlayerIndex()
 		await self.drawHands(cardsPerPlayer)
 
@@ -205,11 +213,11 @@ class Game:
 		while self._handsFinished < self._numPlayers and not self._isFinished:
 			await self.nextPlayer()
 
-		await self.broadcast({"type": "log", "msg": f"{roundName} is finished."})
+		await self.broadcast(build_message("log", "gameplay.deal_finished", f"Deal {dealNumber} is finished.", {"deal": dealNumber}))
 
 	async def runDeckCycle(self) -> None:
 		for roundNumber, cardsPerPlayer in enumerate(self._rules.deal_card_counts, start=1):
-			await self.runRound(f"Deal {roundNumber}", cardsPerPlayer)
+			await self.runRound(roundNumber, cardsPerPlayer)
 
 			if self._isFinished:
 				return
@@ -339,27 +347,58 @@ class Game:
 		self.advanceActivePlayer()
 
 		if self._activePlayer.hand.size > 0:
-			await self.broadcast({"type": "next-player", "playerId": self._activePlayer.name, "msg": f"Moving on to next player: {str(self._activePlayer)}"})
+			await self.broadcast(build_message(
+				"next-player",
+				"gameplay.next_player",
+				f"Moving on to {self._activePlayer.name} from team {self._activePlayer.team}, playing {self._activePlayer.color}.",
+				{"player": self._activePlayer.name, "team": self._activePlayer.team, "color": self._activePlayer.color},
+				playerId=self._activePlayer.name,
+			))
 
 			controlledPlayer = self.getControlledPlayer(self._activePlayer)
 			moveOptions = self._activePlayer.hand.getAllPossibleMoves(self._board, controlledPlayer)
 
 			if len(moveOptions) == 0:
 				if self._rules.cannot_play_folds_entire_hand:
-					await self.broadcast({"type": "fold", "playerId": self._activePlayer.name, "msg": "Player has no available move and must fold."})
+					await self.broadcast(build_message(
+						"fold",
+						"gameplay.player_folded",
+						f"{self._activePlayer.name} has no available move and must fold.",
+						{"player": self._activePlayer.name},
+						playerId=self._activePlayer.name,
+					))
 					self._deck.discardCards(self._activePlayer.hand)
 					await self._activePlayer.foldHand()
 				else:
-					cardChoice = await self._activePlayer.getCardChoiceFromPlayer("You cannot make a move. Choose one card to discard.")
+					cardChoice = await self._activePlayer.getCardChoiceFromPlayer("prompts.discard_card", "You cannot make a move. Choose one card to discard.")
 					self._activePlayer.discard(cardChoice)
 					self._deck.discardCard(cardChoice)
-					await self.broadcast({"type": "discard", "playerId": self._activePlayer.name, "value": cardChoice.value, "suit": cardChoice.suit, "msg": f"Player {self._activePlayer.name} cannot make a move and discards one card."})
+					await self.broadcast(build_message(
+						"discard",
+						"gameplay.card_discarded",
+						f"{self._activePlayer.name} cannot make a move and discards one card.",
+						{"player": self._activePlayer.name},
+						playerId=self._activePlayer.name,
+						value=cardChoice.value,
+						suit=cardChoice.suit,
+					))
 			else:
 				if len(moveOptions) == 1:
 					# player has only one move and therefore MUST play it
 					moveChoice = moveOptions[0]
 					moveChoice.updateDescription()
-					await self._activePlayer.send_message_to_user({"type": "forced-play", "msg": f"You only have one available move and therefore must play it.", "playerId": self._activePlayer.name, "value": moveChoice.card.value, "suit": moveChoice.card.suit, "origin": str(moveChoice.originSpot), "target": str(moveChoice.targetSpot)})
+					cardLabel = f"{moveChoice.card.suit}{moveChoice.card.value}"
+					await self._activePlayer.send_message_to_user(build_message(
+						"forced-play",
+						"gameplay.forced_play",
+						f"You have only one legal move, so you must play {cardLabel}.",
+						{"card": cardLabel},
+						playerId=self._activePlayer.name,
+						value=moveChoice.card.value,
+						suit=moveChoice.card.suit,
+						origin=str(moveChoice.originSpot),
+						target=str(moveChoice.targetSpot),
+					))
 				else:
 					# player has several possible moves and is prompted to select one
 					moveChoice = await self._activePlayer.getMoveChoiceFromPlayer(moveOptions)
@@ -370,37 +409,72 @@ class Game:
 				self._deck.discardCard(cardChoice)
 
 				if moveChoice.ID == "SEVEN":
-					await self.broadcast({
-						"type": "seven-start",
-						"msg": f"Player {self._activePlayer.name} is starting a seven split.",
-						"playerId": self._activePlayer.name,
-						"value": cardChoice.value,
-						"suit": cardChoice.suit,
-					})
+					cardLabel = f"{cardChoice.suit}{cardChoice.value}"
+
+					await self.broadcast(build_message(
+						"seven-start",
+						"gameplay.seven_split_started",
+						f"{self._activePlayer.name} played {cardLabel} and is starting a seven split.",
+						{"player": self._activePlayer.name, "card": cardLabel},
+						playerId=self._activePlayer.name,
+						value=cardChoice.value,
+						suit=cardChoice.suit,
+					))
 
 					await self.resolveMove(moveChoice)
 
 				else:
-					await self.broadcast({
-						"type": "play",
-						"msg": f"Player {self._activePlayer.name} has selected the following move: {str(moveChoice)}",
+					cardLabel = f"{cardChoice.suit}{cardChoice.value}"
+					origin = str(moveChoice.originSpot)
+					target = str(moveChoice.targetSpot)
+
+					eventPayload = {
 						"playerId": self._activePlayer.name,
 						"value": cardChoice.value,
 						"suit": cardChoice.suit,
-						"origin": str(moveChoice.originSpot),
-						"target": str(moveChoice.targetSpot),
+						"origin": origin,
+						"target": target,
 						"movedPlayerId": moveChoice.pieceOwner.name,
-					})
+					}
+
+					if moveChoice.ID == "OUT":
+						message = build_message(
+							"play",
+							"gameplay.piece_deployed",
+							f"{self._activePlayer.name} played {cardLabel} and deployed a piece on {target}.",
+							{"player": self._activePlayer.name, "card": cardLabel, "target": target},
+							**eventPayload,
+						)
+
+					elif moveChoice.ID == "SWITCH":
+						message = build_message(
+							"play",
+							"gameplay.pieces_switched",
+							f"{self._activePlayer.name} played {cardLabel} and switched the pieces on {origin} and {target}.",
+							{"player": self._activePlayer.name, "card": cardLabel, "origin": origin, "target": target},
+							**eventPayload,
+						)
+
+					else:
+						message = build_message(
+							"play",
+							"gameplay.piece_moved",
+							f"{self._activePlayer.name} played {cardLabel}, moving {moveChoice.pieceOwner.name}'s piece from {origin} to {target}.",
+							{"player": self._activePlayer.name, "card": cardLabel, "pieceOwner": moveChoice.pieceOwner.name, "origin": origin, "target": target},
+							**eventPayload,
+						)
+
+					await self.broadcast(message)
 
 					await self.resolveMove(moveChoice)
 
 			if self._activePlayer.hand.size == 0:
 				self._handsFinished += 1
 
-			await self.broadcast({"type": "log", "msg": f"End of turn for player {self._activePlayer.name}.\n"})
+			await self.broadcast(build_message("log", "gameplay.turn_ended", f"{self._activePlayer.name}'s turn is finished.", {"player": self._activePlayer.name}))
 			#await self.broadcast(f'\nState of the board:\n{str(self._board)}')
 		else:
-			await self.broadcast({"type": "log", "msg": f"Next player: {self._activePlayer.name} has folded in a previous turn, moving on...\n"})
+			await self.broadcast(build_message("log", "gameplay.folded_player_skipped", f"{self._activePlayer.name} previously folded and is skipped.", {"player": self._activePlayer.name}))
 
 
 	async def resolveMove(self, move: Move) -> None:

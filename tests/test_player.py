@@ -158,7 +158,45 @@ def test_card_choice_can_use_custom_prompt():
 	player = make_player(router)
 	player.hand.addToHand(card)
 
-	result = asyncio.run(player.getCardChoiceFromPlayer("Choose one card to discard."))
+	result = asyncio.run(player.getCardChoiceFromPlayer("prompts.discard_card", "Choose one card to discard."))
 
 	assert result == card
-	assert router.outputs[0][1] == {"type": "query-card", "msg": "Choose one card to discard."}
+	assert router.outputs[0][1] == {
+		"type": "query-card",
+		"messageKey": "prompts.discard_card",
+		"parameters": {},
+		"fallback": "Choose one card to discard.",
+	}
+
+def test_card_exchange_log_uses_translation_message():
+	cardGiven = Card("♥️", "2")
+	cardReceived = Card("♠️", "3")
+	router = FakeRouter([])
+	player = make_player(router)
+	player.hand.addToHand(cardGiven)
+
+	asyncio.run(player.switchCard(cardGiven, cardReceived))
+
+	message = router.outputs[1][1]
+
+	assert message["type"] == "log"
+	assert message["messageKey"] == "gameplay.card_exchange_complete"
+	assert message["parameters"] == {"givenCard": "♥️2", "receivedCard": "♠️3"}
+	assert message["fallback"]
+	assert "msg" not in message
+
+def test_card_exchange_uses_reconnectable_prompt():
+	card = Card("♥️", "2")
+	router = FakeRouter([{"type": "card_selection", "suit": "♥️", "value": "2"}])
+	player = make_player(router)
+	player.hand.addToHand(card)
+
+	result = asyncio.run(player.requestCardExchange())
+
+	assert result == card
+
+	message = router.outputs[0][1]
+	assert message["type"] == "query-card-exchange"
+	assert message["messageKey"] == "prompts.exchange_card"
+	assert message["fallback"] == "Please choose a card to give to your teammate."
+	assert "msg" not in message

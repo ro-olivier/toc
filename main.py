@@ -14,6 +14,7 @@ from game import Game
 from player import Player
 from params import *
 from rules import *
+from messages import build_message
 
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
@@ -33,7 +34,7 @@ class PlayerInputRouter:
 		self.output_queues = {}
 		self.recycleBin = {}
 		self.pendingPrompts = {}
-		self.interactiveMessageTypes = {"query-card", "query-origin", "query-target", "query-seven-hop"}
+		self.interactiveMessageTypes = {"query-card", "query-card-exchange", "query-origin", "query-target", "query-seven-hop"}
 
 	def register(self, player_name: str):
 		if player_name in self.input_queues:
@@ -269,13 +270,13 @@ class GameSession:
 
 	async def game_loop(self):
 		try:
-			await self.broadcast({"type": "log", "msg": "Four players have joined: game is starting!\n"})
+			await self.broadcast(build_message("log", "gameplay.game_starting", "Four players have joined: the game is starting!"))
 			self.game = Game(self, [self.players[player_id]["color"] for player_id in self.order], self._rules)
 			self.game.setPlayers([self.players[player_id]["object"] for player_id in self.order])
 			await self.game.start()
 		except Exception:
 			logging.exception("Game loop failed for game %s", self.id)
-			await self.broadcast({"type": "error", "msg": "The game stopped because of an internal server error."})
+			await self.broadcast(build_message("error", "errors.internal_game_error", "The game stopped because of an internal server error."))
 
 	async def start_game_if_ready(self) -> bool:
 		async with self.lock:
@@ -299,23 +300,45 @@ class GameSession:
 				return False
 
 			if playerData.get("configured", False):
-				await playerData["object"].send_message_to_user({"type": "lobby-error", "msg": "Your lobby choices have already been confirmed."})
+				await playerData["object"].send_message_to_user(build_message(
+					"lobby-error",
+					"lobby.errors.already_confirmed",
+					"Your lobby choices have already been confirmed.",
+				))
 				return False
 
 			if team not in ["0", "1"]:
-				await playerData["object"].send_message_to_user({"type": "lobby-error", "msg": "Please choose a valid team."})
+				await playerData["object"].send_message_to_user(build_message(
+					"lobby-error",
+					"lobby.errors.invalid_team",
+					"Please choose a valid team.",
+				))
 				return False
 
 			if color not in COLORS:
-				await playerData["object"].send_message_to_user({"type": "lobby-error", "msg": "Please choose a valid color."})
+				await playerData["object"].send_message_to_user(build_message(
+					"lobby-error",
+					"lobby.errors.invalid_color",
+					"Please choose a valid colour.",
+				))
 				return False
 
 			if self.team_is_full(team):
-				await playerData["object"].send_message_to_user({"type": "lobby-error", "msg": f"Team {team} is already full."})
+				await playerData["object"].send_message_to_user(build_message(
+					"lobby-error",
+					"lobby.errors.team_full",
+					f"Team {team} is already full.",
+					{"team": team},
+				))
 				return False
 
 			if color not in self.available_colors():
-				await playerData["object"].send_message_to_user({"type": "lobby-error", "msg": f"The color {color} has already been selected."})
+				await playerData["object"].send_message_to_user(build_message(
+					"lobby-error",
+					"lobby.errors.color_taken",
+					f"The colour {color} has already been selected.",
+					{"color": color},
+				))
 				return False
 
 			player = playerData["object"]
@@ -397,11 +420,11 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 			try:
 				message = json.loads(data)
 			except json.JSONDecodeError:
-				await router.send_output(player_id, {"type": "error", "msg": "Invalid JSON message."})
+				await router.send_output(player_id, build_message("error", "errors.invalid_json_message", "The server received an invalid JSON message."))
 				continue
 
 			if not isinstance(message, dict):
-				await router.send_output(player_id, {"type": "error", "msg": "Invalid message format."})
+				await router.send_output(player_id, build_message("error", "errors.invalid_message_format", "The server received an invalid message format."))
 				continue
 
 			await gameSession.handle_player_message(player_id, message)
@@ -419,10 +442,15 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 			if gameSession.started:
 				await existingPlayer["object"].send_message_to_user(gameSession.lobby_state())
 				await existingPlayer["object"].send_message_to_user(gameSession.fullUI())
-				await existingPlayer["object"].send_message_to_user({"type": "log", "msg": f"You successfully rejoined the game in team {existingPlayer['team']} with color {existingPlayer['color']}!\n"})
+				await existingPlayer["object"].send_message_to_user(build_message(
+					"log",
+					"connection.rejoined_self",
+					f"You successfully rejoined the game in team {existingPlayer['team']} with colour {existingPlayer['color']}!",
+					{"team": existingPlayer["team"], "color": existingPlayer["color"]},
+				))
 				await existingPlayer["object"].sendHandAgain()
 				await router.resend_pending_prompt(player_id)
-				await gameSession.broadcast({"type": "log", "msg": f"{player_name} has rejoined the game.\n"}, excluded_player=player_id)
+				await gameSession.broadcast(build_message("log", "connection.player_rejoined", f"{player_name} rejoined the game.", {"player": player_name}), excluded_player=player_id)
 			else:
 				await gameSession.broadcast_lobby_state()
 
@@ -451,7 +479,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 			router.unregister(player_id)
 
 			if gameSession.started:
-				await gameSession.broadcast({"type": "log", "msg": f"{player_name} disconnected."}, excluded_player=player_id)
+				await gameSession.broadcast(build_message("log", "connection.player_disconnected", f"{player_name} disconnected.", {"player": player_name}), excluded_player=player_id)
 			else:
 				await gameSession.broadcast_lobby_state()
 
