@@ -1,9 +1,12 @@
 import asyncio
+import pytest
+from fastapi import HTTPException
 
 from main import ConnectionManager, GameSession, PlayerInputRouter, create_game as create_game_endpoint, get_rule_presets, manager
 from rules import GameRules, MONTSURVENT_RULES
 from player import Player
 from rules import GameRules
+
 
 
 def add_player(session, router, name, team="", color="", configured=False, active=True):
@@ -31,6 +34,9 @@ def test_rule_presets_endpoint_returns_serialized_presets():
 	assert result["presets"]["montsurvent"]["rotation"] == "clockwise"
 	assert result["presets"]["montsurvent"]["deal_card_counts"] == [5, 4, 4]
 	assert result["schema"]["seven_hopping"]["options"] == ["disabled", "optional", "forced"]
+	assert "gameplay.piece_moved" in result["messageKeys"]
+	assert "prompts.exchange_card" in result["messageKeys"]
+	assert result["messageKeys"] == sorted(result["messageKeys"])
 
 
 def test_create_game_endpoint_accepts_custom_rules():
@@ -253,3 +259,17 @@ def test_session_states_report_configured_rules():
 	assert session.fullUI()["enterHouseAtSpot"] == 16
 	assert session.lobby_state()["ruleset"] == {"preset": "custom", "values": session.rules.to_dict()}
 	assert session.fullUI()["ruleset"] == {"preset": "custom", "values": session.rules.to_dict()}
+
+
+def test_create_game_endpoint_returns_translatable_validation_error():
+	with pytest.raises(HTTPException) as caughtError:
+		asyncio.run(create_game_endpoint({"preset": "unknown"}))
+
+	detail = caughtError.value.detail
+
+	assert caughtError.value.status_code == 422
+	assert detail["type"] == "http-error"
+	assert detail["messageKey"] == "errors.invalid_game_configuration"
+	assert detail["parameters"] == {}
+	assert detail["fallback"] == "Unknown rule preset: unknown"
+	assert "msg" not in detail

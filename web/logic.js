@@ -151,8 +151,7 @@ function refreshLanguageInterface() {
 }
 
 function initializeLanguageInterface() {
-  console.log("initializeLanguageInterface was executed");
-  tocI18n.supportedLanguages.forEach(language => {
+    tocI18n.supportedLanguages.forEach(language => {
     const option = document.createElement("option");
     option.value = language;
     languageSelect.appendChild(option);
@@ -211,6 +210,18 @@ function getMessage(message) {
 
   console.warn(`Missing translation: ${message.messageKey}`);
   return message.fallback || message.messageKey;
+}
+
+function getHttpErrorMessage(responseData) {
+  const detail = responseData?.detail;
+
+  if (detail && typeof detail === "object" && !Array.isArray(detail) && detail.messageKey) {
+    return getMessage(detail);
+  }
+
+  if (typeof detail === "string") return detail;
+
+  return tocI18n.t("errors.game_creation_failed");
 }
 
 function setMessageText(element, message) {
@@ -755,6 +766,12 @@ async function initializeRuleSelector() {
     if (!response.ok) throw new Error("Could not load rule presets.");
 
     ruleConfiguration = await response.json();
+    
+    const missingMessageKeys = tocI18n.getMissingTranslationKeys(ruleConfiguration.messageKeys || []);
+    if (missingMessageKeys.length) {
+      console.error(`Missing backend translations: ${missingMessageKeys.join(", ")}`);
+    }
+    
     const defaultValues = ruleConfiguration.presets[ruleConfiguration.default];
 
     rulePresetSelect.replaceChildren();
@@ -810,7 +827,7 @@ createBtn.addEventListener("click", async () => {
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || tocI18n.t("errors.game_creation_failed"));
+    if (!res.ok) throw new Error(getHttpErrorMessage(data));
 
     const gameId = data.game_id;
     log({
@@ -1044,7 +1061,12 @@ function configureBoardGeometry(regionLength, houseEntryPosition) {
   if (regionLength === spotsPerRegion && houseEntryPosition === enterHouseAtSpot) return;
 
   if (spotElements.length > 0) {
-    console.error("Cannot change board geometry after the board has been drawn.");
+    console.error("Cannot change board geometry after the board has been drawn.", {
+      currentRegionLength: spotsPerRegion,
+      requestedRegionLength: regionLength,
+      currentHouseEntry: enterHouseAtSpot,
+      requestedHouseEntry: houseEntryPosition,
+    });
     return;
   }
 

@@ -245,6 +245,9 @@
         internal_game_error: "The game stopped because of an internal server error.",
         invalid_json_message: "The server received an invalid JSON message.",
         invalid_message_format: "The server received an invalid message format.",
+        creation_data_object: "Game creation data must be an object.",
+        unknown_creation_fields: "Unknown game creation fields: {fields}",
+        invalid_game_configuration: "The selected game configuration is invalid.",
       },
     },
 
@@ -493,6 +496,9 @@
         internal_game_error: "La partie s'est arrêtée à cause d'une erreur interne du serveur.",
         invalid_json_message: "Le serveur a reçu un message JSON invalide.",
         invalid_message_format: "Le serveur a reçu un format de message invalide.",
+        creation_data_object: "Les données de création de partie doivent être un objet.",
+        unknown_creation_fields: "Champs de création de partie inconnus : {fields}",
+        invalid_game_configuration: "La configuration de partie sélectionnée est invalide.",
       },
     },
   };
@@ -558,6 +564,82 @@
     return currentLanguage;
   }
 
+  function flattenTranslations(value, prefix = "", result = {}) {
+    Object.entries(value).forEach(([key, nestedValue]) => {
+      const fullKey = prefix ? `${prefix}.${key}` : key;
+
+      if (typeof nestedValue === "string") {
+        result[fullKey] = nestedValue;
+        return;
+      }
+
+      if (nestedValue && typeof nestedValue === "object" && !Array.isArray(nestedValue)) {
+        flattenTranslations(nestedValue, fullKey, result);
+        return;
+      }
+
+      throw new Error(`Translation "${fullKey}" must be a string or an object.`);
+    });
+
+    return result;
+  }
+
+  function getTranslationParameters(translation) {
+    const parameters = [...translation.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map(match => match[1]);
+    return [...new Set(parameters)].sort();
+  }
+
+  function validateTranslationCatalogs() {
+    const referenceCatalog = flattenTranslations(TRANSLATIONS[FALLBACK_LANGUAGE]);
+    const referenceKeys = Object.keys(referenceCatalog);
+    const errors = [];
+
+    SUPPORTED_LANGUAGES.forEach(language => {
+      const catalog = flattenTranslations(TRANSLATIONS[language]);
+      const catalogKeys = Object.keys(catalog);
+      const missingKeys = referenceKeys.filter(key => !(key in catalog));
+      const unexpectedKeys = catalogKeys.filter(key => !(key in referenceCatalog));
+
+      if (missingKeys.length) errors.push(`${language} is missing: ${missingKeys.join(", ")}`);
+      if (unexpectedKeys.length) errors.push(`${language} has unexpected keys: ${unexpectedKeys.join(", ")}`);
+
+      referenceKeys.forEach(key => {
+        if (!(key in catalog)) return;
+
+        const referenceParameters = getTranslationParameters(referenceCatalog[key]);
+        const translatedParameters = getTranslationParameters(catalog[key]);
+
+        if (referenceParameters.join(",") !== translatedParameters.join(",")) {
+          errors.push(`${language}.${key} uses parameters {${translatedParameters.join(", ")}} instead of {${referenceParameters.join(", ")}}`);
+        }
+      });
+    });
+
+    if (errors.length) throw new Error(`Invalid translation catalog:\n${errors.join("\n")}`);
+  }
+
+  function getMissingTranslationKeys(keys) {
+    const missingKeys = [];
+
+    SUPPORTED_LANGUAGES.forEach(language => {
+      keys.forEach(key => {
+        if (typeof getNestedTranslation(language, key) !== "string") missingKeys.push(`${language}.${key}`);
+      });
+    });
+
+    return missingKeys;
+  }
+
+  validateTranslationCatalogs();
   document.documentElement.lang = currentLanguage;
-  window.tocI18n = Object.freeze({t, setLanguage, getLanguage, supportedLanguages: [...SUPPORTED_LANGUAGES]});
+
+  window.tocI18n = Object.freeze({
+    t,
+    setLanguage,
+    getLanguage,
+    getMissingTranslationKeys,
+    supportedLanguages: [...SUPPORTED_LANGUAGES],
+  });
+
+
 })();

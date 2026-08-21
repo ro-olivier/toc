@@ -14,7 +14,7 @@ from game import Game
 from player import Player
 from params import *
 from rules import *
-from messages import build_message
+from messages import MESSAGE_KEYS, build_message
 
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
@@ -493,26 +493,36 @@ async def root():
 
 @app.get("/toc/api/rule-presets")
 async def get_rule_presets():
-	return {"default": DEFAULT_RULE_PRESET, "presets": {name: rules.to_dict() for name, rules in RULE_PRESETS.items()}, "schema": get_rule_schema()}
+	return {
+		"default": DEFAULT_RULE_PRESET,
+		"presets": {name: rules.to_dict() for name, rules in RULE_PRESETS.items()},
+		"schema": get_rule_schema(),
+		"messageKeys": sorted(MESSAGE_KEYS),
+	}
 
 @app.post("/toc/api/create-game")
-async def create_game(payload: dict = None):
+async def create_game(payload = None):
 	if payload is None:
 		payload = {}
 
 	if type(payload) is not dict:
-		raise HTTPException(status_code=422, detail="Game creation data must be an object")
+		detail = build_message("http-error", "errors.creation_data_object", "Game creation data must be an object.")
+		raise HTTPException(status_code=422, detail=detail)
 
 	unknownFields = set(payload) - {"preset", "rules"}
+
 	if unknownFields:
-		raise HTTPException(status_code=422, detail=f"Unknown game creation fields: {', '.join(sorted(unknownFields))}")
+		fields = ", ".join(sorted(unknownFields))
+		detail = build_message("http-error", "errors.unknown_creation_fields", f"Unknown game creation fields: {fields}", {"fields": fields})
+		raise HTTPException(status_code=422, detail=detail)
 
 	presetName = payload.get("preset", DEFAULT_RULE_PRESET)
 
 	try:
 		rules = resolve_ruleset(presetName, payload.get("rules"))
 	except ValueError as error:
-		raise HTTPException(status_code=422, detail=str(error)) from error
+		detail = build_message("http-error", "errors.invalid_game_configuration", str(error))
+		raise HTTPException(status_code=422, detail=detail) from error
 
 	game_id = manager.create_game(router, rules, presetName)
 	return {"game_id": game_id, "preset": presetName, "rules": rules.to_dict()}
