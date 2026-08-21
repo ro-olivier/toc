@@ -50,13 +50,27 @@ def connectPlayers(stack, client, gameId, playerNames):
 		websocket = stack.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/{playerName}"))
 		sockets[playerName] = websocket
 
-		assert websocket.receive_json()["type"] == "ready"
+		ready = identifyWebSocket(websocket)
 
 		for connectedSocket in sockets.values():
 			state = receiveLobbyState(connectedSocket)
 			assert len(state["players"]) == expectedPlayerCount
 
 	return sockets
+
+
+def identifyWebSocket(websocket, resumeToken=None):
+	websocket.send_json({
+		"type": "identify",
+		"resumeToken": resumeToken,
+	})
+
+	ready = websocket.receive_json()
+
+	assert ready["type"] == "ready"
+	assert ready["protocolVersion"] == 2
+
+	return ready
 
 
 def assertWebSocketClosesWith(websocket, expectedCode):
@@ -68,11 +82,10 @@ def assertWebSocketClosesWith(websocket, expectedCode):
 
 def test_valid_websocket_connection_receives_ready_and_lobby_state(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		assert websocket.receive_json() == {"type": "ready"}
+		ready = identifyWebSocket(websocket)
+		lobbyState = receiveLobbyState(websocket)
 
-		lobbyState = websocket.receive_json()
-
-		assert lobbyState["type"] == "lobby-state"
+		assert ready["sessionId"] == manager.games[gameId].sessionId
 		assert lobbyState["gameId"] == gameId
 		assert lobbyState["started"] is False
 		assert len(lobbyState["players"]) == 1
@@ -87,8 +100,8 @@ def test_unknown_game_closes_websocket_with_4001(client):
 
 def test_duplicate_active_player_name_closes_websocket_with_4002(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as firstConnection:
-		assert firstConnection.receive_json() == {"type": "ready"}
-		assert firstConnection.receive_json()["type"] == "lobby-state"
+		identifyWebSocket(firstConnection)
+		receiveLobbyState(firstConnection)
 
 		with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as duplicateConnection:
 			assertWebSocketClosesWith(duplicateConnection, 4002)
@@ -98,14 +111,14 @@ def test_fifth_player_closes_websocket_with_4004(client, gameId):
 	with ExitStack() as connections:
 		for playerName in PLAYER_NAMES:
 			websocket = connections.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/{playerName}"))
-			assert websocket.receive_json() == {"type": "ready"}
+			identifyWebSocket(websocket)
 
 		with client.websocket_connect(f"/toc/ws/{gameId}/Erin") as fifthConnection:
 			assertWebSocketClosesWith(fifthConnection, 4004)
 
 def test_invalid_json_returns_error_and_connection_remains_open(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		assert websocket.receive_json()["type"] == "ready"
+		ready = identifyWebSocket(websocket)
 		assert websocket.receive_json()["type"] == "lobby-state"
 
 		websocket.send_text("{not-valid-json")
@@ -126,8 +139,8 @@ def test_invalid_json_returns_error_and_connection_remains_open(client, gameId):
 
 def test_non_object_message_is_rejected(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		websocket.receive_json()
-		websocket.receive_json()
+		identifyWebSocket(websocket)
+		receiveLobbyState(websocket)
 
 		websocket.send_json(["configure-player"])
 
@@ -139,8 +152,8 @@ def test_non_object_message_is_rejected(client, gameId):
 
 def test_message_without_type_is_rejected(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		websocket.receive_json()
-		websocket.receive_json()
+		identifyWebSocket(websocket)
+		receiveLobbyState(websocket)
 
 		websocket.send_json({"team": "0", "color": "red"})
 
@@ -151,8 +164,8 @@ def test_message_without_type_is_rejected(client, gameId):
 
 def test_unknown_message_type_is_rejected(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		websocket.receive_json()
-		websocket.receive_json()
+		identifyWebSocket(websocket)
+		receiveLobbyState(websocket)
 
 		websocket.send_json({"type": "explode-server"})
 
@@ -168,12 +181,12 @@ def test_valid_player_configuration_is_broadcast_to_every_player(client, gameId)
 	with ExitStack() as stack:
 		aliceSocket = stack.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/Alice"))
 
-		assert aliceSocket.receive_json()["type"] == "ready"
+		identifyWebSocket(aliceSocket)
 		receiveLobbyState(aliceSocket)
 
 		bobSocket = stack.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/Bob"))
 
-		assert bobSocket.receive_json()["type"] == "ready"
+		identifyWebSocket(bobSocket)
 
 		receiveLobbyState(aliceSocket)
 		receiveLobbyState(bobSocket)
@@ -197,12 +210,12 @@ def test_two_players_cannot_select_the_same_color(client, gameId):
 	with ExitStack() as stack:
 		aliceSocket = stack.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/Alice"))
 
-		aliceSocket.receive_json()
+		identifyWebSocket(aliceSocket)
 		receiveLobbyState(aliceSocket)
 
 		bobSocket = stack.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/Bob"))
 
-		bobSocket.receive_json()
+		identifyWebSocket(bobSocket)
 		receiveLobbyState(aliceSocket)
 		receiveLobbyState(bobSocket)
 
@@ -225,18 +238,18 @@ def test_team_cannot_exceed_its_capacity(client, gameId):
 	with ExitStack() as stack:
 		aliceSocket = stack.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/Alice"))
 
-		aliceSocket.receive_json()
+		identifyWebSocket(aliceSocket)
 		receiveLobbyState(aliceSocket)
 
 		bobSocket = stack.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/Bob"))
 
-		bobSocket.receive_json()
+		identifyWebSocket(bobSocket)
 		receiveLobbyState(aliceSocket)
 		receiveLobbyState(bobSocket)
 
 		carolSocket = stack.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/Carol"))
 
-		carolSocket.receive_json()
+		identifyWebSocket(carolSocket)
 		receiveLobbyState(aliceSocket)
 		receiveLobbyState(bobSocket)
 		receiveLobbyState(carolSocket)
@@ -265,7 +278,7 @@ def test_team_cannot_exceed_its_capacity(client, gameId):
 
 def test_invalid_team_is_rejected(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		websocket.receive_json()
+		identifyWebSocket(websocket)
 		receiveLobbyState(websocket)
 
 		websocket.send_json({"type": "configure-player", "team": "invalid", "color": "red"})
@@ -279,7 +292,7 @@ def test_invalid_team_is_rejected(client, gameId):
 
 def test_invalid_color_is_rejected(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		websocket.receive_json()
+		identifyWebSocket(websocket)
 		receiveLobbyState(websocket)
 
 		websocket.send_json({"type": "configure-player", "team": "0", "color": "purple"})
@@ -296,7 +309,8 @@ def test_configured_lobby_player_can_reconnect(client, gameId):
 	session = manager.games[gameId]
 
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		assert websocket.receive_json()["type"] == "ready"
+		firstReady = identifyWebSocket(websocket)
+		resumeToken = firstReady["resumeToken"]
 		receiveLobbyState(websocket)
 
 		websocket.send_json({"type": "configure-player", "team": "0", "color": "red"})
@@ -311,7 +325,7 @@ def test_configured_lobby_player_can_reconnect(client, gameId):
 	assert session.players[playerId]["active"] is False
 
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		assert websocket.receive_json()["type"] == "ready"
+		identifyWebSocket(websocket, resumeToken)
 
 		state = receiveLobbyState(websocket)
 		alice = getLobbyPlayer(state, "Alice")
@@ -330,7 +344,9 @@ def test_started_game_reconnection_restores_ui_hand_and_prompt(client, gameId):
 	session = manager.games[gameId]
 
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		websocket.receive_json()
+		firstReady = identifyWebSocket(websocket)
+		resumeToken = firstReady["resumeToken"]
+
 		receiveLobbyState(websocket)
 
 		websocket.send_json({"type": "configure-player", "team": "0", "color": "red"})
@@ -351,7 +367,7 @@ def test_started_game_reconnection_restores_ui_hand_and_prompt(client, gameId):
 	router.pendingPrompts[playerId] = pendingPrompt.copy()
 
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		assert websocket.receive_json()["type"] == "ready"
+		ready = identifyWebSocket(websocket, resumeToken)
 
 		messages = [websocket.receive_json() for _ in range(5)]
 
@@ -410,7 +426,7 @@ def test_four_configured_players_start_game_once(client, gameId, monkeypatch):
 			websocket = stack.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/{playerName}"))
 			sockets[playerName] = websocket
 
-			assert websocket.receive_json()["type"] == "ready"
+			ready = identifyWebSocket(websocket)
 
 			for connectedSocket in sockets.values():
 				state = receiveLobbyState(connectedSocket)
@@ -459,11 +475,12 @@ def test_started_game_broadcasts_disconnect_and_reconnect(client, gameId):
 	session = manager.games[gameId]
 
 	with client.websocket_connect(f"/toc/ws/{gameId}/Bob") as bobSocket:
-		assert bobSocket.receive_json()["type"] == "ready"
+		identifyWebSocket(bobSocket)
 		receiveLobbyState(bobSocket)
 
 		with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as aliceSocket:
-			assert aliceSocket.receive_json()["type"] == "ready"
+			firstAliceReady = identifyWebSocket(aliceSocket)
+			resumeAliceToken = firstAliceReady["resumeToken"]
 
 			receiveLobbyState(bobSocket)
 			receiveLobbyState(aliceSocket)
@@ -489,7 +506,7 @@ def test_started_game_broadcasts_disconnect_and_reconnect(client, gameId):
 		assert "msg" not in disconnectedMessage
 
 		with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as reconnectedAliceSocket:
-			assert reconnectedAliceSocket.receive_json()["type"] == "ready"
+			identifyWebSocket(reconnectedAliceSocket, resumeAliceToken)
 
 			aliceMessages = [reconnectedAliceSocket.receive_json() for _ in range(4)]
 
@@ -521,7 +538,7 @@ def test_started_game_broadcasts_disconnect_and_reconnect(client, gameId):
 
 def test_player_cannot_configure_lobby_twice(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		websocket.receive_json()
+		identifyWebSocket(websocket)
 		receiveLobbyState(websocket)
 
 		websocket.send_json({"type": "configure-player", "team": "0", "color": "red"})
@@ -552,7 +569,7 @@ def test_disconnect_moves_player_queues_to_recycle_bin(client, gameId):
 	session = manager.games[gameId]
 
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		websocket.receive_json()
+		identifyWebSocket(websocket)
 		receiveLobbyState(websocket)
 
 		assert playerId in router.input_queues
@@ -574,7 +591,8 @@ def test_disconnected_player_keeps_reserved_seat(client, gameId):
 		sockets = connectPlayers(stack, client, gameId, ["Alice", "Bob", "Carol"])
 
 		with client.websocket_connect(f"/toc/ws/{gameId}/Diana") as dianaSocket:
-			assert dianaSocket.receive_json()["type"] == "ready"
+			firstDianaReady = identifyWebSocket(dianaSocket)
+			resumeDianaToken = firstDianaReady["resumeToken"]
 
 			allSockets = [*sockets.values(), dianaSocket]
 
@@ -596,7 +614,7 @@ def test_disconnected_player_keeps_reserved_seat(client, gameId):
 		assert f"{gameId}-Eve" not in session.players
 
 		with client.websocket_connect(f"/toc/ws/{gameId}/Diana") as reconnectedDianaSocket:
-			assert reconnectedDianaSocket.receive_json()["type"] == "ready"
+			identifyWebSocket(reconnectedDianaSocket, resumeDianaToken)
 
 			allSockets = [*sockets.values(), reconnectedDianaSocket]
 
@@ -661,3 +679,40 @@ def test_game_loop_failure_is_broadcast_to_every_player(client, gameId, monkeypa
 			assert error["messageKey"] == "errors.internal_game_error"
 			assert "fallback" in error
 			assert "msg" not in error
+
+def test_new_websocket_identity_is_stored_as_hash(client, gameId):
+	from identity import resumeTokenMatches
+
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
+		ready = identifyWebSocket(websocket)
+		receiveLobbyState(websocket)
+
+		playerData = manager.games[gameId].players[f"{gameId}-Alice"]
+
+		assert ready["sessionId"] == manager.games[gameId].sessionId
+		assert ready["playerId"] == playerData["playerId"]
+		assert ready["resumeToken"] != playerData["resumeTokenHash"]
+		assert resumeTokenMatches(ready["resumeToken"], playerData["resumeTokenHash"])
+
+def test_reconnection_requires_valid_resume_token(client, gameId):
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
+		ready = identifyWebSocket(websocket)
+		receiveLobbyState(websocket)
+
+	resumeToken = ready["resumeToken"]
+
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
+		websocket.send_json({"type": "identify", "resumeToken": None})
+		assertWebSocketClosesWith(websocket, 4005)
+
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
+		websocket.send_json({"type": "identify", "resumeToken": "incorrect-token"})
+		assertWebSocketClosesWith(websocket, 4005)
+
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
+		reconnectedReady = identifyWebSocket(websocket, resumeToken)
+		state = receiveLobbyState(websocket)
+
+		assert reconnectedReady["playerId"] == ready["playerId"]
+		assert reconnectedReady["resumeToken"] == resumeToken
+		assert len(state["players"]) == 1

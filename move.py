@@ -16,7 +16,6 @@ class Move:
 		self._player = player
 		self._pieceOwner = pieceOwner if pieceOwner is not None else player
 		self._steps = steps
-		##debug##print(f'REPR of move in the __init__ : {repr(self)}')
 
 	@property
 	def ID(self) -> str:
@@ -53,8 +52,6 @@ class Move:
 		return f'Move(ID = {self._ID}, originSpot = {self._originSpot}, targetSpot = {self._targetSpot})'
 
 	def updateDescription(self) -> None:
-		##debug##print(f'REPR of move in the updateDescription : {repr(self)}')
-		##debug##print(f'Call to updateDescription for move of type {self._ID} with current description: {self._description}')
 		if self._ID == 'OUT':
 			self._description = f'Play {self._card} to take a piece out and place it in {self._originSpot}.'
 		elif self._ID == 'MOVE':
@@ -75,10 +72,7 @@ class Move:
 			self._description = f'Play {self._card} to switch piece in spot {self._originSpot} with piece of player {self._targetSpot.occupant.name} in spot {self._targetSpot}.'
 		elif self._ID == 'SEVEN':
 			self._description = f'Play {self._card} to do a "seven split" : move any of your pieces as you wish a total of 7 times, kicking any piece you meet as you go.'
-		##debug##print(f'End of updateDescription, new description: {self._description}')
 		elif self._ID == 'FIVE':
 			self._description = f'Play {self._card} to do force an opponent to move 5 spots forward.'
 		elif self._ID == 'HOP':
 			self._description = f'Seven-hop the piece from {self._originSpot} to {self._targetSpot}.'
-			##todo: if the target spot is occupied by a player, the piece is kicked ou
-		## todo: other special moves: 7-teleport (landing exactly on a spot #7 allows the player, if he/she wants to teleport to the next 7)

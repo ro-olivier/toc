@@ -189,6 +189,10 @@ function buildWebSocketUrl(gameId, playerName) {
   );
 }
 
+function getResumeTokenStorageKey(gameId, playerName) {
+  return `toc.resumeToken.${encodeURIComponent(gameId)}.${encodeURIComponent(playerName)}`;
+}
+
 ////// Input-Output / WebSocket handling //////
 const backendMessageElements = new Map();
 const activityMessages = [];
@@ -316,8 +320,15 @@ async function connectToGame(gameId, name, rejoin = false) {
     return;
   }
 
-  window.localStorage.setItem("session_player_name", name);
-  window.localStorage.setItem("session_game_ID", gameId);
+  const resumeTokenStorageKey = getResumeTokenStorageKey(gameId, name);
+  const resumeToken = window.localStorage.getItem(resumeTokenStorageKey);
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({
+      type: "identify",
+      resumeToken: resumeToken,
+    }));
+  };
 
   ws.onmessage = (event) => {
     let data;
@@ -325,13 +336,22 @@ async function connectToGame(gameId, name, rejoin = false) {
       data = JSON.parse(event.data);
     } catch (err) {
       // Fallback for plaintext messages
-      log(`> ${event.data}`);
+      const loggableData = data.type === "ready" ? {...data, resumeToken: "[redacted]"} : data;
+      console.log("[WebSocket] Received:", loggableData);
       return;
     }
     console.log('[ws.oneMessage top handler] Received the following message from back-end:' + JSON.stringify(data))
 
     switch (data.type) {
       case 'ready':
+
+        if (typeof data.resumeToken === "string" && data.resumeToken !== "") {
+          window.localStorage.setItem(resumeTokenStorageKey, data.resumeToken);
+        }
+
+        window.localStorage.setItem("session_player_name", name);
+        window.localStorage.setItem("session_game_ID", gameId);
+
         log({
           messageKey: "connection.connected_as",
           parameters: {gameId, player: name},
@@ -549,6 +569,9 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
       case 4004:
         showError(tocI18n.t("errors.game_full"));
+        break;
+      case 4005:
+        showError(tocI18n.t("errors.invalid_resume_token"));
         break;
       case 1006:
         showError(tocI18n.t("errors.server_unreachable"));

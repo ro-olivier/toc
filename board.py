@@ -5,8 +5,10 @@ from move import Move
 from spot import Spot, House
 from cards import Card
 from rules import FiveBehaviour, GameRules, MONTSURVENT_RULES
-
 from params import *
+import logging
+
+logger = logging.getLogger("toc.board")
 
 
 class Board:
@@ -28,7 +30,7 @@ class Board:
 			for i in range(SPOTS_PER_HOUSE):
 				self._houses.append(House(color, i))
 
-		print(f'Created the board with the following ordered colors: {colors}')
+		logger.info("Created the board with the ordered colors", extra={"colors": colors})
 
 	@property
 	def rules(self) -> GameRules:
@@ -240,7 +242,6 @@ class Board:
 		move.targetSpot.setOccupant(move.pieceOwner)
 
 	def isMoveValid(self, move : Move) -> bool:
-		##debug##print(f'call isMoveValid with move = {move.ID}, originSpot = {move.originSpot}, targetSpot = {move.targetSpot}')
 		result = True
 		
 		landingMoveTypes = ("OUT", "MOVE", "BACK", "FIVE", "HOP", "ENTER")

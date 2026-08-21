@@ -15,3 +15,4 @@ MOVE_DESCRIPTION = {
 	'FIVE': f'Move an opponent\'s piece 5 times forward.',
 	'HOP': 'Hop from one position numbered 7 to the next.',
 	}
+IDENTIFY_TIMEOUT_SECONDS = 5

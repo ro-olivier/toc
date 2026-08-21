@@ -249,6 +249,7 @@
         unknown_creation_fields: "Unknown game creation fields: {fields}",
         invalid_game_configuration: "The selected game configuration is invalid.",
         unknown_message_type: "Unknown message type: {messageType}.",
+        invalid_resume_token: "This browser does not have valid credentials for that player.",
       },
     },
 
@@ -501,6 +502,7 @@
         unknown_creation_fields: "Champs de création de partie inconnus : {fields}",
         invalid_game_configuration: "La configuration de partie sélectionnée est invalide.",
         unknown_message_type: "Type de message inconnu : {messageType}.",
+        invalid_resume_token: "Ce navigateur ne possède pas d’identifiants valides pour ce joueur.",
       },
     },
   };

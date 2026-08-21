@@ -95,10 +95,21 @@ def test_real_uvicorn_http_and_websocket_round_trip(liveServer):
 		close_timeout=2,
 		proxy=None,
 	) as websocket:
+
+		websocket.send(json.dumps({
+			"type": "identify",
+			"resumeToken": None,
+		}))
+
 		ready = json.loads(websocket.recv(timeout=2))
+
 		lobbyState = json.loads(websocket.recv(timeout=2))
 
-		assert ready == {"type": "ready"}
+		assert ready["type"] == "ready"
+		assert ready["protocolVersion"] == 2
+		assert ready["sessionId"]
+		assert ready["playerId"]
+		assert ready["resumeToken"]
 
 		assert lobbyState["type"] == "lobby-state"
 		assert lobbyState["gameId"] == gameId

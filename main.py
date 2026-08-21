@@ -13,7 +13,14 @@ from player import Player
 from params import *
 from rules import *
 from messages import MESSAGE_KEYS, build_message
-from identity import createJoinCode, createSessionId
+from identity import createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches
+from versions import WEBSOCKET_PROTOCOL_VERSION
+from persistent_state import SessionMetadataState
+from clock import Clock, SYSTEM_CLOCK
+from app_logging import configureApplicationLogging
+
+configureApplicationLogging()
+logger = logging.getLogger("toc.main")
 
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
@@ -46,15 +53,15 @@ class PlayerInputRouter:
 
 	def register(self, player_name: str):
 		if player_name in self.input_queues:
-			print(f'[Router] Attempted to re-registered a user with name {player_name}!')
+			logger.info("Attempted to re-registered a user with same name", extra={"routerId": player_name})
 			raise DuplicateNameError
 		else:
-			print(f'[Router] Registered user {player_name}')
+			logger.info("Player registered with router", extra={"routerId": player_name})
 			self.input_queues[player_name] = asyncio.Queue()
 			self.output_queues[player_name] = asyncio.Queue()
 
 	def registerAgain(self, player_name: str):
-		print(f"[Router] Reregistering user {player_name}")
+		logger.info("Player re-registered with router", extra={"routerId": player_name})
 		queues = self.recycleBin.pop(player_name)
 		self.input_queues[player_name] = queues["in"]
 		self.output_queues[player_name] = queues["out"]
@@ -63,19 +70,20 @@ class PlayerInputRouter:
 		if player_name not in self.input_queues:
 			return
 
-		print(f"[Router] Unregistered user {player_name}")
+		logger.info("Player unregistered from router", extra={"routerId": player_name})
 		self.recycleBin[player_name] = {
 			"in": self.input_queues.pop(player_name),
 			"out": self.output_queues.pop(player_name),
 		}
 
 	async def add_input(self, player_name: str, message: str):
-		print(f"[Router] add_input called for {player_name}: {message}")
+		messageType = message.get("type") if isinstance(message, dict) else type(message).__name__
+		logger.debug("Player input queued", extra={"routerId": player_name, "messageType": messageType})
 		queue = self.input_queues.get(player_name)
 		if queue:
 			await queue.put(message)
 		else:
-			print(f"[Router] No input queue found for {player_name}")
+			logger.warning("No input queue found", extra={"routerId": player_name})
 
 	async def wait_for_input(self, player_name: str):
 		while True:
@@ -90,7 +98,7 @@ class PlayerInputRouter:
 			if requestId is None or requestId == pendingPrompt.get("requestId"):
 				return msg
 
-			print(f"[Router] Ignored stale input from {player_name}: {msg}")
+			logger.info("Ignored stale player input", extra={"routerId": player_name, "messageType": msg.get("type")})
 
 	async def send_output(self, player_name: str, message: dict):
 		if isinstance(message, dict) and message.get("type") in self.interactiveMessageTypes:
@@ -101,13 +109,14 @@ class PlayerInputRouter:
 
 			self.pendingPrompts[player_name] = message.copy()
 
-		print(f"[Router] send_output called for {player_name}: {message}")
+		messageType = message.get("type") if isinstance(message, dict) else type(message).__name__
+		logger.debug("Player output queued", extra={"routerId": player_name, "messageType": messageType})
 
 		queue = self.output_queues.get(player_name)
 		if queue:
 			await queue.put(message)
 		else:
-			print(f"[Router] No output queue found for {player_name}")
+			logger.warning("No output queue found", extra={"routerId": player_name})
 
 	async def get_output(self, player_name: str):
 		return await self.output_queues[player_name].get()
@@ -122,8 +131,9 @@ class PlayerInputRouter:
 
 
 class ConnectionManager:
-	def __init__(self):
+	def __init__(self, clock: Clock = SYSTEM_CLOCK):
 		self.games: Dict[str, GameSession] = {}
+		self._clock = clock
 
 	def _generate_game_id(self) -> str:
 		while True:
@@ -134,14 +144,14 @@ class ConnectionManager:
 
 	def create_game(self, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None) -> str:
 		game_id = self._generate_game_id()
-		self.games[game_id] = GameSession(game_id, msg_router, rules, rulesetName)
+		self.games[game_id] = GameSession(game_id, msg_router, rules, rulesetName, self._clock)
 		return game_id
 
 	def get_game(self, game_id: str):
 		return self.games.get(game_id)
 
 class GameSession:
-	def __init__(self, game_id: str, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None):
+	def __init__(self, game_id: str, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None, clock: Clock = SYSTEM_CLOCK):
 		self.id = game_id
 		self._sessionId = createSessionId()
 		self._rules = rules
@@ -153,6 +163,13 @@ class GameSession:
 		self.router = msg_router
 		self.order: List = []
 		self.game = None
+		self._clock = clock
+		self._createdAt = clock.utcNow()
+		self._createdMonotonic = clock.monotonic()
+		self._startedAt = None
+		self._endedAt = None
+		self._lastActivityAt = self._createdAt
+		self._lastActivityMonotonic = self._createdMonotonic
 
 	@property
 	def sessionId(self) -> str:
@@ -170,8 +187,54 @@ class GameSession:
 	def rulesetName(self) -> str:
 		return self._rulesetName
 
+	@property
+	def createdAt(self):
+		return self._createdAt
+
+	@property
+	def startedAt(self):
+		return self._startedAt
+
+	@property
+	def endedAt(self):
+		return self._endedAt
+
+	@property
+	def lastActivityAt(self):
+		return self._lastActivityAt
+
+	def lobbyAgeSeconds(self) -> float:
+		return self._clock.monotonic() - self._createdMonotonic
+
+	def inactivitySeconds(self) -> float:
+		return self._clock.monotonic() - self._lastActivityMonotonic
+
+	def recordActivity(self) -> None:
+		self._lastActivityAt = self._clock.utcNow()
+		self._lastActivityMonotonic = self._clock.monotonic()
+
+	def markStarted(self) -> None:
+		if self._startedAt is not None:
+			return
+
+		self._startedAt = self._clock.utcNow()
+		self._lastActivityAt = self._startedAt
+		self._lastActivityMonotonic = self._clock.monotonic()
+		self.started = True
+
+	def markEnded(self) -> None:
+		if self._endedAt is not None:
+			return
+
+		self._endedAt = self._clock.utcNow()
+		self._lastActivityAt = self._endedAt
+		self._lastActivityMonotonic = self._clock.monotonic()
+
 	def ruleset_state(self) -> dict:
 		return {"preset": self._rulesetName, "values": self._rules.to_dict()}
+
+	def metadataState(self) -> SessionMetadataState:
+		return SessionMetadataState.fromGameSession(self)
 
 	def fullUI(self) -> dict:
 		if self.game:
@@ -303,7 +366,7 @@ class GameSession:
 			if not all(player.get("configured", False) for player in self.players.values()):
 				return False
 
-			self.started = True
+			self.markStarted()
 
 		await self.broadcast_lobby_state()
 		self.gameTask = asyncio.create_task(self.game_loop())
@@ -407,7 +470,6 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
 	player_id = gameSession.getFullPlayerId(game_id, player_name)
 	existingPlayer = gameSession.players.get(player_id)
-	newPlayer = None
 
 	if existingPlayer is not None and existingPlayer["active"]:
 		await websocket.close(code=4002)
@@ -418,14 +480,61 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 		return
 
 	try:
+		identityData = await asyncio.wait_for(websocket.receive_text(), timeout=IDENTIFY_TIMEOUT_SECONDS)
+	except TimeoutError:
+		await websocket.close(code=4005, reason="Connection identification timed out")
+		return
+	except WebSocketDisconnect:
+		return
+
+	try:
+		identityMessage = json.loads(identityData)
+	except json.JSONDecodeError:
+		await websocket.close(code=4005, reason="Invalid connection identity")
+		return
+
+	if not isinstance(identityMessage, dict) or identityMessage.get("type") != "identify":
+		await websocket.close(code=4005, reason="Invalid connection identity")
+		return
+
+	resumeToken = identityMessage.get("resumeToken")
+
+	if resumeToken is not None and not isinstance(resumeToken, str):
+		await websocket.close(code=4005, reason="Invalid connection identity")
+		return
+
+	if existingPlayer is not None and not resumeTokenMatches(resumeToken, existingPlayer["resumeTokenHash"]):
+		await websocket.close(code=4005, reason="Invalid resume token")
+		return
+
+	try:
 		if existingPlayer is None:
+			persistentPlayerId = createPlayerId()
+			resumeToken = createResumeToken()
+
 			router.register(player_id)
+
 			newPlayer = Player(player_id, player_name, "", "", "", gameSession, router)
-			gameSession.players[player_id] = {"name": player_name, "id": player_id, "websocket": websocket, "team": "", "color": "", "object": newPlayer, "active": True, "configured": False}
+
+			gameSession.players[player_id] = {
+				"name": player_name,
+				"id": player_id,
+				"playerId": persistentPlayerId,
+				"resumeTokenHash": hashResumeToken(resumeToken),
+				"websocket": websocket,
+				"team": "",
+				"color": "",
+				"object": newPlayer,
+				"active": True,
+				"configured": False,
+			}
 		else:
+			persistentPlayerId = existingPlayer["playerId"]
+
 			router.registerAgain(player_id)
 			existingPlayer["websocket"] = websocket
 			existingPlayer["active"] = True
+
 	except (DuplicateNameError, KeyError):
 		await websocket.close(code=4003)
 		return
@@ -489,7 +598,13 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 		await gameSession.start_game_if_ready()
 
 	try:
-		await websocket.send_json({"type": "ready"})
+		await websocket.send_json({
+			"type": "ready",
+			"protocolVersion": WEBSOCKET_PROTOCOL_VERSION,
+			"sessionId": gameSession.sessionId,
+			"playerId": persistentPlayerId,
+			"resumeToken": resumeToken,
+		})
 
 		async with asyncio.TaskGroup() as taskGroup:
 			taskGroup.create_task(input_loop())
@@ -501,7 +616,16 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
 	except* Exception as errors:
 		for error in errors.exceptions:
-			logging.error("WebSocket connection failed for %s", player_id, exc_info=(type(error), error, error.__traceback__))
+			logger.error(
+				"WebSocket connection failed",
+				exc_info=(type(error), error, error.__traceback__),
+				extra={
+					"sessionId": gameSession.sessionId,
+					"joinCode": gameSession.joinCode,
+					"routerId": player_id,
+					"playerName": player_name,
+				},
+			)
 
 	finally:
 		playerData = gameSession.players.get(player_id)

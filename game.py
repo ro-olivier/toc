@@ -11,6 +11,9 @@ from player import Player
 from move import Move
 from rules import *
 from messages import build_message
+import logging
+
+logger = logging.getLogger("toc.game")
 
 
 class Game:

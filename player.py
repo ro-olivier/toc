@@ -5,6 +5,9 @@ import random
 from cards import Card
 from hand import Hand
 from messages import build_message
+import logging
+
+logger = logging.getLogger("toc.player")
 
 import json
 
@@ -25,19 +28,14 @@ class Player:
 		self.board = None
 
 	def __str__(self) -> str:
-		s = f'{self._name} in team {self._team} playing {self._color}'
-		# Commenting out this bit since we probably don't want to keep broadcasting this to all players... 
-		# Not sure this will be useful again at some point, I'm keeping it just in case
-		#if self._hand:
-		#	s+= f' holding the following cards: {self._hand.allCardsString()}'
-		return s
+		return f'{self._name} in team {self._team} playing {self._color}'
 
 	async def send_message_to_user(self, message: str) -> None:
 		await self._router.send_output(self._id, message)
 
 	async def get_input_from_prompt(self, messageKey: str, fallback: str, parameters: dict = None) -> str:
 		await self.send_message_to_user(build_message("query", messageKey, fallback, parameters))
-		print(f"[Player] Waiting for input from {self._name}...")
+		logger.info("Waiting for input from player", extra={"player_name": self._name})
 		return await self._router.wait_for_input(self._id)
 		
 	@property
@@ -109,24 +107,21 @@ class Player:
 
 		chosenCard = Card(cardChoice['suit'], cardChoice['value'])
 		self._router.clear_pending_prompt(self._id)
-		print(f'Card chosen by {self._name}: {chosenCard}')
+		logger.debug('Card chosen by player', extra={"chosenCard": str(chosenCard), "playerName": self._name})
 		return chosenCard
 
 	async def getMoveChoiceFromPlayer(self, options : list[Move]) -> Move:
-		##debug##print(f'{[repr(move) for move in options]}')
 
 		for move in options:
 			move.updateDescription()
 
 		cardChoice = await self.getCardChoiceFromPlayer()
-		print(f'[getMoveChoiceFromPlayer] selected card: {str(cardChoice)} - {id(cardChoice)} - {type(cardChoice)}')
+		logger.debug('selected card', extra={"chosenCard": str(cardChoice)})
 		moveChoice = None
 		## TODO: investigate infinite loop when a player played a not-speacil card with only a 7 remaining, which seem to have triggered an infinite loop (which I didn't screenshot unfortunately...)
 		while not moveChoice:
 			possibleMoves = [move for move in options if move.card == cardChoice]
-			print('[getMoveChoiceFromPlayer] Possible moves:')
-			for m in possibleMoves:
-				print(f'[getMoveChoiceFromPlayer] {str(m)} ---- origin: {m.originSpot} {id(m.originSpot)}, target: {m.targetSpot} {id(m.targetSpot)}, card: {m.card} {id(m.card)}')
+			logger.debug('Possible moves with this card:', extra={"possibleMoves": [f'{str(m)} ---- origin: {m.originSpot} {id(m.originSpot)}' for m in possibleMoves]})
 			if len(possibleMoves) == 0:
 				await self.send_message_to_user(build_message("reject-card-selection", "prompts.card_unplayable", "You cannot play that card right now!"))
 				cardChoice = await self.getCardChoiceFromPlayer()
@@ -143,11 +138,10 @@ class Player:
 						cardChoice = await self.getCardChoiceFromPlayer()
 						continue
 
-				print(f'[getMoveChoiceFromPlayer] selected originSpot: {str(origin)} - {id(origin)} - {type(origin)}')
+				logger.debug('originSpot selected', extra={"originSpot": str(origin)})
 
 				possibleTargets = list(set([move.targetSpot for move in possibleMoves if move.originSpot == origin and move.card == cardChoice]))
 
-				print([str(move.targetSpot) for move in possibleMoves if move.originSpot == origin and move.card == cardChoice])
 				if len(possibleTargets) == 1: # There could be only one possible target for several moves from different origins (for example you have two pieces seperated by 4 spots and you have only a 4 and an 8 to play), and se here we may skip asking the player to choose the target
 					target = possibleTargets[0]
 				else:
@@ -156,9 +150,9 @@ class Player:
 						cardChoice = await self.getCardChoiceFromPlayer()
 						continue
 
-				print(f'[getMoveChoiceFromPlayer] selected targetSpot: {str(target)} - {id(target)} - {type(target)}')
+				logger.debug('targetSpot selected', extra={"targetSpot": str(target)})
 				result = [move for move in possibleMoves if move.originSpot == origin and move.card == cardChoice and move.targetSpot == target]
-				print([str(r) for r in result])
+				#TODO should we test here if there is only one resulting move? I don't see why there should not be but if not, we're screwed
 				moveChoice = result[0]
 			
 		return moveChoice
@@ -237,7 +231,7 @@ class Player:
 					break
 
 		self._router.clear_pending_prompt(self._id)
-		print(f'Card chosen by {self._name} for card exchange: {chosenCard}')
+		logger.debug('Card chosen by player for card exchange', extra={'chosenCard': str(chosenCard), 'playerName': self._name})
 		return chosenCard
 
 	async def switchCard(self, card1, card2) -> None:
@@ -269,7 +263,7 @@ class Player:
 
 		while True:
 			await self.send_message_to_user(message)
-			print(f"[Player] Waiting for seven-hop choice from {self._name}...")
+			logger.debug(f"Waiting for seven-hop choice from player...", extra={"playerName": self._name})
 			choice = await self._router.wait_for_input(self._id)
 
 			if isinstance(choice, dict) and choice.get("type") == "seven_hop_choice" and isinstance(choice.get("result"), bool):
