@@ -4,8 +4,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from typing import Dict
 import asyncio
-import string
-import random
 import json
 import logging
 import uuid
@@ -15,6 +13,7 @@ from player import Player
 from params import *
 from rules import *
 from messages import MESSAGE_KEYS, build_message
+from identity import createJoinCode, createSessionId
 
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
@@ -126,12 +125,12 @@ class ConnectionManager:
 	def __init__(self):
 		self.games: Dict[str, GameSession] = {}
 
-	def _generate_game_id(self, length=4):
-		charset = string.ascii_uppercase + string.digits
+	def _generate_game_id(self) -> str:
 		while True:
-			game_id = ''.join(random.choices(charset, k=length))
-			if game_id not in self.games:
-				return game_id
+			gameId = createJoinCode()
+
+			if gameId not in self.games:
+				return gameId
 
 	def create_game(self, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None) -> str:
 		game_id = self._generate_game_id()
@@ -144,6 +143,7 @@ class ConnectionManager:
 class GameSession:
 	def __init__(self, game_id: str, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None):
 		self.id = game_id
+		self._sessionId = createSessionId()
 		self._rules = rules
 		self._rulesetName = rulesetName if rulesetName is not None else get_matching_preset_name(rules)
 		self.players: Dict = {}
@@ -154,6 +154,14 @@ class GameSession:
 		self.order: List = []
 		self.game = None
 
+	@property
+	def sessionId(self) -> str:
+		return self._sessionId
+
+	@property
+	def joinCode(self) -> str:
+		return self.id
+		
 	@property
 	def rules(self) -> GameRules:
 		return self._rules

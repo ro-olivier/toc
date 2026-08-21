@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from fastapi import HTTPException
+from uuid import UUID
 
 from main import ConnectionManager, GameSession, PlayerInputRouter, create_game as create_game_endpoint, get_rule_presets, manager
 from rules import GameRules, MONTSURVENT_RULES
@@ -273,3 +274,10 @@ def test_create_game_endpoint_returns_translatable_validation_error():
 	assert detail["parameters"] == {}
 	assert detail["fallback"] == "Unknown rule preset: unknown"
 	assert "msg" not in detail
+
+def test_game_session_has_separate_join_code_and_session_id():
+	session = GameSession("ABCDEF", PlayerInputRouter())
+
+	assert session.joinCode == "ABCDEF"
+	assert session.id == "ABCDEF"
+	assert UUID(hex=session.sessionId).hex == session.sessionId
