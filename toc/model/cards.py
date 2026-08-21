@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from hand import Hand
-from params import *
+from toc.model.hand import Hand
+from toc.model.params import *
 
 import random
 

@@ -4,7 +4,7 @@ import pytest
 
 from datetime import datetime, timedelta, timezone
 
-from audit import GameEvent, GameEventLog, GameEventType
+from toc.model.audit import GameEvent, GameEventLog, GameEventType
 from main import GameSession, PlayerInputRouter
 
 

@@ -8,17 +8,17 @@ import json
 import logging
 import uuid
 
-from game import Game
-from player import Player
-from params import *
-from rules import *
-from messages import MESSAGE_KEYS, build_message
-from identity import createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches
-from versions import WEBSOCKET_PROTOCOL_VERSION
-from persistent_state import SessionMetadataState
-from clock import Clock, SYSTEM_CLOCK
-from app_logging import configureApplicationLogging
-from audit import GameEvent, GameEventLog, GameEventType
+from toc.model.game import Game
+from toc.model.player import Player
+from toc.model.params import *
+from toc.model.rules import *
+from toc.infrastructure.messages import MESSAGE_KEYS, build_message
+from toc.infrastructure.identity import createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches
+from toc.infrastructure.versions import WEBSOCKET_PROTOCOL_VERSION
+from toc.persistence.persistent_state import SessionMetadataState
+from toc.infrastructure.clock import Clock, SYSTEM_CLOCK
+from toc.infrastructure.app_logging import configureApplicationLogging
+from toc.model.audit import GameEvent, GameEventLog, GameEventType
 
 configureApplicationLogging()
 logger = logging.getLogger("toc.main")

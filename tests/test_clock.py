@@ -3,7 +3,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from main import ConnectionManager, GameSession, PlayerInputRouter
-from persistent_state import SessionMetadataState
+from toc.persistence.persistent_state import SessionMetadataState
 
 
 class FakeClock:

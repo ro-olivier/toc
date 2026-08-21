@@ -1,9 +1,9 @@
-from cards import Card
-from game import Game
-from move import Move
-from params import COLORS
-from player import Player
-from rules import FiveHopDecider, GameRules, MONTSURVENT_RULES, Rotation, SevenHopping, ShuffleMode
+from toc.model.cards import Card
+from toc.model.game import Game
+from toc.model.move import Move
+from toc.model.params import COLORS
+from toc.model.player import Player
+from toc.model.rules import FiveHopDecider, GameRules, MONTSURVENT_RULES, Rotation, SevenHopping, ShuffleMode
 	
 import asyncio
 import pytest

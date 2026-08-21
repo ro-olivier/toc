@@ -4,9 +4,9 @@ from fastapi import HTTPException
 from uuid import UUID
 
 from main import ConnectionManager, GameSession, PlayerInputRouter, create_game as create_game_endpoint, get_rule_presets, manager
-from rules import GameRules, MONTSURVENT_RULES
-from player import Player
-from rules import GameRules
+from toc.model.rules import GameRules, MONTSURVENT_RULES
+from toc.model.player import Player
+from toc.model.rules import GameRules
 
 
 

@@ -1,7 +1,7 @@
 import json
 import logging
 
-from app_logging import TocJsonFormatter
+from toc.infrastructure.app_logging import TocJsonFormatter
 
 
 def test_json_formatter_includes_structured_context():

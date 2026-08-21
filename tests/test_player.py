@@ -1,10 +1,10 @@
 import asyncio
 
-from board import Board
-from cards import Card
-from move import Move
-from params import COLORS
-from player import Player
+from toc.model.board import Board
+from toc.model.cards import Card
+from toc.model.move import Move
+from toc.model.params import COLORS
+from toc.model.player import Player
 
 
 class FakeRouter:

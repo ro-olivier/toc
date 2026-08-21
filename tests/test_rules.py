@@ -3,7 +3,7 @@ from dataclasses import FrozenInstanceError
 import json
 import pytest
 
-from rules import *
+from toc.model.rules import *
 
 
 def test_montsurvent_preset_uses_current_rules():

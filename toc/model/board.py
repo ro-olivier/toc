@@ -1,11 +1,11 @@
 from __future__ import annotations
 from typing import Optional
 
-from move import Move
-from spot import Spot, House
-from cards import Card
-from rules import FiveBehaviour, GameRules, MONTSURVENT_RULES
-from params import *
+from toc.model.move import Move
+from toc.model.spot import Spot, House
+from toc.model.cards import Card
+from toc.model.rules import FiveBehaviour, GameRules, MONTSURVENT_RULES
+from toc.model.params import *
 import logging
 
 logger = logging.getLogger("toc.board")

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import random
 
-from cards import Card
-from hand import Hand
-from messages import build_message
+from toc.model.cards import Card
+from toc.model.hand import Hand
+from toc.infrastructure.messages import build_message
 import logging
 
 logger = logging.getLogger("toc.player")

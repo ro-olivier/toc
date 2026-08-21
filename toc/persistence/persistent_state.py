@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from uuid import UUID
 from datetime import datetime, timezone
 
-from rules import GameRules
-from versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, RULES_FORMAT_VERSION
+from toc.model.rules import GameRules
+from toc.infrastructure.versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, RULES_FORMAT_VERSION
 
 
 @dataclass(frozen=True, slots=True)

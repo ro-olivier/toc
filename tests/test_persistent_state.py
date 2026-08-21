@@ -2,10 +2,10 @@ import json
 
 import pytest
 
-from identity import createPlayerId, createResumeToken, hashResumeToken
+from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken
 from main import GameSession, PlayerInputRouter
-from persistent_state import SessionMetadataState
-from versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, RULES_FORMAT_VERSION
+from toc.persistence.persistent_state import SessionMetadataState
+from toc.infrastructure.versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, RULES_FORMAT_VERSION
 
 
 def makeSessionWithPlayer():

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from cards import Card
-from player import Player
+from toc.model.cards import Card
+from toc.model.player import Player
 
-from params import *
+from toc.model.params import *
 
 
 class Move:

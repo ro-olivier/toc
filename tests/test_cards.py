@@ -1,4 +1,4 @@
-from cards import Card, Deck
+from toc.model.cards import Card, Deck
 
 
 def test_deck_contains_52_cards():
@@ -50,7 +50,7 @@ def test_recycled_discard_pile_can_be_shuffled(monkeypatch):
         deck.discardCard(card)
 
     shuffleCalls = []
-    monkeypatch.setattr("cards.random.shuffle", lambda cards: shuffleCalls.append(cards.copy()))
+    monkeypatch.setattr("toc.model.cards.random.shuffle", lambda cards: shuffleCalls.append(cards.copy()))
 
     deck.recycleDiscardPile(shuffle=True)
 

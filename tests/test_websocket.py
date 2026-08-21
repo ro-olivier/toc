@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from main import app, manager, router
-from audit import GameEventType
+from toc.model.audit import GameEventType
+from toc.infrastructure.identity import resumeTokenMatches
 
 
 PLAYER_NAMES = ["Alice", "Bob", "Carol", "Diana"]
@@ -685,7 +686,6 @@ def test_game_loop_failure_is_broadcast_to_every_player(client, gameId, monkeypa
 			assert "msg" not in error
 
 def test_new_websocket_identity_is_stored_as_hash(client, gameId):
-	from identity import resumeTokenMatches
 
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
 		ready = identifyWebSocket(websocket)

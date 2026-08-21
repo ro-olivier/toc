@@ -3,14 +3,14 @@ from __future__ import annotations
 import asyncio
 from typing import Optional, Tuple
 
-from board import Board
-from cards import Deck, Card
-from hand import Hand
-from params import *
-from player import Player
-from move import Move
-from rules import *
-from messages import build_message
+from toc.model.board import Board
+from toc.model.cards import Deck, Card
+from toc.model.hand import Hand
+from toc.model.params import *
+from toc.model.player import Player
+from toc.model.move import Move
+from toc.model.rules import *
+from toc.infrastructure.messages import build_message
 import logging
 
 logger = logging.getLogger("toc.game")

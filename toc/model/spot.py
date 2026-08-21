@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Optional
 
-from player import Player
+from toc.model.player import Player
 
 
 class Spot:

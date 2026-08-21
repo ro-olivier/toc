@@ -2,7 +2,7 @@ import pytest
 
 from uuid import UUID
 
-from identity import JOIN_CODE_ALPHABET, JOIN_CODE_LENGTH, createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches
+from toc.infrastructure.identity import JOIN_CODE_ALPHABET, JOIN_CODE_LENGTH, createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches
 
 
 def test_join_code_uses_unambiguous_alphabet():

@@ -2,7 +2,7 @@ import pytest
 import ast
 from pathlib import Path
 
-from messages import MESSAGE_KEYS, build_message
+from toc.infrastructure.messages import MESSAGE_KEYS, build_message
 
 
 
@@ -38,8 +38,8 @@ def test_every_backend_message_key_is_registered():
 	messageKeyPrefixes = ("connection.", "errors.", "gameplay.", "lobby.errors.", "prompts.")
 	sourceKeys = set()
 
-	for filename in ["main.py", "game.py", "player.py"]:
-		tree = ast.parse((projectRoot / filename).read_text(encoding="utf-8"))
+	for sourcePath in ["main.py", "toc/model/game.py", "toc/model/player.py"]:
+		tree = ast.parse((projectRoot / sourcePath).read_text(encoding="utf-8"))
 
 		for node in ast.walk(tree):
 			if not isinstance(node, ast.Constant) or not isinstance(node.value, str):

@@ -4,8 +4,8 @@ import stat
 
 import pytest
 
-from archive_store import ArchiveCategory, ArchiveCorruptionError, CompressedJsonStore
-from identity import createSessionId
+from toc.persistence.archive_store import ArchiveCategory, ArchiveCorruptionError, CompressedJsonStore
+from toc.infrastructure.identity import createSessionId
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ def test_failed_replacement_preserves_previous_archive(archiveStore, monkeypatch
 	def failReplacement(source, destination):
 		raise OSError("Deliberate replacement failure")
 
-	monkeypatch.setattr("archive_store.os.replace", failReplacement)
+	monkeypatch.setattr("toc.persistence.archive_store.os.replace", failReplacement)
 
 	with pytest.raises(OSError, match="Deliberate replacement failure"):
 		archiveStore.write(ArchiveCategory.ACTIVE, sessionId, {"version": 2})

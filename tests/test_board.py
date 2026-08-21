@@ -1,11 +1,11 @@
 import pytest
 
-from board import Board
-from cards import Card
-from params import COLORS
-from player import Player
-from move import Move
-from rules import FiveBehaviour, GameRules
+from toc.model.board import Board
+from toc.model.cards import Card
+from toc.model.params import COLORS
+from toc.model.player import Player
+from toc.model.move import Move
+from toc.model.rules import FiveBehaviour, GameRules
 
 
 def make_player(name="Alice", color="red", team="0"):
