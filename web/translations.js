@@ -248,6 +248,7 @@
         creation_data_object: "Game creation data must be an object.",
         unknown_creation_fields: "Unknown game creation fields: {fields}",
         invalid_game_configuration: "The selected game configuration is invalid.",
+        unknown_message_type: "Unknown message type: {messageType}.",
       },
     },
 
@@ -499,6 +500,7 @@
         creation_data_object: "Les données de création de partie doivent être un objet.",
         unknown_creation_fields: "Champs de création de partie inconnus : {fields}",
         invalid_game_configuration: "La configuration de partie sélectionnée est invalide.",
+        unknown_message_type: "Type de message inconnu : {messageType}.",
       },
     },
   };

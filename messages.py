@@ -36,6 +36,7 @@ MESSAGE_KEYS = frozenset({
 	"prompts.discard_card",
 	"prompts.exchange_card",
 	"prompts.seven_hop",
+	"errors.unknown_message_type",
 })
 
 def build_message(messageType: str, messageKey: str, fallback: str, parameters: dict | None = None, **payload) -> dict:

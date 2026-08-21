@@ -18,6 +18,15 @@ from messages import MESSAGE_KEYS, build_message
 
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
+CLIENT_MESSAGE_TYPES = frozenset({
+	"configure-player",
+	"debug",
+	"text_input",
+	"card_selection",
+	"spot_selection",
+	"seven_hop_choice",
+	"cancel_move_selection",
+})
 
 app.mount(
 	"/toc/play",
@@ -425,6 +434,21 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
 			if not isinstance(message, dict):
 				await router.send_output(player_id, build_message("error", "errors.invalid_message_format", "The server received an invalid message format."))
+				continue
+
+			messageType = message.get("type")
+
+			if not isinstance(messageType, str):
+				await router.send_output(player_id, build_message("error", "errors.invalid_message_format", "Invalid message format."))
+				continue
+
+			if messageType not in CLIENT_MESSAGE_TYPES:
+				await router.send_output(player_id, build_message(
+					"error",
+					"errors.unknown_message_type",
+					f"Unknown message type: {messageType}.",
+					{"messageType": messageType},
+				))
 				continue
 
 			await gameSession.handle_player_message(player_id, message)
