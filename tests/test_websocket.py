@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from main import app, manager, router
+from audit import GameEventType
 
 
 PLAYER_NAMES = ["Alice", "Bob", "Carol", "Diana"]
@@ -470,6 +471,9 @@ def test_four_configured_players_start_game_once(client, gameId, monkeypatch):
 			f"{gameId}-Carol",
 			f"{gameId}-Diana",
 		]
+		assert len(session.events) == 1
+		assert session.events[0].eventType is GameEventType.GAME_STARTED
+		assert session.events[0].elapsedSeconds == 0
 
 def test_started_game_broadcasts_disconnect_and_reconnect(client, gameId):
 	session = manager.games[gameId]

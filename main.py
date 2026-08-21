@@ -18,6 +18,7 @@ from versions import WEBSOCKET_PROTOCOL_VERSION
 from persistent_state import SessionMetadataState
 from clock import Clock, SYSTEM_CLOCK
 from app_logging import configureApplicationLogging
+from audit import GameEvent, GameEventLog, GameEventType
 
 configureApplicationLogging()
 logger = logging.getLogger("toc.main")
@@ -170,6 +171,8 @@ class GameSession:
 		self._endedAt = None
 		self._lastActivityAt = self._createdAt
 		self._lastActivityMonotonic = self._createdMonotonic
+		self._startedMonotonic = None
+		self._eventLog = GameEventLog(self.gameElapsedSeconds)
 
 	@property
 	def sessionId(self) -> str:
@@ -203,6 +206,21 @@ class GameSession:
 	def lastActivityAt(self):
 		return self._lastActivityAt
 
+	@property
+	def events(self) -> tuple[GameEvent, ...]:
+		return self._eventLog.events
+
+	def gameElapsedSeconds(self) -> int:
+		if self._startedMonotonic is None:
+			return 0
+
+		return max(0, int(self._clock.monotonic() - self._startedMonotonic))
+
+	def recordEvent(self, eventType: GameEventType, playerId: str = None, details: dict = None) -> GameEvent:
+		event = self._eventLog.record(eventType, playerId, details)
+		self.recordActivity()
+		return event
+
 	def lobbyAgeSeconds(self) -> float:
 		return self._clock.monotonic() - self._createdMonotonic
 
@@ -218,8 +236,9 @@ class GameSession:
 			return
 
 		self._startedAt = self._clock.utcNow()
+		self._startedMonotonic = self._clock.monotonic()
 		self._lastActivityAt = self._startedAt
-		self._lastActivityMonotonic = self._clock.monotonic()
+		self._lastActivityMonotonic = self._startedMonotonic
 		self.started = True
 
 	def markEnded(self) -> None:
@@ -367,6 +386,7 @@ class GameSession:
 				return False
 
 			self.markStarted()
+			self.recordEvent(GameEventType.GAME_STARTED)
 
 		await self.broadcast_lobby_state()
 		self.gameTask = asyncio.create_task(self.game_loop())
