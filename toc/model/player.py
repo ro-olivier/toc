@@ -269,3 +269,9 @@ class Player:
 			if isinstance(choice, dict) and choice.get("type") == "seven_hop_choice" and isinstance(choice.get("result"), bool):
 				self._router.clear_pending_prompt(self._id)
 				return choice["result"]
+
+	def restoreHand(self, cards: list[Card]) -> None:
+		self._hand = Hand(self, cards)
+
+	def resetPiecesOnTheBoard(self) -> None:
+		self._piecesOnTheBoard = 0

@@ -25,6 +25,24 @@ class Deck:
 	def discardPile(self) -> list[Card]:
 		return self._discardPile
 
+	@classmethod
+	def fromPiles(cls, drawPile: list[Card], discardPile: list[Card]) -> "Deck":
+		if type(drawPile) is not list or type(discardPile) is not list:
+			raise ValueError("Deck piles must be lists")
+
+		if not all(isinstance(card, Card) for card in drawPile + discardPile):
+			raise ValueError("Deck piles contain an invalid card")
+
+		deck = cls.__new__(cls)
+		deck._cards = list(drawPile)
+		deck._discardPile = list(discardPile)
+		deck._player = None
+
+		for card in deck._cards + deck._discardPile:
+			card._deck = deck
+
+		return deck
+
 
 	def drawCard(self) -> Card:
 		if not self._cards:

@@ -7,6 +7,7 @@ from main import ConnectionManager, GameSession, PlayerInputRouter, create_game 
 from toc.model.rules import GameRules, MONTSURVENT_RULES
 from toc.model.player import Player
 from toc.model.rules import GameRules
+from toc.model.game_phase import GamePhase
 
 
 
@@ -281,3 +282,12 @@ def test_game_session_has_separate_join_code_and_session_id():
 	assert session.joinCode == "ABCDEF"
 	assert session.id == "ABCDEF"
 	assert UUID(hex=session.sessionId).hex == session.sessionId
+
+def test_game_phase_change_preserves_current_deal_by_default():
+	session = GameSession("TEST", PlayerInputRouter())
+
+	session.setGamePhase(GamePhase.CARD_EXCHANGE, 1)
+	session.setGamePhase(GamePhase.TURN_START)
+
+	assert session.gameProgress.phase is GamePhase.TURN_START
+	assert session.gameProgress.dealIndex == 1

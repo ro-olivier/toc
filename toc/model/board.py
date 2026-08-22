@@ -44,6 +44,14 @@ class Board:
 	def boardSize(self) -> int:
 		return self._boardSize
 
+	@property
+	def colors(self) -> tuple[str, ...]:
+		return tuple(self._colors)
+
+	@property
+	def positions(self) -> tuple[Spot, ...]:
+		return tuple(self._spots + self._houses)
+
 	def __str__(self) -> str:
 		s = ''
 		for spot in self._spots:

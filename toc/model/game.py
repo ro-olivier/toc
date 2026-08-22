@@ -6,10 +6,12 @@ from typing import Optional, Tuple
 from toc.model.board import Board
 from toc.model.cards import Deck, Card
 from toc.model.hand import Hand
+from toc.model.spot import Spot
 from toc.model.params import *
 from toc.model.player import Player
 from toc.model.move import Move
 from toc.model.rules import *
+from toc.model.game_phase import GamePhase
 from toc.infrastructure.messages import build_message
 import logging
 
@@ -75,6 +77,18 @@ class Game:
 	@property
 	def activePlayer(self) -> Player:
 		return self._activePlayer
+
+	@property
+	def handsFinished(self) -> int:
+		return self._handsFinished
+
+	@property
+	def activePlayerIndex(self) -> int:
+		return self._activePlayerIndex
+
+	@property
+	def dealerRotationCount(self) -> int:
+		return self._dealerRotationCount
 
 	def getTeammate(self, player) -> Optional[Player]:
 		for player2 in self._players:
@@ -153,7 +167,16 @@ class Game:
 		self._players = players
 		self._players[0].setDealer()
 		for player in self._players:
-			player.setBoard(self._board) 
+			player.setBoard(self._board)
+
+	def restoreRuntimeState(self, deck: Deck, isStarted: bool, isFinished: bool, handsFinished: int, activePlayerIndex: int, activePlayer: Optional[Player], dealerRotationCount: int) -> None:
+		self._deck = deck
+		self._isStarted = isStarted
+		self._isFinished = isFinished
+		self._handsFinished = handsFinished
+		self._activePlayerIndex = activePlayerIndex
+		self._activePlayer = activePlayer
+		self._dealerRotationCount = dealerRotationCount
 
 	async def nextDealer(self) -> None:
 		self._players[0].setDealer(False)
@@ -203,18 +226,25 @@ class Game:
 		await player2.switchCard(card2, card1)
 
 	async def runRound(self, dealNumber: int, cardsPerPlayer: int) -> None:
+		dealIndex = dealNumber - 1
+		self._gameSession.setGamePhase(GamePhase.DEAL_START, dealIndex)
+
 		await self.broadcast(build_message("log", "gameplay.deal_started", f"Deal {dealNumber} starts with {self.dealer.name} as dealer.", {"deal": dealNumber, "dealer": self.dealer.name}))
 		self.resetActivePlayerIndex()
 		await self.drawHands(cardsPerPlayer)
 
 		if self._rules.card_exchange:
+			self._gameSession.setGamePhase(GamePhase.CARD_EXCHANGE, dealIndex)
 			teams = self.getPlayersInTeams()
 			await asyncio.gather(*(self.requestCardExchange(team) for team in teams))
 
 		self._handsFinished = 0
+		self._gameSession.setGamePhase(GamePhase.TURN_START, dealIndex)
 
 		while self._handsFinished < self._numPlayers and not self._isFinished:
 			await self.nextPlayer()
+
+		self._gameSession.setGamePhase(GamePhase.DEAL_END, dealIndex)
 
 		await self.broadcast(build_message("log", "gameplay.deal_finished", f"Deal {dealNumber} is finished.", {"deal": dealNumber}))
 
@@ -224,6 +254,8 @@ class Game:
 
 			if self._isFinished:
 				return
+
+		self._gameSession.setGamePhase(GamePhase.DECK_CYCLE_END, len(self._rules.deal_card_counts) - 1)
 
 	async def start(self) -> None:
 		self._isStarted = True
@@ -282,30 +314,42 @@ class Game:
 
 		return pathKickPositions
 
-	async def playSeven(self, player: Player, pieceOwner: Player = None) -> None:
+	async def playSeven(self, player: Player, pieceOwner: Player = None, card: Card = None, stepsRemaining: int = 7) -> None:
 		pieceOwner = pieceOwner if pieceOwner is not None else player
 
 		if not self._rules.seven_split_kicks_pieces_on_path:
-			await self.playSevenWithoutPathKicks(player, pieceOwner)
+			await self.playSevenWithoutPathKicks(player, pieceOwner, card, stepsRemaining)
 			return
 
-		for stepsRemaining in range(7, 0, -1):
-			options = self._board.getSevenStepOptions(player, stepsRemaining, pieceOwner)
+		for currentStepsRemaining in range(stepsRemaining, 0, -1):
+			options = self._board.getSevenStepOptions(player, currentStepsRemaining, pieceOwner)
 
 			if not options:
 				raise RuntimeError("Seven split reached a state with no complete legal continuation")
 
 			move = await player.getSevenStepChoiceFromPlayer(options)
 			self.applyMove(move)
+			nextStepsRemaining = currentStepsRemaining - 1
 
-			await self.broadcast({"type": "seven-step", "playerId": player.name, "movedPlayerId": move.pieceOwner.name, "origin": str(move.originSpot), "target": str(move.targetSpot), "stepsRemaining": stepsRemaining - 1})
+			if nextStepsRemaining > 0:
+				self._gameSession.updateSevenSplit(nextStepsRemaining)
+			else:
+				self._gameSession.setGamePhase(GamePhase.TURN_END)
 
-			if stepsRemaining == 1:
-				await self.playSevenHop(move)
+			await self.broadcast({
+				"type": "seven-step",
+				"playerId": player.name,
+				"movedPlayerId": move.pieceOwner.name,
+				"origin": str(move.originSpot),
+				"target": str(move.targetSpot),
+				"stepsRemaining": nextStepsRemaining,
+			})
 
-	async def playSevenWithoutPathKicks(self, player: Player, pieceOwner: Player) -> None:
-		stepsRemaining = 7
-		movedPiecePositions = set()
+			if nextStepsRemaining == 0:
+				await self.playSevenHop(move, card)
+
+	async def playSevenWithoutPathKicks(self, player: Player, pieceOwner: Player, card: Card = None, stepsRemaining: int = 7, movedPiecePositions: set[Spot] = None) -> None:
+		movedPiecePositions = set() if movedPiecePositions is None else set(movedPiecePositions)
 		lastMove = None
 
 		while stepsRemaining > 0:
@@ -320,12 +364,26 @@ class Game:
 			movedPiecePositions.add(move.targetSpot)
 			lastMove = move
 
-			await self.broadcast({"type": "seven-step", "playerId": player.name, "movedPlayerId": move.pieceOwner.name, "origin": str(move.originSpot), "target": str(move.targetSpot), "stepsUsed": move.steps, "stepsRemaining": stepsRemaining})
+			if stepsRemaining > 0:
+				movedPositionIds = tuple(sorted(str(position) for position in movedPiecePositions))
+				self._gameSession.updateSevenSplit(stepsRemaining, movedPositionIds)
+			else:
+				self._gameSession.setGamePhase(GamePhase.TURN_END)
+
+			await self.broadcast({
+				"type": "seven-step",
+				"playerId": player.name,
+				"movedPlayerId": move.pieceOwner.name,
+				"origin": str(move.originSpot),
+				"target": str(move.targetSpot),
+				"stepsUsed": move.steps,
+				"stepsRemaining": stepsRemaining,
+			})
 
 		if lastMove is not None:
-			await self.playSevenHop(lastMove)
+			await self.playSevenHop(lastMove, card)
 
-	async def playSevenHop(self, triggeringMove: Move) -> Optional[Move]:
+	async def playSevenHop(self, triggeringMove: Move, playedCard: Card = None) -> Optional[Move]:
 		if self._rules.seven_hopping is SevenHopping.DISABLED:
 			return None
 
@@ -336,18 +394,29 @@ class Game:
 		if self._rules.seven_hopping is SevenHopping.OPTIONAL:
 			decidingPlayer = triggeringMove.player
 
+			self._gameSession.beginSevenHop(hopMove, decidingPlayer, playedCard)
+
 			if triggeringMove.ID == "FIVE" and self._rules.five_hop_decider is FiveHopDecider.PIECE_OWNER:
 				decidingPlayer = triggeringMove.pieceOwner
 
 			if not await decidingPlayer.getSevenHopChoiceFromPlayer(hopMove.originSpot, hopMove.targetSpot):
+				self._gameSession.setGamePhase(GamePhase.TURN_END)
 				return None
 
 		self.applyMove(hopMove)
-		await self.broadcast({"type": "seven-hop", "playerId": hopMove.player.name, "movedPlayerId": hopMove.pieceOwner.name, "origin": str(hopMove.originSpot), "target": str(hopMove.targetSpot)})
+		self._gameSession.setGamePhase(GamePhase.TURN_END)
+		await self.broadcast({
+			"type": "seven-hop", 
+			"playerId": hopMove.player.name, 
+			"movedPlayerId": hopMove.pieceOwner.name, 
+			"origin": str(hopMove.originSpot), 
+			"target": str(hopMove.targetSpot)
+		})
 		return hopMove
 
 	async def nextPlayer(self) -> None:
 		self.advanceActivePlayer()
+		self._gameSession.setGamePhase(GamePhase.TURN_DECISION)
 
 		if self._activePlayer.hand.size > 0:
 			await self.broadcast(build_message(
@@ -479,10 +548,13 @@ class Game:
 		else:
 			await self.broadcast(build_message("log", "gameplay.folded_player_skipped", f"{self._activePlayer.name} previously folded and is skipped.", {"player": self._activePlayer.name}))
 
+		self._gameSession.setGamePhase(GamePhase.TURN_START)
+
 
 	async def resolveMove(self, move: Move) -> None:
 		if move.ID == "SEVEN":
-			await self.playSeven(move.player, move.pieceOwner)
+			self._gameSession.beginSevenSplit(move)
+			await self.playSeven(move.player, move.pieceOwner, move.card)
 		else:
 			pathKickPositions = self.applyMove(move)
 
@@ -491,4 +563,5 @@ class Game:
 
 			await self.playSevenHop(move)
 
+		self._gameSession.setGamePhase(GamePhase.TURN_END)
 		await self.finishGameIfWon()

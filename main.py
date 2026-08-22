@@ -12,6 +12,7 @@ from toc.model.game import Game
 from toc.model.player import Player
 from toc.model.params import *
 from toc.model.rules import *
+from toc.model.game_phase import GamePhase
 from toc.infrastructure.messages import MESSAGE_KEYS, build_message
 from toc.infrastructure.identity import createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches
 from toc.infrastructure.versions import WEBSOCKET_PROTOCOL_VERSION
@@ -19,6 +20,7 @@ from toc.persistence.persistent_state import SessionMetadataState
 from toc.infrastructure.clock import Clock, SYSTEM_CLOCK
 from toc.infrastructure.app_logging import configureApplicationLogging
 from toc.model.audit import GameEvent, GameEventLog, GameEventType
+from toc.persistence.snapshot_state import CardState, GameProgressState, SessionSnapshotState, SevenHopProgressState, SevenSplitProgressState
 
 configureApplicationLogging()
 logger = logging.getLogger("toc.main")
@@ -173,6 +175,7 @@ class GameSession:
 		self._lastActivityMonotonic = self._createdMonotonic
 		self._startedMonotonic = None
 		self._eventLog = GameEventLog(self.gameElapsedSeconds)
+		self._gameProgress = GameProgressState(GamePhase.DEAL_START, 0)
 
 	@property
 	def sessionId(self) -> str:
@@ -209,6 +212,78 @@ class GameSession:
 	@property
 	def events(self) -> tuple[GameEvent, ...]:
 		return self._eventLog.events
+
+	@property
+	def gameProgress(self) -> GameProgressState:
+		return self._gameProgress
+
+	def setGameProgress(self, progress: GameProgressState) -> None:
+		if not isinstance(progress, GameProgressState):
+			raise ValueError("Invalid game progress")
+
+		self._gameProgress = progress
+
+	def setGamePhase(self, phase: GamePhase, dealIndex: int = None) -> None:
+		if not isinstance(phase, GamePhase):
+			raise ValueError("Invalid game phase")
+
+		if dealIndex is None:
+			dealIndex = self._gameProgress.dealIndex
+
+		self.setGameProgress(GameProgressState(phase, dealIndex))
+
+	def getPersistentPlayerId(self, player: Player) -> str:
+		for playerData in self.players.values():
+			if playerData.get("object") is player:
+				return playerData["playerId"]
+
+		raise ValueError("Player has no persistent ID in this session")
+
+	def beginSevenSplit(self, move) -> None:
+		self.setGameProgress(GameProgressState(
+			phase=GamePhase.SEVEN_SPLIT,
+			dealIndex=self._gameProgress.dealIndex,
+			sevenSplit=SevenSplitProgressState(
+				actingPlayerId=self.getPersistentPlayerId(move.player),
+				pieceOwnerId=self.getPersistentPlayerId(move.pieceOwner),
+				card=CardState.fromCard(move.card),
+				stepsRemaining=7,
+			),
+		))
+
+	def updateSevenSplit(self, stepsRemaining: int, movedPositionIds: tuple[str, ...] = ()) -> None:
+		currentSplit = self._gameProgress.sevenSplit
+
+		if self._gameProgress.phase is not GamePhase.SEVEN_SPLIT or currentSplit is None:
+			raise RuntimeError("Cannot update seven-split progress outside a seven split")
+
+		self.setGameProgress(GameProgressState(
+			phase=GamePhase.SEVEN_SPLIT,
+			dealIndex=self._gameProgress.dealIndex,
+			sevenSplit=SevenSplitProgressState(
+				actingPlayerId=currentSplit.actingPlayerId,
+				pieceOwnerId=currentSplit.pieceOwnerId,
+				card=currentSplit.card,
+				stepsRemaining=stepsRemaining,
+				movedPositionIds=movedPositionIds,
+			),
+		))
+
+	def beginSevenHop(self, hopMove, decidingPlayer: Player, playedCard=None) -> None:
+		card = hopMove.card if playedCard is None else playedCard
+
+		self.setGameProgress(GameProgressState(
+			phase=GamePhase.SEVEN_HOP,
+			dealIndex=self._gameProgress.dealIndex,
+			sevenHop=SevenHopProgressState(
+				actingPlayerId=self.getPersistentPlayerId(hopMove.player),
+				pieceOwnerId=self.getPersistentPlayerId(hopMove.pieceOwner),
+				decidingPlayerId=self.getPersistentPlayerId(decidingPlayer),
+				card=CardState.fromCard(card),
+				originPositionId=str(hopMove.originSpot),
+				targetPositionId=str(hopMove.targetSpot),
+			),
+		))
 
 	def gameElapsedSeconds(self) -> int:
 		if self._startedMonotonic is None:
@@ -254,6 +329,9 @@ class GameSession:
 
 	def metadataState(self) -> SessionMetadataState:
 		return SessionMetadataState.fromGameSession(self)
+
+	def snapshotState(self) -> SessionSnapshotState:
+		return SessionSnapshotState.fromGameSession(self)
 
 	def fullUI(self) -> dict:
 		if self.game:
@@ -373,6 +451,9 @@ class GameSession:
 			self.game = Game(self, [self.players[player_id]["color"] for player_id in self.order], self._rules)
 			self.game.setPlayers([self.players[player_id]["object"] for player_id in self.order])
 			await self.game.start()
+			self.setGamePhase(GamePhase.FINISHED)
+			self.markEnded()
+			self.recordEvent(GameEventType.GAME_FINISHED)
 		except Exception:
 			logging.exception("Game loop failed for game %s", self.id)
 			await self.broadcast(build_message("error", "errors.internal_game_error", "The game stopped because of an internal server error."))
