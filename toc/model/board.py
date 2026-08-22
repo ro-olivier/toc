@@ -94,6 +94,13 @@ class Board:
 	def getHouseById(self, houseId : str) -> Spot:
 		return [house for house in self._houses if str(house) == houseId][0]
 
+	def getPositionById(self, positionId: str) -> Spot:
+		for position in self.positions:
+			if str(position) == positionId:
+				return position
+
+		raise ValueError(f"Unknown board position: {positionId}")
+
 	def getFirstSpot(self, color : str) -> Optional[Spot]:
 		return [spot for spot in self._spots if spot.color == color and spot.number == 0][0]
 

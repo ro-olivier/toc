@@ -104,3 +104,33 @@ class CompressedJsonStore:
 			os.fsync(directoryDescriptor)
 		finally:
 			os.close(directoryDescriptor)
+
+	def listDocumentIds(self, category: ArchiveCategory) -> tuple[str, ...]:
+		if not isinstance(category, ArchiveCategory):
+			raise ValueError("Invalid archive category")
+
+		directory = self._rootDirectory / category.value
+		documentIds = []
+
+		for path in directory.glob("*.json.gz"):
+			documentId = path.name.removesuffix(".json.gz")
+
+			try:
+				self.pathFor(category, documentId)
+			except ValueError:
+				continue
+
+			documentIds.append(documentId)
+
+		return tuple(sorted(documentIds))
+
+	def delete(self, category: ArchiveCategory, documentId: str) -> bool:
+		path = self.pathFor(category, documentId)
+
+		try:
+			path.unlink()
+		except FileNotFoundError:
+			return False
+
+		self._syncDirectory(path.parent)
+		return True

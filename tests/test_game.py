@@ -16,6 +16,7 @@ class FakeGameSession:
 		self.phaseChanges = []
 		self.progressChanges = []
 		self.dealIndex = 0
+		self.checkpointCount = 0
 
 	async def broadcast(self, message):
 		self.messages.append(message)
@@ -34,6 +35,9 @@ class FakeGameSession:
 
 	def beginSevenHop(self, hopMove, decidingPlayer, playedCard=None):
 		self.progressChanges.append(("seven-hop", hopMove, decidingPlayer, playedCard))
+
+	async def checkpointActive(self):
+		self.checkpointCount += 1
 
 class ScheduleRecordingGame(Game):
 	def __init__(self, rules=MONTSURVENT_RULES):
@@ -87,8 +91,8 @@ class ExchangeRecordingGame(Game):
 	async def drawHands(self, cardsPerPlayer):
 		pass
 
-	async def requestCardExchange(self, players):
-		self.exchangeRequests.append(players)
+	async def exchangeCards(self):
+		self.exchangeRequests.extend(self.getPlayersInTeams())
 
 	async def nextPlayer(self):
 		self._handsFinished = self._numPlayers
@@ -140,6 +144,7 @@ def test_play_seven_moves_exactly_seven_steps():
 	assert len(stepMessages) == 7
 	assert stepMessages[-1]["stepsRemaining"] == 0
 	assert [change[1] for change in session.progressChanges if change[0] == "seven-progress"] == [6, 5, 4, 3, 2, 1]
+	assert session.checkpointCount == 6
 
 def test_play_seven_without_path_kicks_only_kicks_at_final_position():
 	session = FakeGameSession()
@@ -642,6 +647,7 @@ def test_seven_hop_is_applied_without_prompt_when_forced():
 	assert not origin.isOccupied
 	assert target.occupant is alice
 	assert alice.hopRequests == []
+	assert session.checkpointCount == 1
 
 def test_piece_owner_decides_optional_five_hop_when_configured():
 	session = FakeGameSession()
@@ -1095,3 +1101,81 @@ def test_player_can_play_on_later_turn_after_discarding_one_card():
 	assert alice.hand.size == 0
 	assert game._handsFinished == 1
 	assert game.deck.discardPile == [cardTwo, cardThree]
+
+def test_finishing_turn_recalculates_finished_hand_count():
+	session = FakeGameSession()
+	game = Game(session, COLORS)
+	players = [
+		make_player("Alice", "red", "0"),
+		make_player("Bob", "blue", "1"),
+		make_player("Carol", "green", "0"),
+		make_player("Diana", "yellow", "1"),
+	]
+
+	game.setPlayers(players)
+	game._activePlayer = players[0]
+	game._activePlayerIndex = 0
+
+	for player in players[1:]:
+		player.hand.addToHand(Card("♥️", "2"))
+
+	game._handsFinished = 3
+
+	asyncio.run(game.finishCurrentTurn())
+
+	assert game.handsFinished == 1
+
+def test_all_exchange_choices_are_collected_before_hands_are_modified(monkeypatch):
+	game = Game(FakeGameSession(), COLORS)
+	players = [
+		QuietPlayer("TEST-Alice", "Alice", "0", "red"),
+		QuietPlayer("TEST-Carol", "Carol", "1", "blue"),
+		QuietPlayer("TEST-Bob", "Bob", "0", "green"),
+		QuietPlayer("TEST-Diana", "Diana", "1", "yellow"),
+	]
+
+	game.setPlayers(players)
+	choicesCollected = []
+	switchesApplied = []
+
+	for index, player in enumerate(players):
+		card = Card("♥️", str(index + 2))
+		player.hand.addToHand(card)
+
+		def makeRequestCardExchange(currentPlayer, currentCard):
+			async def requestCardExchange():
+				choicesCollected.append(currentPlayer.name)
+				return currentCard
+
+			return requestCardExchange
+
+		def makeSwitchCard(currentPlayer):
+			async def switchCard(givenCard, receivedCard):
+				assert len(choicesCollected) == 4
+				switchesApplied.append(currentPlayer.name)
+
+			return switchCard
+
+		monkeypatch.setattr(player, "requestCardExchange", makeRequestCardExchange(player, card))
+		monkeypatch.setattr(player, "switchCard", makeSwitchCard(player))
+
+	asyncio.run(game.exchangeCards())
+
+	assert set(choicesCollected) == {"Alice", "Bob", "Carol", "Diana"}
+	assert set(switchesApplied) == {"Alice", "Bob", "Carol", "Diana"}
+
+def test_optional_seven_hop_checkpoints_prompt_and_result():
+	session = FakeGameSession()
+	game = Game(session, COLORS)
+	alice = AutomaticHopPlayer("TEST-Alice", "Alice", "0", "red", False)
+	alice.setBoard(game.board)
+
+	origin = game.board.getSpot("red", 7)
+	origin.setOccupant(alice)
+	alice.addAPieceOnTheBoard()
+
+	triggeringMove = Move("MOVE", game.board.getSpot("red", 5), origin, Card("♥️", "2"), alice)
+
+	asyncio.run(game.playSevenHop(triggeringMove, triggeringMove.card))
+
+	assert session.checkpointCount == 2

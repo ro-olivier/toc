@@ -2,8 +2,9 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 from uuid import UUID
+from fastapi.testclient import TestClient
 
-from main import ConnectionManager, GameSession, PlayerInputRouter, create_game as create_game_endpoint, get_rule_presets, manager
+from main import app, ConnectionManager, GameSession, PlayerInputRouter, create_game as create_game_endpoint, get_rule_presets, manager
 from toc.model.rules import GameRules, MONTSURVENT_RULES
 from toc.model.player import Player
 from toc.model.rules import GameRules
@@ -291,3 +292,21 @@ def test_game_phase_change_preserves_current_deal_by_default():
 
 	assert session.gameProgress.phase is GamePhase.TURN_START
 	assert session.gameProgress.dealIndex == 1
+
+def test_application_lifespan_runs_interrupted_game_recovery(monkeypatch):
+	recoveryCalls = []
+
+	async def fakeRecovery():
+		recoveryCalls.append("recover")
+		return {
+			"suspended": (),
+			"finished": (),
+			"failed": (),
+		}
+
+	monkeypatch.setattr(manager, "recover_interrupted_games", fakeRecovery)
+
+	with TestClient(app):
+		pass
+
+	assert recoveryCalls == ["recover"]

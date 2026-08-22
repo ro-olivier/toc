@@ -1,6 +1,7 @@
 import json
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from main import ConnectionManager, GameSession, PlayerInputRouter
 from toc.persistence.persistent_state import SessionMetadataState
@@ -99,3 +100,100 @@ def test_session_timestamps_survive_json_round_trip():
 	assert restoredState.startedAt == initialTime + timedelta(seconds=30)
 	assert restoredState.lastActivityAt == initialTime + timedelta(seconds=90)
 	assert restoredState.endedAt == initialTime + timedelta(seconds=90)
+
+def test_lobby_expires_after_fifteen_minutes():
+	clock = FakeClock(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc))
+	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
+
+	clock.advance(899)
+
+	assert session.lobbyHasExpired() is False
+
+	clock.advance(1)
+
+	assert session.lobbyHasExpired() is True
+
+def test_started_session_does_not_expire_as_lobby():
+	clock = FakeClock(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc))
+	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
+	session.markStarted()
+
+	clock.advance(3600)
+
+	assert session.lobbyHasExpired() is False
+
+def test_started_game_becomes_suspendable_after_fifteen_minutes_without_activity():
+	clock = FakeClock(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc))
+	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
+	session.game = SimpleNamespace(isFinished=False)
+	session.markStarted()
+
+	clock.advance(899)
+
+	assert session.getSuspensionReason() is None
+
+	clock.advance(1)
+
+	assert session.getSuspensionReason() == "inactive"
+
+def test_started_game_becomes_suspendable_after_all_players_disconnect():
+	clock = FakeClock(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc))
+	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
+	session.game = SimpleNamespace(isFinished=False)
+	session.players = {
+		"TEST-Alice": {"active": False},
+		"TEST-Bob": {"active": False},
+	}
+	session.markStarted()
+	session.notePlayerDisconnected()
+
+	clock.advance(29)
+
+	assert session.getSuspensionReason() is None
+
+	clock.advance(1)
+
+	assert session.getSuspensionReason() == "all-players-disconnected"
+
+def test_player_reconnection_cancels_disconnection_grace_period():
+	clock = FakeClock(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc))
+	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
+	session.game = SimpleNamespace(isFinished=False)
+	session.players = {
+		"TEST-Alice": {"active": False},
+		"TEST-Bob": {"active": False},
+	}
+	session.markStarted()
+	session.notePlayerDisconnected()
+
+	clock.advance(20)
+	session.players["TEST-Alice"]["active"] = True
+	session.notePlayerConnected()
+	clock.advance(20)
+
+	assert session.getSuspensionReason() is None
+
+def test_repeated_disconnection_notifications_do_not_reset_grace_period():
+	clock = FakeClock(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc))
+	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
+	session.game = SimpleNamespace(isFinished=False)
+	session.players = {"TEST-Alice": {"active": False}}
+	session.markStarted()
+	session.notePlayerDisconnected()
+
+	clock.advance(20)
+	session.notePlayerDisconnected()
+	clock.advance(10)
+
+	assert session.getSuspensionReason() == "all-players-disconnected"
+
+def test_already_suspended_session_is_not_selected_for_suspension_again():
+	clock = FakeClock(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc))
+	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
+	session.game = SimpleNamespace(isFinished=False)
+	session.markStarted()
+	session._awaitingResume = True
+
+	clock.advance(3600)
+
+	assert session.getSuspensionReason() is None

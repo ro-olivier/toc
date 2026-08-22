@@ -1,4 +1,5 @@
-from pathlib import Path
+from __future__ import annotations
+
 from fastapi.staticfiles import StaticFiles
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -7,36 +8,53 @@ import asyncio
 import json
 import logging
 import uuid
+import os
+from contextlib import asynccontextmanager, suppress
 
+from settings import *
 from toc.model.game import Game
 from toc.model.player import Player
 from toc.model.params import *
 from toc.model.rules import *
+from toc.model.move import Move
 from toc.model.game_phase import GamePhase
+from toc.model.audit import GameEvent, GameEventLog, GameEventType
 from toc.infrastructure.messages import MESSAGE_KEYS, build_message
 from toc.infrastructure.identity import createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches
 from toc.infrastructure.versions import WEBSOCKET_PROTOCOL_VERSION
-from toc.persistence.persistent_state import SessionMetadataState
 from toc.infrastructure.clock import Clock, SYSTEM_CLOCK
 from toc.infrastructure.app_logging import configureApplicationLogging
-from toc.model.audit import GameEvent, GameEventLog, GameEventType
+from toc.persistence.persistent_state import SessionMetadataState
 from toc.persistence.snapshot_state import CardState, GameProgressState, SessionSnapshotState, SevenHopProgressState, SevenSplitProgressState
+from toc.persistence.archive_store import ArchiveCategory, ArchiveCorruptionError, CompressedJsonStore
+from toc.persistence.finished_state import FinishedArchiveState
 
 configureApplicationLogging()
 logger = logging.getLogger("toc.main")
 
-app = FastAPI()
-BASE_DIR = Path(__file__).resolve().parent
-CLIENT_MESSAGE_TYPES = frozenset({
-	"configure-player",
-	"debug",
-	"text_input",
-	"card_selection",
-	"spot_selection",
-	"seven_hop_choice",
-	"cancel_move_selection",
-})
+@asynccontextmanager
+async def applicationLifespan(app: FastAPI):
+	recoveryResult = await manager.recover_interrupted_games()
 
+	logger.info(
+		"Interrupted-game recovery completed",
+		extra={
+			"suspendedCount": len(recoveryResult["suspended"]),
+			"finishedCount": len(recoveryResult["finished"]),
+			"failedCount": len(recoveryResult["failed"]),
+		},
+	)
+
+	monitorTask = asyncio.create_task(manager.monitor_sessions())
+
+	try:
+		yield
+	finally:
+		monitorTask.cancel()
+
+		with suppress(asyncio.CancelledError):
+			await monitorTask
+app = FastAPI(lifespan=applicationLifespan)
 app.mount(
 	"/toc/play",
 	StaticFiles(directory=BASE_DIR / "web", html=True),
@@ -77,6 +95,17 @@ class PlayerInputRouter:
 		self.recycleBin[player_name] = {
 			"in": self.input_queues.pop(player_name),
 			"out": self.output_queues.pop(player_name),
+		}
+
+	def prepareDisconnectedPlayer(self, player_name: str) -> None:
+		self.input_queues.pop(player_name, None)
+		self.output_queues.pop(player_name, None)
+		self.recycleBin.pop(player_name, None)
+		self.pendingPrompts.pop(player_name, None)
+
+		self.recycleBin[player_name] = {
+			"in": asyncio.Queue(),
+			"out": asyncio.Queue(),
 		}
 
 	async def add_input(self, player_name: str, message: str):
@@ -132,11 +161,18 @@ class PlayerInputRouter:
 		if prompt is not None:
 			await self.send_output(player_name, prompt.copy())
 
+	def forget(self, player_name: str) -> None:
+		self.input_queues.pop(player_name, None)
+		self.output_queues.pop(player_name, None)
+		self.recycleBin.pop(player_name, None)
+		self.pendingPrompts.pop(player_name, None)
+
 
 class ConnectionManager:
-	def __init__(self, clock: Clock = SYSTEM_CLOCK):
+	def __init__(self, clock: Clock = SYSTEM_CLOCK, archiveStore: CompressedJsonStore = None):
 		self.games: Dict[str, GameSession] = {}
 		self._clock = clock
+		self._archiveStore = archiveStore
 
 	def _generate_game_id(self) -> str:
 		while True:
@@ -147,14 +183,185 @@ class ConnectionManager:
 
 	def create_game(self, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None) -> str:
 		game_id = self._generate_game_id()
-		self.games[game_id] = GameSession(game_id, msg_router, rules, rulesetName, self._clock)
+		self.games[game_id] = GameSession(game_id, msg_router, rules, rulesetName, self._clock, self._archiveStore)
 		return game_id
 
 	def get_game(self, game_id: str):
 		return self.games.get(game_id)
 
+	def load_suspended_game(self, game_id: str, msg_router) -> GameSession | None:
+		if self._archiveStore is None:
+			return None
+
+		matchingSnapshots = []
+
+		for sessionId in self._archiveStore.listDocumentIds(ArchiveCategory.SUSPENDED):
+			try:
+				payload = self._archiveStore.read(ArchiveCategory.SUSPENDED, sessionId)
+				snapshot = SessionSnapshotState.from_dict(payload)
+			except (ArchiveCorruptionError, ValueError):
+				logger.exception("Could not load suspended game archive", extra={"sessionId": sessionId})
+				continue
+
+			if snapshot.metadata.joinCode == game_id:
+				matchingSnapshots.append(snapshot)
+
+		if not matchingSnapshots:
+			return None
+
+		if len(matchingSnapshots) > 1:
+			raise RuntimeError(f"Multiple suspended archives use join code '{game_id}'")
+
+		snapshot = matchingSnapshots[0]
+
+		if not snapshot.game.isStarted:
+			raise ValueError("Suspended archive contains an unstarted game")
+
+		if snapshot.game.isFinished:
+			raise ValueError("Suspended archive contains a finished game")
+
+		session = GameSession.fromSnapshot(snapshot, msg_router, self._clock, self._archiveStore)
+		self.games[game_id] = session
+		return session
+
+	def get_or_restore_game(self, game_id: str, msg_router) -> GameSession | None:
+		existingSession = self.get_game(game_id)
+
+		if existingSession is not None:
+			return existingSession
+
+		return self.load_suspended_game(game_id, msg_router)
+
+	async def recover_interrupted_games(self) -> dict:
+		if self._archiveStore is None:
+			return {"suspended": (), "finished": (), "failed": ()}
+
+		suspendedSessionIds = []
+		finishedSessionIds = []
+		failedSessionIds = []
+
+		for sessionId in self._archiveStore.listDocumentIds(ArchiveCategory.ACTIVE):
+			try:
+				activePayload = await asyncio.to_thread(self._archiveStore.read, ArchiveCategory.ACTIVE, sessionId)
+				activeSnapshot = SessionSnapshotState.from_dict(activePayload)
+
+				if activeSnapshot.metadata.sessionId != sessionId:
+					raise ValueError("Active archive filename does not match its session ID")
+
+			except (ArchiveCorruptionError, ValueError, OSError):
+				logger.exception("Could not recover active game archive", extra={"sessionId": sessionId})
+				failedSessionIds.append(sessionId)
+				continue
+
+			candidates = [(ArchiveCategory.ACTIVE, activeSnapshot, activePayload)]
+			suspendedPath = self._archiveStore.pathFor(ArchiveCategory.SUSPENDED, sessionId)
+
+			if suspendedPath.exists():
+				try:
+					suspendedPayload = await asyncio.to_thread(self._archiveStore.read, ArchiveCategory.SUSPENDED, sessionId)
+					suspendedSnapshot = SessionSnapshotState.from_dict(suspendedPayload)
+
+					if suspendedSnapshot.metadata.sessionId != sessionId:
+						raise ValueError("Suspended archive filename does not match its session ID")
+
+					candidates.append((ArchiveCategory.SUSPENDED, suspendedSnapshot, suspendedPayload))
+
+				except (ArchiveCorruptionError, ValueError, OSError):
+					logger.warning("Ignoring invalid duplicate suspended archive", exc_info=True, extra={"sessionId": sessionId})
+
+			selectedCategory, selectedSnapshot, selectedPayload = max(
+				candidates,
+				key=lambda candidate: (
+					candidate[1].metadata.lastActivityAt,
+					candidate[0] is ArchiveCategory.ACTIVE,
+				),
+			)
+
+			try:
+				if selectedSnapshot.game.isFinished:
+					recoveryRouter = PlayerInputRouter()
+					session = GameSession.fromSnapshot(selectedSnapshot, recoveryRouter, self._clock, self._archiveStore)
+					await session.finalizeFinishedGame()
+					finishedSessionIds.append(sessionId)
+					continue
+
+				if selectedCategory is ArchiveCategory.ACTIVE:
+					def moveActiveToSuspended():
+						self._archiveStore.write(ArchiveCategory.SUSPENDED, sessionId, selectedPayload)
+						self._archiveStore.delete(ArchiveCategory.ACTIVE, sessionId)
+
+					await asyncio.to_thread(moveActiveToSuspended)
+
+				else:
+					await asyncio.to_thread(self._archiveStore.delete, ArchiveCategory.ACTIVE, sessionId)
+
+				suspendedSessionIds.append(sessionId)
+
+			except (ValueError, OSError):
+				logger.exception("Could not complete interrupted-game recovery", extra={"sessionId": sessionId})
+				failedSessionIds.append(sessionId)
+
+		return {
+			"suspended": tuple(suspendedSessionIds),
+			"finished": tuple(finishedSessionIds),
+			"failed": tuple(failedSessionIds),
+		}
+
+	async def monitor_sessions(self, intervalSeconds: float = SESSION_MONITOR_INTERVAL_SECONDS) -> None:
+		while True:
+			await asyncio.sleep(intervalSeconds)
+			await self.monitor_once()
+
+	async def monitor_once(self) -> dict:
+		expiredGameIds = []
+		suspendedGameIds = []
+		failedGameIds = []
+
+		for gameId, session in list(self.games.items()):
+			try:
+				if session.lobbyHasExpired():
+					await session.closeConnections(LOBBY_EXPIRED_CLOSE_CODE, "Lobby expired")
+
+					if self.games.get(gameId) is session:
+						self.games.pop(gameId)
+
+					expiredGameIds.append(gameId)
+					continue
+
+				suspensionReason = session.getSuspensionReason()
+
+				if suspensionReason is None:
+					continue
+
+				await session.suspendGame()
+				await session.closeConnections(GAME_SUSPENDED_CLOSE_CODE, "Game suspended")
+
+				if self.games.get(gameId) is session:
+					self.games.pop(gameId)
+
+				suspendedGameIds.append(gameId)
+
+				logger.info(
+					"Game suspended",
+					extra={
+						"sessionId": session.sessionId,
+						"joinCode": session.joinCode,
+						"suspensionReason": suspensionReason,
+					},
+				)
+
+			except Exception:
+				logger.exception("Session timeout action failed", extra={"joinCode": gameId})
+				failedGameIds.append(gameId)
+
+		return {
+			"expired": tuple(expiredGameIds),
+			"suspended": tuple(suspendedGameIds),
+			"failed": tuple(failedGameIds),
+		}
+
 class GameSession:
-	def __init__(self, game_id: str, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None, clock: Clock = SYSTEM_CLOCK):
+	def __init__(self, game_id: str, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None, clock: Clock = SYSTEM_CLOCK, archiveStore: CompressedJsonStore = None):
 		self.id = game_id
 		self._sessionId = createSessionId()
 		self._rules = rules
@@ -166,6 +373,7 @@ class GameSession:
 		self.router = msg_router
 		self.order: List = []
 		self.game = None
+		self.gameTask = None
 		self._clock = clock
 		self._createdAt = clock.utcNow()
 		self._createdMonotonic = clock.monotonic()
@@ -176,6 +384,10 @@ class GameSession:
 		self._startedMonotonic = None
 		self._eventLog = GameEventLog(self.gameElapsedSeconds)
 		self._gameProgress = GameProgressState(GamePhase.DEAL_START, 0)
+		self._awaitingResume = False
+		self._archiveStore = archiveStore
+		self._checkpointLock = asyncio.Lock()
+		self._allPlayersDisconnectedMonotonic = None
 
 	@property
 	def sessionId(self) -> str:
@@ -217,6 +429,41 @@ class GameSession:
 	def gameProgress(self) -> GameProgressState:
 		return self._gameProgress
 
+	@property
+	def awaitingResume(self) -> bool:
+		return self._awaitingResume
+
+	def notePlayerConnected(self) -> None:
+		self._allPlayersDisconnectedMonotonic = None
+
+	def notePlayerDisconnected(self) -> None:
+		if not self.started:
+			return
+
+		if any(playerData.get("active", False) for playerData in self.players.values()):
+			return
+
+		if self._allPlayersDisconnectedMonotonic is None:
+			self._allPlayersDisconnectedMonotonic = self._clock.monotonic()
+
+	def lobbyHasExpired(self, lifetimeSeconds: float = LOBBY_LIFETIME_SECONDS) -> bool:
+		return not self.started and self.lobbyAgeSeconds() >= lifetimeSeconds
+
+	def getSuspensionReason(self, inactivitySeconds: float = GAME_INACTIVITY_SECONDS, disconnectedGraceSeconds: float = ALL_PLAYERS_DISCONNECTED_GRACE_SECONDS) -> str | None:
+		if not self.started or self.game is None or self.game.isFinished or self._awaitingResume:
+			return None
+
+		if self._allPlayersDisconnectedMonotonic is not None:
+			disconnectedSeconds = self._clock.monotonic() - self._allPlayersDisconnectedMonotonic
+
+			if disconnectedSeconds >= disconnectedGraceSeconds:
+				return "all-players-disconnected"
+
+		if self.inactivitySeconds() >= inactivitySeconds:
+			return "inactive"
+
+		return None
+
 	def setGameProgress(self, progress: GameProgressState) -> None:
 		if not isinstance(progress, GameProgressState):
 			raise ValueError("Invalid game progress")
@@ -238,6 +485,237 @@ class GameSession:
 				return playerData["playerId"]
 
 		raise ValueError("Player has no persistent ID in this session")
+
+	def getPlayerByPersistentId(self, playerId: str) -> Player:
+		for playerData in self.players.values():
+			if playerData["playerId"] == playerId:
+				return playerData["object"]
+
+		raise ValueError(f"Unknown persistent player ID: {playerId}")
+
+	@classmethod
+	def fromSnapshot(cls, snapshot: SessionSnapshotState, msg_router, clock: Clock = SYSTEM_CLOCK, archiveStore: CompressedJsonStore = None) -> "GameSession":
+		if not isinstance(snapshot, SessionSnapshotState):
+			raise ValueError("A valid session snapshot is required")
+
+		metadata = snapshot.metadata
+		session = cls(metadata.joinCode, msg_router, metadata.rules, metadata.rulesetName, clock, archiveStore)
+
+		session._sessionId = metadata.sessionId
+		session._createdAt = metadata.createdAt
+		session._startedAt = metadata.startedAt
+		session._endedAt = metadata.endedAt
+		session._lastActivityAt = metadata.lastActivityAt
+		session.started = snapshot.game.isStarted
+		session._gameProgress = snapshot.progress
+
+		nowUtc = clock.utcNow()
+		nowMonotonic = clock.monotonic()
+
+		session._createdMonotonic = nowMonotonic - max(0.0, (nowUtc - metadata.createdAt).total_seconds())
+		session._lastActivityMonotonic = nowMonotonic - max(0.0, (nowUtc - metadata.lastActivityAt).total_seconds())
+		session._startedMonotonic = None if metadata.startedAt is None else nowMonotonic - max(0.0, (nowUtc - metadata.startedAt).total_seconds())
+
+		session._eventLog = GameEventLog.from_list([event.to_dict() for event in snapshot.events], session.gameElapsedSeconds)
+
+		runtimeIdsByPersistentId = {}
+
+		for playerState in metadata.players:
+			runtimeId = session.getFullPlayerId(metadata.joinCode, playerState.name)
+			player = Player(runtimeId, playerState.name, team=playerState.team, color=playerState.color, gameSession=session, router=msg_router)
+
+			session.players[runtimeId] = {
+				"name": playerState.name,
+				"id": runtimeId,
+				"playerId": playerState.playerId,
+				"resumeTokenHash": playerState.resumeTokenHash,
+				"websocket": None,
+				"team": playerState.team,
+				"color": playerState.color,
+				"object": player,
+				"active": False,
+				"configured": playerState.configured,
+			}
+
+			runtimeIdsByPersistentId[playerState.playerId] = runtimeId
+			msg_router.prepareDisconnectedPlayer(runtimeId)
+
+		session.order = [runtimeIdsByPersistentId[playerId] for playerId in snapshot.game.playerOrder]
+		snapshot.game.restoreGame(session)
+
+		session._awaitingResume = snapshot.game.isStarted and not snapshot.game.isFinished
+
+		return session
+
+	async def writeCheckpoint(self, category: ArchiveCategory):
+		if self._archiveStore is None:
+			return None
+
+		if self.game is None:
+			raise RuntimeError("Cannot checkpoint a session without a game")
+
+		async with self._checkpointLock:
+			payload = self.snapshotState().to_dict()
+			return await asyncio.to_thread(self._archiveStore.write, category, self._sessionId, payload)
+
+	async def checkpointActive(self):
+		return await self.writeCheckpoint(ArchiveCategory.ACTIVE)
+
+	async def resumed_game_loop(self) -> None:
+		try:
+			await self.resumeGame()
+		except Exception:
+			logger.exception("Resumed game loop failed", extra={"gameId": self.id, "sessionId": self._sessionId})
+
+			await self.broadcast(build_message(
+				"error",
+				"errors.internal_game_error",
+				"The game stopped because of an internal server error.",
+			))
+
+	async def start_resume_if_ready(self) -> bool:
+		async with self.lock:
+			if not self._awaitingResume or self.gameTask is not None:
+				return False
+
+			if len(self.players) != NUMBER_OF_PLAYERS:
+				return False
+
+			if not all(playerData.get("configured", False) and playerData.get("active", False) for playerData in self.players.values()):
+				return False
+
+			self.recordActivity()
+			await self.activateRestoredArchive()
+
+			self._awaitingResume = False
+			self.gameTask = asyncio.create_task(self.resumed_game_loop())
+			return True
+
+	async def transitionCheckpoint(self, destination: ArchiveCategory, obsoleteCategories: tuple[ArchiveCategory, ...]):
+		if self._archiveStore is None:
+			return None
+
+		if self.game is None:
+			raise RuntimeError("Cannot archive a session without a game")
+
+		async with self._checkpointLock:
+			payload = self.snapshotState().to_dict()
+
+			def persistTransition():
+				path = self._archiveStore.write(destination, self._sessionId, payload)
+
+				for category in obsoleteCategories:
+					if category is not destination:
+						self._archiveStore.delete(category, self._sessionId)
+
+				return path
+
+			return await asyncio.to_thread(persistTransition)
+
+	def completeGameLifecycle(self) -> None:
+		if self._endedAt is None:
+			self.markEnded()
+
+		if not any(event.eventType is GameEventType.GAME_FINISHED for event in self._eventLog.events):
+			self.recordEvent(GameEventType.GAME_FINISHED)
+
+		self.setGamePhase(GamePhase.FINISHED)
+
+	async def resumeGame(self) -> None:
+		while True:
+			if self.game is None:
+				raise RuntimeError("Cannot resume a session without a restored game")
+
+			if self._gameProgress.phase is GamePhase.FINISHED:
+				if not self.game.isFinished:
+					raise RuntimeError("A session cannot be in the finished phase while its game is unfinished")
+
+				await self.finalizeFinishedGame()
+				return
+
+			if self.game.isFinished:
+				await self.finalizeFinishedGame()
+				return
+
+			await self.resumeCurrentPhase()
+
+	async def resumeCurrentPhase(self) -> None:
+		if self.game is None:
+			raise RuntimeError("Cannot resume a session without a restored game")
+
+		progress = self._gameProgress
+
+		if progress.phase is GamePhase.FINISHED:
+			return
+
+		if progress.phase is GamePhase.DEAL_START:
+			cardsPerPlayer = self._rules.deal_card_counts[progress.dealIndex]
+			await self.game.runRound(progress.dealIndex + 1, cardsPerPlayer)
+			return
+
+		if progress.phase is GamePhase.DEAL_END:
+			nextDealIndex = progress.dealIndex + 1
+
+			if nextDealIndex < len(self._rules.deal_card_counts):
+				self.setGamePhase(GamePhase.DEAL_START, nextDealIndex)
+			else:
+				self.setGamePhase(GamePhase.DECK_CYCLE_END)
+
+			await self.checkpointActive()
+			return
+
+		if progress.phase is GamePhase.DECK_CYCLE_END:
+			self.game.deck.recycleDiscardPile(shuffle=self.game.shouldShuffleRecycledDeck())
+			await self.game.nextDealer()
+			self.setGamePhase(GamePhase.DEAL_START, 0)
+			await self.checkpointActive()
+			return
+
+		if progress.phase is GamePhase.CARD_EXCHANGE:
+			await self.game.exchangeCards()
+			self.setGamePhase(GamePhase.TURN_START)
+			await self.checkpointActive()
+			return
+
+		if progress.phase is GamePhase.TURN_START:
+			if self.game.handsFinished >= self.game.numPlayers:
+				self.setGamePhase(GamePhase.DEAL_END)
+				await self.checkpointActive()
+				return
+
+			await self.game.nextPlayer()
+			return
+
+		if progress.phase is GamePhase.TURN_DECISION:
+			await self.game.playCurrentTurn()
+			return
+
+		if progress.phase is GamePhase.TURN_END:
+			await self.game.finishCurrentTurn()
+			return
+
+		if progress.phase is GamePhase.SEVEN_SPLIT:
+			sevenSplit = progress.sevenSplit
+			actingPlayer = self.getPlayerByPersistentId(sevenSplit.actingPlayerId)
+			pieceOwner = self.getPlayerByPersistentId(sevenSplit.pieceOwnerId)
+			movedPiecePositions = {self.game.board.getPositionById(positionId) for positionId in sevenSplit.movedPositionIds}
+
+			await self.game.playSeven(actingPlayer, pieceOwner, sevenSplit.card.toCard(), sevenSplit.stepsRemaining, movedPiecePositions)
+			return
+
+		if progress.phase is GamePhase.SEVEN_HOP:
+			sevenHop = progress.sevenHop
+			actingPlayer = self.getPlayerByPersistentId(sevenHop.actingPlayerId)
+			pieceOwner = self.getPlayerByPersistentId(sevenHop.pieceOwnerId)
+			decidingPlayer = self.getPlayerByPersistentId(sevenHop.decidingPlayerId)
+			origin = self.game.board.getPositionById(sevenHop.originPositionId)
+			target = self.game.board.getPositionById(sevenHop.targetPositionId)
+			hopMove = Move("HOP", origin, target, sevenHop.card.toCard(), actingPlayer, pieceOwner)
+
+			await self.game.completeOptionalSevenHop(hopMove, decidingPlayer)
+			return
+
+		raise RuntimeError(f"Resuming phase '{progress.phase.value}' is not implemented yet")
 
 	def beginSevenSplit(self, move) -> None:
 		self.setGameProgress(GameProgressState(
@@ -333,6 +811,104 @@ class GameSession:
 	def snapshotState(self) -> SessionSnapshotState:
 		return SessionSnapshotState.fromGameSession(self)
 
+	async def archiveSuspended(self):
+		if self.game is None:
+			raise RuntimeError("Cannot suspend a session without a game")
+
+		if self.game.isFinished:
+			raise RuntimeError("A finished game cannot be suspended")
+
+		path = await self.transitionCheckpoint(ArchiveCategory.SUSPENDED, (ArchiveCategory.ACTIVE,))
+
+		if path is not None:
+			self._awaitingResume = True
+
+		return path
+
+	async def activateRestoredArchive(self):
+		return await self.transitionCheckpoint(ArchiveCategory.ACTIVE, (ArchiveCategory.SUSPENDED,))
+
+	async def archiveFinished(self):
+		if self.game is None or not self.game.isFinished:
+			raise RuntimeError("Cannot archive an unfinished game as finished")
+
+		if self._endedAt is None:
+			raise RuntimeError("Cannot archive a finished game without an end timestamp")
+
+		if self._archiveStore is None:
+			return None
+
+		async with self._checkpointLock:
+			payload = FinishedArchiveState.fromGameSession(self).to_dict()
+
+			def persistFinishedArchive():
+				path = self._archiveStore.write(ArchiveCategory.FINISHED, self._sessionId, payload)
+				self._archiveStore.delete(ArchiveCategory.ACTIVE, self._sessionId)
+				self._archiveStore.delete(ArchiveCategory.SUSPENDED, self._sessionId)
+				return path
+
+			path = await asyncio.to_thread(persistFinishedArchive)
+
+		self._awaitingResume = False
+		return path
+
+	async def finalizeFinishedGame(self):
+		self.completeGameLifecycle()
+		return await self.archiveFinished()
+
+	async def closeConnections(self, code: int, reason: str) -> None:
+		websockets = []
+
+		for playerData in self.players.values():
+			websocket = playerData.get("websocket")
+
+			if playerData.get("active", False) and websocket is not None:
+				websockets.append(websocket)
+
+		if websockets:
+			await asyncio.gather(*(websocket.close(code=code, reason=reason) for websocket in websockets), return_exceptions=True)
+
+		for runtimeId, playerData in self.players.items():
+			playerData["active"] = False
+			self.router.forget(runtimeId)
+
+		self._allPlayersDisconnectedMonotonic = None
+
+	async def cancelGameTask(self) -> bool:
+		task = self.gameTask
+
+		if task is None or task.done():
+			self.gameTask = None
+			return False
+
+		if task is asyncio.current_task():
+			raise RuntimeError("A game task cannot cancel itself")
+
+		task.cancel()
+
+		with suppress(asyncio.CancelledError):
+			await task
+
+		self.gameTask = None
+		return True
+
+	async def suspendGame(self) -> None:
+		hadRunningTask = await self.cancelGameTask()
+
+		try:
+			path = await self.archiveSuspended()
+
+			if path is None:
+				raise RuntimeError("Cannot suspend a game without persistent storage")
+
+		except Exception:
+			self._awaitingResume = False
+
+			if hadRunningTask and not self.game.isFinished:
+				self.gameTask = asyncio.create_task(self.resumed_game_loop())
+
+			raise
+
 	def fullUI(self) -> dict:
 		if self.game:
 			if self.game.activePlayer:
@@ -375,7 +951,6 @@ class GameSession:
 				"enterHouseAtSpot": self._rules.enter_house_at_spot,
 				"ruleset": self.ruleset_state()
 				}
-
 
 	def team_is_full(self, team: str) -> bool:
 		return sum([self.players[p]["team"] == team for p in self.players]) >= NUMBER_OF_PLAYERS // NUMBER_OF_TEAMS
@@ -451,9 +1026,7 @@ class GameSession:
 			self.game = Game(self, [self.players[player_id]["color"] for player_id in self.order], self._rules)
 			self.game.setPlayers([self.players[player_id]["object"] for player_id in self.order])
 			await self.game.start()
-			self.setGamePhase(GamePhase.FINISHED)
-			self.markEnded()
-			self.recordEvent(GameEventType.GAME_FINISHED)
+			await self.finalizeFinishedGame()
 		except Exception:
 			logging.exception("Game loop failed for game %s", self.id)
 			await self.broadcast(build_message("error", "errors.internal_game_error", "The game stopped because of an internal server error."))
@@ -563,27 +1136,27 @@ class GameSession:
 @app.websocket("/toc/ws/{game_id}/{player_name}")
 async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: str):
 	await websocket.accept()
-	gameSession = manager.games.get(game_id)
+	gameSession = manager.get_or_restore_game(game_id, router)
 
 	if gameSession is None:
-		await websocket.close(code=4001)
+		await websocket.close(code=NO_GAME_FOUND_CODE)
 		return
 
 	player_id = gameSession.getFullPlayerId(game_id, player_name)
 	existingPlayer = gameSession.players.get(player_id)
 
 	if existingPlayer is not None and existingPlayer["active"]:
-		await websocket.close(code=4002)
+		await websocket.close(code=NO_PLAYER_CONTEXT_FOUND_CODE)
 		return
 
 	if existingPlayer is None and gameSession.is_full():
-		await websocket.close(code=4004)
+		await websocket.close(code=GAME_ALREADY_FULL_CODE)
 		return
 
 	try:
 		identityData = await asyncio.wait_for(websocket.receive_text(), timeout=IDENTIFY_TIMEOUT_SECONDS)
 	except TimeoutError:
-		await websocket.close(code=4005, reason="Connection identification timed out")
+		await websocket.close(code=CONNECTION_IDENTIFICATION_ERROR_CODE, reason="Connection identification timed out")
 		return
 	except WebSocketDisconnect:
 		return
@@ -591,21 +1164,21 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 	try:
 		identityMessage = json.loads(identityData)
 	except json.JSONDecodeError:
-		await websocket.close(code=4005, reason="Invalid connection identity")
+		await websocket.close(code=CONNECTION_IDENTIFICATION_ERROR_CODE, reason="Invalid connection identity")
 		return
 
 	if not isinstance(identityMessage, dict) or identityMessage.get("type") != "identify":
-		await websocket.close(code=4005, reason="Invalid connection identity")
+		await websocket.close(code=CONNECTION_IDENTIFICATION_ERROR_CODE, reason="Invalid connection identity")
 		return
 
 	resumeToken = identityMessage.get("resumeToken")
 
 	if resumeToken is not None and not isinstance(resumeToken, str):
-		await websocket.close(code=4005, reason="Invalid connection identity")
+		await websocket.close(code=CONNECTION_IDENTIFICATION_ERROR_CODE, reason="Invalid connection identity")
 		return
 
 	if existingPlayer is not None and not resumeTokenMatches(resumeToken, existingPlayer["resumeTokenHash"]):
-		await websocket.close(code=4005, reason="Invalid resume token")
+		await websocket.close(code=CONNECTION_IDENTIFICATION_ERROR_CODE, reason="Invalid resume token")
 		return
 
 	try:
@@ -635,6 +1208,8 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 			router.registerAgain(player_id)
 			existingPlayer["websocket"] = websocket
 			existingPlayer["active"] = True
+
+		gameSession.notePlayerConnected()
 
 	except (DuplicateNameError, KeyError):
 		await websocket.close(code=4003)
@@ -696,8 +1271,10 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 			else:
 				await gameSession.broadcast_lobby_state()
 
-		await gameSession.start_game_if_ready()
+		startedNewGame = await gameSession.start_game_if_ready()
 
+		if not startedNewGame:
+			await gameSession.start_resume_if_ready()
 	try:
 		await websocket.send_json({
 			"type": "ready",
@@ -733,6 +1310,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
 		if playerData is not None and playerData.get("websocket") is websocket:
 			playerData["active"] = False
+			gameSession.notePlayerDisconnected()
 			router.unregister(player_id)
 
 			if gameSession.started:
@@ -742,7 +1320,8 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
 
 router = PlayerInputRouter()
-manager = ConnectionManager()
+archiveStore = CompressedJsonStore(GAME_DATA_DIRECTORY)
+manager = ConnectionManager(archiveStore=archiveStore)
 
 @app.get("/toc")
 async def root():

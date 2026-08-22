@@ -110,3 +110,22 @@ def test_invalid_document_id_is_rejected(archiveStore, documentId):
 def test_non_json_archive_payload_is_rejected(archiveStore, payload):
 	with pytest.raises(ValueError):
 		archiveStore.write(ArchiveCategory.ACTIVE, createSessionId(), payload)
+
+def test_archive_document_ids_can_be_listed(archiveStore):
+	firstId = createSessionId()
+	secondId = createSessionId()
+
+	archiveStore.write(ArchiveCategory.SUSPENDED, secondId, {"number": 2})
+	archiveStore.write(ArchiveCategory.SUSPENDED, firstId, {"number": 1})
+	archiveStore.write(ArchiveCategory.FINISHED, createSessionId(), {"finished": True})
+
+	assert archiveStore.listDocumentIds(ArchiveCategory.SUSPENDED) == tuple(sorted((firstId, secondId)))
+
+def test_archive_can_be_deleted(archiveStore):
+	sessionId = createSessionId()
+	path = archiveStore.write(ArchiveCategory.ACTIVE, sessionId, {"active": True})
+
+	assert path.exists()
+	assert archiveStore.delete(ArchiveCategory.ACTIVE, sessionId) is True
+	assert not path.exists()
+	assert archiveStore.delete(ArchiveCategory.ACTIVE, sessionId) is False
