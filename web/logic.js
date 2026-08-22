@@ -45,6 +45,15 @@ const board = document.getElementById('board');
 const selectableSpotHandlers = new Map();
 
 let ws = null;
+SERVER_UNREACHABLE_CODE = 1006
+NO_GAME_FOUND_CODE = 4001
+NO_PLAYER_CONTEXT_FOUND_CODE = 4002
+GAME_ALREADY_FULL_CODE = 4004
+CONNECTION_IDENTIFICATION_ERROR_CODE = 4005
+LOBBY_EXPIRED_CLOSE_CODE = 4006
+GAME_SUSPENDED_CLOSE_CODE = 4007
+const START_NOTICE_STORAGE_KEY = "toc.startNotice";
+
 let local_player_name = null;
 let local_game_Id = null;
 let local_player = null;
@@ -164,6 +173,15 @@ function initializeLanguageInterface() {
   window.addEventListener("toc-language-change", refreshLanguageInterface);
 }
 
+function showStoredStartNotice() {
+  const messageKey = window.sessionStorage.getItem(START_NOTICE_STORAGE_KEY);
+  if (!messageKey) return;
+
+  window.sessionStorage.removeItem(START_NOTICE_STORAGE_KEY);
+  setTranslatedText(errorMsg, messageKey);
+  errorMsg.classList.remove("hidden");
+}
+
 function setTranslatedText(element, key, parameters = {}) {
   backendMessageElements.delete(element);
   element.dataset.i18nDynamic = key;
@@ -191,6 +209,17 @@ function buildWebSocketUrl(gameId, playerName) {
 
 function getResumeTokenStorageKey(gameId, playerName) {
   return `toc.resumeToken.${encodeURIComponent(gameId)}.${encodeURIComponent(playerName)}`;
+}
+
+function returnToStartAfterServerClose(messageKey, gameId, playerName, clearGameCredentials) {
+  window.sessionStorage.setItem(START_NOTICE_STORAGE_KEY, messageKey);
+
+  if (clearGameCredentials) {
+    window.localStorage.removeItem(getResumeTokenStorageKey(gameId, playerName));
+    window.localStorage.removeItem("session_game_ID");
+  }
+
+  window.location.reload();
 }
 
 ////// Input-Output / WebSocket handling //////
@@ -561,21 +590,28 @@ async function connectToGame(gameId, name, rejoin = false) {
   createBtn.disabled = ruleConfiguration === null;
 
     switch (event.code) {
-      case 4001:
+      case NO_GAME_FOUND_CODE:
         showError(tocI18n.t("errors.invalid_game_id"));
         break;
-      case 4002:
+      case NO_PLAYER_CONTEXT_FOUND_CODE:
         showError(tocI18n.t("errors.player_name_taken"));
         break;
-      case 4004:
+      case GAME_ALREADY_FULL_CODE:
         showError(tocI18n.t("errors.game_full"));
         break;
-      case 4005:
+      case CONNECTION_IDENTIFICATION_ERROR_CODE:
         showError(tocI18n.t("errors.invalid_resume_token"));
         break;
-      case 1006:
+      case SERVER_UNREACHABLE_CODE:
         showError(tocI18n.t("errors.server_unreachable"));
         break;
+      case LOBBY_EXPIRED_CLOSE_CODE:
+        returnToStartAfterServerClose("errors.lobby_expired", gameId, name, true);
+        return;
+
+      case GAME_SUSPENDED_CLOSE_CODE:
+        returnToStartAfterServerClose("errors.game_suspended", gameId, name, false);
+        return;
       default:
         showError(tocI18n.t("errors.connection_closed", {code: event.code}));
     }
@@ -824,6 +860,7 @@ async function initializeRuleSelector() {
 }
 
 initializeLanguageInterface();
+showStoredStartNotice();
 
 rulePresetSelect.addEventListener("change", updateRulesetEditorVisibility);
 resetCustomRules.addEventListener("click", () => applyRuleValues(ruleConfiguration.presets[ruleConfiguration.default]));
