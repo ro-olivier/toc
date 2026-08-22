@@ -247,6 +247,14 @@ body {
 .spot.green { border-color: #4ade80; background: #dcfce7; }
 .spot.blue { border-color: #60a5fa; background: #dbeafe; }
 .spot.yellow { border-color: #facc15; background: #fef9c3; }
+.spot.orange { border-color: #fb923c; background: #ffedd5; }
+.spot.purple { border-color: #c084fc; background: #f3e8ff; }
+.spot.pink { border-color: #f472b6; background: #fce7f3; }
+.spot.cyan { border-color: #22d3ee; background: #cffafe; }
+.spot.lime { border-color: #a3e635; background: #ecfccb; }
+.spot.brown { border-color: #92400e; background: #f3e0cf; }
+.spot.black { border-color: #111827; background: #6b7280; color: #f9fafb; }
+.spot.white { border-color: #f9fafb; background: #f3f4f6; }
 
 .house {
   border-width: 2px;
@@ -276,6 +284,16 @@ body {
 .player-green { background: #16a34a; color: white; }
 .player-blue { background: #2563eb; color: white; }
 .player-yellow { background: #eab308; color: #111827; }
+.player-orange { background: #ea580c; color: white; }
+.player-purple { background: #9333ea; color: white; }
+.player-pink { background: #db2777; color: white; }
+.player-cyan { background: #0891b2; color: white; }
+.player-lime { background: #65a30d; color: white; }
+.player-brown { background: #78350f; color: white; }
+.player-black { background: #111827; color: white; }
+.player-white { background: #f9fafb; color: #111827; }
+
+.piece.player-white { border-color: #64748b; }
 
 .glow {
   z-index: 12;
@@ -312,6 +330,14 @@ body {
 .player-info-block.player-green { border-left-color: #22c55e; }
 .player-info-block.player-blue { border-left-color: #3b82f6; }
 .player-info-block.player-yellow { border-left-color: #eab308; }
+.player-info-block.player-orange { border-left-color: #f97316; }
+.player-info-block.player-purple { border-left-color: #a855f7; }
+.player-info-block.player-pink { border-left-color: #ec4899; }
+.player-info-block.player-cyan { border-left-color: #06b6d4; }
+.player-info-block.player-lime { border-left-color: #84cc16; }
+.player-info-block.player-brown { border-left-color: #92400e; }
+.player-info-block.player-black { border-left-color: #4b5563; }
+.player-info-block.player-white { border-left-color: #e5e7eb; }
 
 .player-info-block.active {
   border-color: var(--accent);

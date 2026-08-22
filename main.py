@@ -960,7 +960,7 @@ class GameSession:
 
 	def available_colors(self) -> list[str]:
 		usedColors = {playerData["color"] for playerData in self.players.values() if playerData.get("color")}
-		return [color for color in COLORS if color not in usedColors]
+		return [color for color in AVAILABLE_COLORS if color not in usedColors]
 
 	def lobby_state(self) -> dict:
 		players = [
@@ -1069,7 +1069,7 @@ class GameSession:
 				))
 				return False
 
-			if color not in COLORS:
+			if color not in AVAILABLE_COLORS:
 				await playerData["object"].send_message_to_user(build_message(
 					"lobby-error",
 					"lobby.errors.invalid_color",

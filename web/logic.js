@@ -1366,8 +1366,9 @@ function updatePlayerBlock(player, isDealer = false) {
   }
 
   const playerClass = getPlayerClass(player.name);
-  block.classList.remove("player-red", "player-green", "player-blue", "player-yellow");
+  if (block.dataset.playerColorClass) block.classList.remove(block.dataset.playerColorClass);
   block.classList.add(playerClass);
+  block.dataset.playerColorClass = playerClass;
 }
 
 function updateRegionColor(position, color) {

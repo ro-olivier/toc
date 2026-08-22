@@ -9,7 +9,7 @@ from toc.model.rules import GameRules, MONTSURVENT_RULES
 from toc.model.player import Player
 from toc.model.rules import GameRules
 from toc.model.game_phase import GamePhase
-
+from toc.model.params import AVAILABLE_COLORS
 
 
 def add_player(session, router, name, team="", color="", configured=False, active=True):
@@ -127,7 +127,7 @@ def test_lobby_state_reports_players_choices_and_connections():
 
 	assert state["type"] == "lobby-state"
 	assert state["gameId"] == "TEST"
-	assert state["availableColors"] == ["blue", "green", "yellow"]
+	assert state["availableColors"] == [color for color in AVAILABLE_COLORS if color != "red"]
 	assert state["teamCounts"] == {"0": 1, "1": 0}
 	assert state["players"][0]["connected"]
 	assert not state["players"][1]["connected"]
@@ -310,3 +310,15 @@ def test_application_lifespan_runs_interrupted_game_recovery(monkeypatch):
 		pass
 
 	assert recoveryCalls == ["recover"]
+
+def test_player_configuration_accepts_an_extended_color():
+	async def scenario():
+		router = PlayerInputRouter()
+		session = GameSession("TEST", router)
+		aliceId, alice = add_player(session, router, "Alice")
+
+		assert await session.configure_player(aliceId, "0", "purple")
+		assert alice.color == "purple"
+		assert session.players[aliceId]["color"] == "purple"
+
+	asyncio.run(scenario())

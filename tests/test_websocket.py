@@ -297,7 +297,7 @@ def test_invalid_color_is_rejected(client, gameId):
 		identifyWebSocket(websocket)
 		receiveLobbyState(websocket)
 
-		websocket.send_json({"type": "configure-player", "team": "0", "color": "purple"})
+		websocket.send_json({"type": "configure-player", "team": "0", "color": "ultraviolet"})
 
 		error = websocket.receive_json()
 
@@ -305,6 +305,20 @@ def test_invalid_color_is_rejected(client, gameId):
 		assert error["messageKey"] == "lobby.errors.invalid_color"
 		assert "fallback" in error
 		assert "msg" not in error
+
+def test_extended_color_is_accepted(client, gameId):
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
+		identifyWebSocket(websocket)
+		receiveLobbyState(websocket)
+
+		websocket.send_json({"type": "configure-player", "team": "0", "color": "purple"})
+
+		state = websocket.receive_json()
+
+		assert state["type"] == "lobby-state"
+		alice = next(player for player in state["players"] if player["name"] == "Alice")
+		assert alice["configured"] is True
+		assert alice["color"] == "purple"
 
 def test_configured_lobby_player_can_reconnect(client, gameId):
 	playerId = f"{gameId}-Alice"
