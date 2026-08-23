@@ -734,3 +734,34 @@ def test_reconnection_requires_valid_resume_token(client, gameId):
 		assert reconnectedReady["playerId"] == ready["playerId"]
 		assert reconnectedReady["resumeToken"] == resumeToken
 		assert len(state["players"]) == 1
+
+def test_resume_token_is_not_broadcast_to_other_players(client, gameId):
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as aliceSocket:
+		aliceReady = identifyWebSocket(aliceSocket)
+		receiveLobbyState(aliceSocket)
+
+		with client.websocket_connect(f"/toc/ws/{gameId}/Bob") as bobSocket:
+			bobReady = identifyWebSocket(bobSocket)
+			bobState = receiveLobbyState(bobSocket)
+			aliceState = receiveLobbyState(aliceSocket)
+
+			assert aliceReady["resumeToken"] != bobReady["resumeToken"]
+			assert "resumeToken" not in aliceState
+			assert "resumeToken" not in bobState
+
+def test_player_cannot_reconnect_with_another_players_token(client, gameId):
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as aliceSocket:
+		aliceReady = identifyWebSocket(aliceSocket)
+		receiveLobbyState(aliceSocket)
+
+	with client.websocket_connect(f"/toc/ws/{gameId}/Bob") as bobSocket:
+		bobReady = identifyWebSocket(bobSocket)
+		receiveLobbyState(bobSocket)
+
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as aliceSocket:
+		aliceSocket.send_json({"type": "identify", "resumeToken": bobReady["resumeToken"]})
+
+		with pytest.raises(WebSocketDisconnect) as error:
+			aliceSocket.receive_json()
+
+		assert error.value.code == 4005
