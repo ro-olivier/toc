@@ -12,14 +12,18 @@ class FakeRouter:
 		self.inputs = iter(inputs)
 		self.outputs = []
 		self.pendingPrompts = []
+		self.inputRouterIds = []
+		self.clearedRouterIds = []
 
 	async def send_output(self, player_id, message):
 		self.outputs.append((player_id, message))
 
 	async def wait_for_input(self, player_id):
+		self.inputRouterIds.append(player_id)
 		return next(self.inputs)
 
 	def clear_pending_prompt(self, player_id) -> None:
+		self.clearedRouterIds.append(player_id)
 		self.pendingPrompts = []
 
 
@@ -200,3 +204,28 @@ def test_card_exchange_uses_reconnectable_prompt():
 	assert message["messageKey"] == "prompts.exchange_card"
 	assert message["fallback"] == "Please choose a card to give to your teammate."
 	assert "msg" not in message
+
+def test_player_uses_participant_router_id_for_communication():
+	card = Card("♥️", "2")
+	router = FakeRouter([{"type": "card_selection", "suit": "♥️", "value": "2"}])
+	player = Player(identifier="seat-red", name="Alice", team="0", color="red", router=router, routerId="TEST-Alice")
+	player.hand.addToHand(card)
+
+	result = asyncio.run(player.getCardChoiceFromPlayer())
+
+	assert result == card
+	assert player.identifier == "seat-red"
+	assert player.routerId == "TEST-Alice"
+	assert router.outputs[0][0] == "TEST-Alice"
+	assert router.inputRouterIds == ["TEST-Alice"]
+	assert router.clearedRouterIds == ["TEST-Alice"]
+
+def test_player_uses_identifier_as_router_id_by_default():
+	router = FakeRouter([])
+	player = Player(identifier="TEST-Alice", name="Alice", router=router)
+
+	asyncio.run(player.send_message_to_user({"type": "test"}))
+
+	assert player.identifier == "TEST-Alice"
+	assert player.routerId == "TEST-Alice"
+	assert router.outputs == [("TEST-Alice", {"type": "test"})]

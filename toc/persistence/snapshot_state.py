@@ -509,12 +509,12 @@ class GameState:
 			raise ValueError("Cannot snapshot a session without a game")
 
 		game = session.game
-		playerDataByObject = {playerData["object"]: playerData for playerData in session.players.values()}
+		seatsByPlayer = {seat.player: seat for seat in session.roster.seats}
 
 		try:
-			playerOrder = tuple(playerDataByObject[player]["playerId"] for player in game.players)
+			playerOrder = tuple(seatsByPlayer[player].seatId for player in game.players)
 		except KeyError as error:
-			raise ValueError("Game contains a player without persistent metadata") from error
+			raise ValueError("Game contains a player without a registered seat") from error
 
 		players = tuple(PlayerGameState.fromPlayer(player, playerId) for player, playerId in zip(game.players, playerOrder))
 		positions = []
@@ -524,9 +524,9 @@ class GameState:
 				continue
 
 			try:
-				occupantPlayerId = playerDataByObject[position.occupant]["playerId"]
+				occupantPlayerId = seatsByPlayer[position.occupant].seatId
 			except KeyError as error:
-				raise ValueError("Board contains a player without persistent metadata") from error
+				raise ValueError("Board contains a player without a registered seat") from error
 
 			positions.append(PositionState.fromPosition(position, occupantPlayerId))
 
@@ -534,9 +534,9 @@ class GameState:
 
 		if game.activePlayer is not None:
 			try:
-				activePlayerId = playerDataByObject[game.activePlayer]["playerId"]
+				activePlayerId = seatsByPlayer[game.activePlayer].seatId
 			except KeyError as error:
-				raise ValueError("Active player has no persistent metadata") from error
+				raise ValueError("Active player has no registered seat") from error
 
 		return cls(
 			isStarted=game.isStarted,
@@ -553,23 +553,21 @@ class GameState:
 		)
 
 	def restoreGame(self, session) -> Game:
-		playerDataById = {}
+		seatsById = {}
 
-		for playerData in session.players.values():
-			playerId = playerData.get("playerId")
+		for seat in session.roster.seats:
+			if seat.seatId in seatsById:
+				raise ValueError("Session roster contains duplicate seat IDs")
 
-			if playerId in playerDataById:
-				raise ValueError("Session contains duplicate persistent player IDs")
+			seatsById[seat.seatId] = seat
 
-			playerDataById[playerId] = playerData
-
-		if set(playerDataById) != set(self.playerOrder):
-			raise ValueError("Session players do not match game snapshot")
+		if set(seatsById) != set(self.playerOrder):
+			raise ValueError("Session seats do not match game snapshot")
 
 		try:
-			players = [playerDataById[playerId]["object"] for playerId in self.playerOrder]
+			players = [seatsById[seatId].player for seatId in self.playerOrder]
 		except KeyError as error:
-			raise ValueError("Session player has no runtime object") from error
+			raise ValueError("Session seat has no runtime player") from error
 
 		game = Game(session, list(self.boardColors), session.rules)
 
@@ -584,7 +582,7 @@ class GameState:
 		deck = Deck.fromPiles(drawPile, discardPile)
 
 		for playerState in self.players:
-			player = playerDataById[playerState.playerId]["object"]
+			player = seatsById[playerState.playerId].player
 			player.restoreHand([cardState.toCard(deck) for cardState in playerState.hand])
 
 		for positionState in self.positions:
@@ -596,14 +594,14 @@ class GameState:
 			except IndexError as error:
 				raise ValueError(f"Snapshot position does not exist on this board: {positionState.positionId}") from error
 
-			player = playerDataById[positionState.playerId]["object"]
+			player = seatsById[positionState.playerId].player
 			position.setOccupant(player, positionState.isFreshlyDeployed, positionState.isBlocking)
 			player.addAPieceOnTheBoard()
 
 		activePlayer = None
 
 		if self.activePlayerId is not None:
-			activePlayer = playerDataById[self.activePlayerId]["object"]
+			activePlayer = seatsById[self.activePlayerId].player
 
 		game.restoreRuntimeState(
 			deck,
@@ -638,12 +636,12 @@ class SessionSnapshotState:
 		if type(self.events) is not tuple or not all(isinstance(event, GameEvent) for event in self.events):
 			raise ValueError("Invalid snapshot event log")
 
-		metadataPlayerIds = {player.playerId for player in self.metadata.players}
+		metadataSeatIds = {seat.seatId for seat in self.metadata.seats}
 
-		if metadataPlayerIds != set(self.game.playerOrder):
-			raise ValueError("Snapshot metadata and game players do not match")
+		if metadataSeatIds != set(self.game.playerOrder):
+			raise ValueError("Snapshot metadata and game seats do not match")
 
-		if not self.progress.referencedPlayerIds.issubset(metadataPlayerIds):
+		if not self.progress.referencedPlayerIds.issubset(metadataSeatIds):
 			raise ValueError("Game progress references an unknown player")
 
 		if self.progress.dealIndex >= len(self.metadata.rules.deal_card_counts):
@@ -658,7 +656,7 @@ class SessionSnapshotState:
 			if event.elapsedSeconds < previousElapsedSeconds:
 				raise ValueError("Snapshot event times are not ordered")
 
-			if event.playerId is not None and event.playerId not in metadataPlayerIds:
+			if event.playerId is not None and event.playerId not in metadataSeatIds:
 				raise ValueError("Snapshot event references an unknown player")
 
 			previousElapsedSeconds = event.elapsedSeconds

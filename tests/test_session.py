@@ -10,14 +10,53 @@ from toc.model.player import Player
 from toc.model.rules import GameRules
 from toc.model.game_phase import GamePhase
 from toc.model.params import AVAILABLE_COLORS
+from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
+from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken
+from toc.session.roster import Participant, PlayerSeat
 
 
 def add_player(session, router, name, team="", color="", configured=False, active=True):
-	playerId = session.getFullPlayerId(session.id, name)
-	router.register(playerId)
-	player = Player(playerId, name, team=team, color=color, gameSession=session, router=router)
-	session.players[playerId] = {"name": name, "id": playerId, "websocket": None, "team": team, "color": color, "object": player, "active": active, "configured": configured}
-	return playerId, player
+	routerId = session.getFullPlayerId(session.id, name)
+	participantId = createPlayerId()
+	resumeTokenHash = hashResumeToken(createResumeToken())
+
+	router.register(routerId)
+
+	participant = Participant(
+		participantId=participantId,
+		routerId=routerId,
+		name=name,
+		resumeTokenHash=resumeTokenHash,
+		active=active,
+		configured=configured,
+	)
+
+	player = Player(identifier=participantId, name=name, team=team, color=color, gameSession=session, router=router, routerId=routerId)
+	seat = None
+
+	session.roster.addParticipant(participant)
+
+	if configured:
+		seat = PlayerSeat(seatId=participantId, participantId=participantId, team=team, color=color, player=player)
+		session.roster.addSeat(seat)
+
+	session.players[routerId] = {
+		"name": name,
+		"id": routerId,
+		"playerId": participantId,
+		"participantId": participantId,
+		"resumeTokenHash": resumeTokenHash,
+		"websocket": None,
+		"team": team,
+		"color": color,
+		"object": player,
+		"participant": participant,
+		"seat": seat,
+		"active": active,
+		"configured": configured,
+	}
+
+	return routerId, player
 
 
 def test_connection_manager_passes_rules_to_session():
@@ -170,7 +209,7 @@ def test_game_session_starts_game_only_once():
 		add_player(session, router, "Bob", team="1", color="blue", configured=True)
 		add_player(session, router, "Carol", team="0", color="green", configured=True)
 		add_player(session, router, "Diana", team="1", color="yellow", configured=True)
-		session.order = list(session.players.keys())
+		session.order = [playerData["seat"].seatId for playerData in session.players.values()]
 
 		results = await asyncio.gather(session.start_game_if_ready(), session.start_game_if_ready())
 		await session.gameTask
@@ -182,30 +221,35 @@ def test_game_session_starts_game_only_once():
 	asyncio.run(scenario())
 
 def test_player_order_alternates_teams():
-	session = GameSession("TEST", PlayerInputRouter())
-	session.players = {
-		"TEST-Alice": {"team": "0"},
-		"TEST-Bob": {"team": "0"},
-		"TEST-Carol": {"team": "1"},
-		"TEST-Diana": {"team": "1"},
-	}
+	router = PlayerInputRouter()
+	session = GameSession("TEST", router)
+
+	aliceId, _ = add_player(session, router, "Alice", "0", "red", configured=True)
+	bobId, _ = add_player(session, router, "Bob", "0", "blue", configured=True)
+	carolId, _ = add_player(session, router, "Carol", "1", "green", configured=True)
+	dianaId, _ = add_player(session, router, "Diana", "1", "yellow", configured=True)
 
 	assert session.set_player_order()
-	assert session.order == ["TEST-Alice", "TEST-Carol", "TEST-Bob", "TEST-Diana"]
+	assert session.order == [
+		session.players[aliceId]["seat"].seatId,
+		session.players[carolId]["seat"].seatId,
+		session.players[bobId]["seat"].seatId,
+		session.players[dianaId]["seat"].seatId,
+	]
 
 
 def test_player_order_rejects_invalid_teams():
-	session = GameSession("TEST", PlayerInputRouter())
-	session.players = {
-		"TEST-Alice": {"team": "0"},
-		"TEST-Bob": {"team": "0"},
-		"TEST-Carol": {"team": "0"},
-		"TEST-Diana": {"team": "1"},
-	}
+	router = PlayerInputRouter()
+	session = GameSession("TEST", router)
+
+	add_player(session, router, "Alice", "0", "red", configured=True)
+	add_player(session, router, "Bob", "0", "blue", configured=True)
+	add_player(session, router, "Carol", "0", "green", configured=True)
+	add_player(session, router, "Diana", "1", "yellow", configured=True)
 
 	assert not session.set_player_order()
 	assert session.order == []
-
+	
 def test_pending_prompt_is_replayed_after_reconnection():
 	async def scenario():
 		router = PlayerInputRouter()
@@ -322,3 +366,48 @@ def test_player_configuration_accepts_an_extended_color():
 		assert session.players[aliceId]["color"] == "purple"
 
 	asyncio.run(scenario())
+
+def test_game_session_uses_team_four_mode_by_default():
+	session = GameSession("TEST", PlayerInputRouter())
+
+	assert session.modeDefinition.mode is GameMode.TEAM_FOUR
+	assert session.modeDefinition.participantCount == 4
+	assert session.modeDefinition.seatCount == 4
+	assert session.modeDefinition.teamCount == 2
+
+
+def test_connection_manager_passes_game_mode_to_session():
+	router = PlayerInputRouter()
+	manager = ConnectionManager()
+	modeDefinition = getGameModeDefinition(GameMode.TEAM_SIX)
+
+	gameId = manager.create_game(router, modeDefinition=modeDefinition)
+	session = manager.get_game(gameId)
+
+	assert session.modeDefinition is modeDefinition
+
+
+def test_lobby_state_reports_game_mode_capacities():
+	modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
+	session = GameSession("TEST", PlayerInputRouter(), modeDefinition=modeDefinition)
+
+	state = session.lobby_state()
+
+	assert state["gameMode"] == {"name": "duel_four", "layout": "cross"}
+	assert state["participantCapacity"] == 2
+	assert state["seatCapacity"] == 4
+	assert state["teamCapacity"] == 1
+	assert state["teamCounts"] == {"0": 0, "1": 0}
+
+
+def test_team_six_mode_exposes_three_teams():
+	modeDefinition = getGameModeDefinition(GameMode.TEAM_SIX)
+	session = GameSession("TEST", PlayerInputRouter(), modeDefinition=modeDefinition)
+
+	state = session.lobby_state()
+
+	assert state["gameMode"] == {"name": "team_six", "layout": None}
+	assert state["participantCapacity"] == 6
+	assert state["seatCapacity"] == 6
+	assert state["teamCapacity"] == 2
+	assert state["teamCounts"] == {"0": 0, "1": 0, "2": 0}

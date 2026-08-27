@@ -2,7 +2,7 @@ import pytest
 
 from uuid import UUID
 
-from toc.infrastructure.identity import JOIN_CODE_ALPHABET, JOIN_CODE_LENGTH, createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches
+from toc.infrastructure.identity import JOIN_CODE_ALPHABET, JOIN_CODE_LENGTH, createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches, createSeatId
 
 
 def test_join_code_uses_unambiguous_alphabet():
@@ -34,3 +34,11 @@ def test_incorrect_resume_token_is_rejected():
 	assert not resumeTokenMatches(createResumeToken(), tokenHash)
 	assert not resumeTokenMatches("", tokenHash)
 	assert not resumeTokenMatches("something", "")
+
+def test_seat_ids_are_unique_uuid_hex_values():
+	firstSeatId = createSeatId()
+	secondSeatId = createSeatId()
+
+	assert firstSeatId != secondSeatId
+	assert UUID(hex=firstSeatId).hex == firstSeatId
+	assert UUID(hex=secondSeatId).hex == secondSeatId

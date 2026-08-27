@@ -4,23 +4,48 @@ import pytest
 
 from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken
 from main import GameSession, PlayerInputRouter
-from toc.persistence.persistent_state import SessionMetadataState
+from toc.persistence.persistent_state import ParticipantMetadataState, SeatMetadataState, SessionMetadataState
 from toc.infrastructure.versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, RULES_FORMAT_VERSION
+from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
+from toc.model.player import Player
+from toc.session.roster import Participant, PlayerSeat
 
 
 def makeSessionWithPlayer():
 	session = GameSession("ABCDEF", PlayerInputRouter())
 	resumeToken = createResumeToken()
+	participantId = createPlayerId()
+	routerId = "ABCDEF-Alice"
+	resumeTokenHash = hashResumeToken(resumeToken)
 
-	session.players["ABCDEF-Alice"] = {
+	participant = Participant(
+		participantId=participantId,
+		routerId=routerId,
+		name="Alice",
+		resumeTokenHash=resumeTokenHash,
+		websocket=object(),
+		active=True,
+		configured=True,
+	)
+
+	player = Player(identifier=participantId, name="Alice", team="0", color="red", routerId=routerId)
+	seat = PlayerSeat(seatId=participantId, participantId=participantId, team="0", color="red", player=player)
+
+	session.roster.addParticipant(participant)
+	session.roster.addSeat(seat)
+
+	session.players[routerId] = {
 		"name": "Alice",
-		"id": "ABCDEF-Alice",
-		"playerId": createPlayerId(),
-		"resumeTokenHash": hashResumeToken(resumeToken),
-		"websocket": object(),
+		"id": routerId,
+		"playerId": participantId,
+		"participantId": participantId,
+		"resumeTokenHash": resumeTokenHash,
+		"websocket": participant.websocket,
 		"team": "0",
 		"color": "red",
-		"object": object(),
+		"object": player,
+		"participant": participant,
+		"seat": seat,
 		"active": True,
 		"configured": True,
 	}
@@ -41,13 +66,13 @@ def test_session_metadata_contains_only_persistent_data():
 	assert payload["sessionId"] == session.sessionId
 	assert payload["joinCode"] == "ABCDEF"
 
-	assert payload["players"][0]["name"] == "Alice"
-	assert payload["players"][0]["team"] == "0"
-	assert payload["players"][0]["color"] == "red"
+	assert payload["participants"][0]["name"] == "Alice"
+	assert payload["seats"][0]["team"] == "0"
+	assert payload["seats"][0]["color"] == "red"
 
-	assert "websocket" not in payload["players"][0]
-	assert "object" not in payload["players"][0]
-	assert "active" not in payload["players"][0]
+	assert "websocket" not in payload["participants"][0]
+	assert "active" not in payload["participants"][0]
+	assert "object" not in payload["seats"][0]
 	assert resumeToken not in encoded
 
 
@@ -60,7 +85,9 @@ def test_session_metadata_survives_json_round_trip():
 
 	assert restoredState == originalState
 	assert restoredState.rules == session.rules
-	assert restoredState.players == originalState.players
+	assert restoredState.participants == originalState.participants
+	assert restoredState.seats == originalState.seats
+	assert restoredState.modeDefinition == session.modeDefinition
 
 
 def test_unknown_archive_format_is_rejected():
@@ -79,3 +106,56 @@ def test_unknown_rules_format_is_rejected():
 
 	with pytest.raises(ValueError, match="Unsupported rules format version"):
 		SessionMetadataState.from_dict(payload)
+
+def test_session_metadata_preserves_non_default_game_mode():
+	modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.ADJACENT)
+	session = GameSession("ABCDEF", PlayerInputRouter(), modeDefinition=modeDefinition)
+
+	restoredState = SessionMetadataState.from_dict(json.loads(json.dumps(session.metadataState().to_dict())))
+
+	assert restoredState.modeDefinition == modeDefinition
+	assert restoredState.modeDefinition.mode is GameMode.DUEL_FOUR
+	assert restoredState.modeDefinition.layout is DuelFourLayout.ADJACENT
+
+def test_participant_metadata_survives_json_round_trip():
+	participant = Participant(
+		participantId=createPlayerId(),
+		routerId="TEST-Alice",
+		name="Alice",
+		resumeTokenHash=hashResumeToken(createResumeToken()),
+		configured=True,
+	)
+
+	originalState = ParticipantMetadataState.fromParticipant(participant)
+	restoredState = ParticipantMetadataState.from_dict(json.loads(json.dumps(originalState.to_dict())))
+
+	assert restoredState == originalState
+	assert restoredState.participantId == participant.participantId
+	assert restoredState.name == "Alice"
+	assert restoredState.configured is True
+
+
+def test_seat_metadata_survives_json_round_trip():
+	participantId = createPlayerId()
+	player = Player(identifier=createPlayerId(), name="Alice", team="0", color="red")
+	seat = PlayerSeat(seatId=player.identifier, participantId=participantId, team="0", color="red", player=player)
+
+	originalState = SeatMetadataState.fromSeat(seat)
+	restoredState = SeatMetadataState.from_dict(json.loads(json.dumps(originalState.to_dict())))
+
+	assert restoredState == originalState
+	assert restoredState.seatId == player.identifier
+	assert restoredState.participantId == participantId
+	assert restoredState.team == "0"
+	assert restoredState.color == "red"
+
+
+def test_two_seats_can_reference_same_persistent_participant():
+	participantId = createPlayerId()
+	redPlayer = Player(identifier=createPlayerId(), name="Alice", team="0", color="red")
+	bluePlayer = Player(identifier=createPlayerId(), name="Alice", team="0", color="blue")
+	redSeat = SeatMetadataState.fromSeat(PlayerSeat(redPlayer.identifier, participantId, "0", "red", redPlayer))
+	blueSeat = SeatMetadataState.fromSeat(PlayerSeat(bluePlayer.identifier, participantId, "0", "blue", bluePlayer))
+
+	assert redSeat.seatId != blueSeat.seatId
+	assert redSeat.participantId == blueSeat.participantId

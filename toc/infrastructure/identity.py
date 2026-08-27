@@ -39,3 +39,6 @@ def resumeTokenMatches(token: str, expectedHash: str) -> bool:
 		return False
 
 	return secrets.compare_digest(hashResumeToken(token), expectedHash)
+
+def createSeatId() -> str:
+	return uuid.uuid4().hex

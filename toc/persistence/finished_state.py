@@ -6,6 +6,7 @@ from toc.infrastructure.versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, 
 from toc.model.audit import GameEvent, GameEventType
 from toc.model.rules import GameRules
 from toc.persistence.snapshot_state import GameState
+from toc.model.game_mode import GameModeDefinition
 
 
 def _validateId(value: str, fieldName: str) -> None:
@@ -37,52 +38,73 @@ def _parseTimestamp(value, fieldName: str) -> datetime:
 
 
 @dataclass(frozen=True, slots=True)
-class FinishedPlayerState:
-	playerId: str
+class FinishedParticipantState:
+	participantId: str
 	name: str
+
+	def __post_init__(self) -> None:
+		_validateId(self.participantId, "finished-participant ID")
+
+		if type(self.name) is not str or not self.name:
+			raise ValueError("Invalid finished-participant name")
+
+	def to_dict(self) -> dict:
+		return {
+			"participantId": self.participantId,
+			"name": self.name,
+		}
+
+	@classmethod
+	def from_dict(cls, values: dict) -> "FinishedParticipantState":
+		if type(values) is not dict or set(values) != {"participantId", "name"}:
+			raise ValueError("Invalid finished-participant data")
+
+		return cls(participantId=values["participantId"], name=values["name"])
+
+	@classmethod
+	def fromParticipant(cls, participant) -> "FinishedParticipantState":
+		return cls(participantId=participant.participantId, name=participant.name)
+
+@dataclass(frozen=True, slots=True)
+class FinishedSeatState:
+	seatId: str
+	participantId: str
 	team: str
 	color: str
 
 	def __post_init__(self) -> None:
-		_validateId(self.playerId, "finished-player ID")
-
-		if type(self.name) is not str or not self.name:
-			raise ValueError("Invalid finished-player name")
+		_validateId(self.seatId, "finished-seat ID")
+		_validateId(self.participantId, "finished-seat participant ID")
 
 		if type(self.team) is not str or not self.team:
-			raise ValueError("Invalid finished-player team")
+			raise ValueError("Invalid finished-seat team")
 
 		if type(self.color) is not str or not self.color:
-			raise ValueError("Invalid finished-player colour")
+			raise ValueError("Invalid finished-seat colour")
 
 	def to_dict(self) -> dict:
 		return {
-			"playerId": self.playerId,
-			"name": self.name,
+			"seatId": self.seatId,
+			"participantId": self.participantId,
 			"team": self.team,
 			"color": self.color,
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "FinishedPlayerState":
-		if type(values) is not dict or set(values) != {"playerId", "name", "team", "color"}:
-			raise ValueError("Invalid finished-player data")
+	def from_dict(cls, values: dict) -> "FinishedSeatState":
+		if type(values) is not dict or set(values) != {"seatId", "participantId", "team", "color"}:
+			raise ValueError("Invalid finished-seat data")
 
 		return cls(
-			playerId=values["playerId"],
-			name=values["name"],
+			seatId=values["seatId"],
+			participantId=values["participantId"],
 			team=values["team"],
 			color=values["color"],
 		)
 
 	@classmethod
-	def fromSessionPlayer(cls, playerData: dict) -> "FinishedPlayerState":
-		return cls(
-			playerId=playerData["playerId"],
-			name=playerData["name"],
-			team=playerData["team"],
-			color=playerData["color"],
-		)
+	def fromSeat(cls, seat) -> "FinishedSeatState":
+		return cls(seatId=seat.seatId, participantId=seat.participantId, team=seat.team, color=seat.color)
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,9 +114,11 @@ class FinishedArchiveState:
 	rulesFormatVersion: int
 	sessionId: str
 	joinCode: str
+	modeDefinition: GameModeDefinition
 	rulesetName: str
 	rules: GameRules
-	players: tuple[FinishedPlayerState, ...]
+	participants: tuple[FinishedParticipantState, ...]
+	seats: tuple[FinishedSeatState, ...]
 	createdAt: datetime
 	startedAt: datetime
 	endedAt: datetime
@@ -122,8 +146,8 @@ class FinishedArchiveState:
 		if not isinstance(self.rules, GameRules):
 			raise ValueError("Invalid finished-game rules")
 
-		if type(self.players) is not tuple or not self.players:
-			raise ValueError("Invalid finished-game players")
+		if not isinstance(self.modeDefinition, GameModeDefinition):
+			raise ValueError("Invalid finished-game mode")
 
 		if not isinstance(self.game, GameState):
 			raise ValueError("Invalid finished-game state")
@@ -140,16 +164,17 @@ class FinishedArchiveState:
 		if not self.game.isStarted or not self.game.isFinished:
 			raise ValueError("Finished archive must contain a finished game")
 
-		playerIds = [player.playerId for player in self.players]
+		if type(self.participants) is not tuple or not self.participants or not all(isinstance(participant, FinishedParticipantState) for participant in self.participants):
+			raise ValueError("Invalid finished-game participants")
 
-		if len(playerIds) != len(set(playerIds)):
-			raise ValueError("Finished archive contains duplicate player IDs")
+		if type(self.seats) is not tuple or not self.seats or not all(isinstance(seat, FinishedSeatState) for seat in self.seats):
+			raise ValueError("Invalid finished-game seats")
 
-		if len({player.name for player in self.players}) != len(self.players):
-			raise ValueError("Finished archive contains duplicate player names")
+		if len(self.participants) != self.modeDefinition.participantCount:
+			raise ValueError("Finished archive participant count does not match game mode")
 
-		if set(playerIds) != set(self.game.playerOrder):
-			raise ValueError("Finished archive players do not match game players")
+		if len(self.seats) != self.modeDefinition.seatCount:
+			raise ValueError("Finished archive seat count does not match game mode")
 
 		previousElapsedSeconds = -1
 
@@ -160,13 +185,31 @@ class FinishedArchiveState:
 			if event.elapsedSeconds < previousElapsedSeconds:
 				raise ValueError("Finished-game event elapsed times are not ordered")
 
-			if event.playerId is not None and event.playerId not in playerIds:
+			if event.playerId is not None and event.playerId not in seatIds:
 				raise ValueError("Finished-game event references an unknown player")
 
 			previousElapsedSeconds = event.elapsedSeconds
 
 		if self.events[-1].eventType is not GameEventType.GAME_FINISHED:
 			raise ValueError("Finished archive must end with a game-finished event")
+
+		participantIds = [participant.participantId for participant in self.participants]
+		seatIds = [seat.seatId for seat in self.seats]
+
+		if len(participantIds) != len(set(participantIds)):
+			raise ValueError("Finished archive contains duplicate participant IDs")
+
+		if len({participant.name for participant in self.participants}) != len(self.participants):
+			raise ValueError("Finished archive contains duplicate participant names")
+
+		if len(seatIds) != len(set(seatIds)):
+			raise ValueError("Finished archive contains duplicate seat IDs")
+
+		if any(seat.participantId not in participantIds for seat in self.seats):
+			raise ValueError("Finished archive seat references an unknown participant")
+
+		if set(seatIds) != set(self.game.playerOrder):
+			raise ValueError("Finished archive seats do not match game seats")
 
 	def to_dict(self) -> dict:
 		return {
@@ -179,7 +222,9 @@ class FinishedArchiveState:
 				"preset": self.rulesetName,
 				"values": self.rules.to_dict(),
 			},
-			"players": [player.to_dict() for player in self.players],
+			"gameMode": self.modeDefinition.to_dict(),
+			"participants": [participant.to_dict() for participant in self.participants],
+			"seats": [seat.to_dict() for seat in self.seats],
 			"createdAt": self.createdAt.isoformat(),
 			"startedAt": self.startedAt.isoformat(),
 			"endedAt": self.endedAt.isoformat(),
@@ -196,7 +241,9 @@ class FinishedArchiveState:
 			"sessionId",
 			"joinCode",
 			"ruleset",
-			"players",
+			"gameMode",
+			"participants",
+			"seats",
 			"createdAt",
 			"startedAt",
 			"endedAt",
@@ -212,8 +259,11 @@ class FinishedArchiveState:
 		if type(ruleset) is not dict or set(ruleset) != {"preset", "values"}:
 			raise ValueError("Invalid finished-game ruleset")
 
-		if type(values["players"]) is not list:
-			raise ValueError("Invalid finished-game players")
+		if type(values["participants"]) is not list:
+			raise ValueError("Invalid finished-game participants")
+
+		if type(values["seats"]) is not list:
+			raise ValueError("Invalid finished-game seats")
 
 		if type(values["events"]) is not list:
 			raise ValueError("Invalid finished-game events")
@@ -226,7 +276,9 @@ class FinishedArchiveState:
 			joinCode=values["joinCode"],
 			rulesetName=ruleset["preset"],
 			rules=GameRules.from_dict(ruleset["values"]),
-			players=tuple(FinishedPlayerState.from_dict(player) for player in values["players"]),
+			modeDefinition = GameModeDefinition.from_dict(values["gameMode"]),
+			participants=tuple(FinishedParticipantState.from_dict(participant) for participant in values["participants"]),
+			seats=tuple(FinishedSeatState.from_dict(seat) for seat in values["seats"]),
 			createdAt=_parseTimestamp(values["createdAt"], "creation timestamp"),
 			startedAt=_parseTimestamp(values["startedAt"], "start timestamp"),
 			endedAt=_parseTimestamp(values["endedAt"], "end timestamp"),
@@ -250,7 +302,9 @@ class FinishedArchiveState:
 			joinCode=session.joinCode,
 			rulesetName=session.rulesetName,
 			rules=session.rules,
-			players=tuple(FinishedPlayerState.fromSessionPlayer(playerData) for playerData in session.players.values()),
+			modeDefinition=session.modeDefinition,
+			participants=tuple(FinishedParticipantState.fromParticipant(participant) for participant in session.roster.participants),
+			seats=tuple(FinishedSeatState.fromSeat(seat) for seat in session.roster.seats),
 			createdAt=session.createdAt,
 			startedAt=session.startedAt,
 			endedAt=session.endedAt,

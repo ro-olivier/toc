@@ -94,6 +94,19 @@ def test_valid_websocket_connection_receives_ready_and_lobby_state(client, gameI
 		assert lobbyState["players"][0]["name"] == "Alice"
 		assert lobbyState["players"][0]["connected"] is True
 
+		playerData = manager.games[gameId].players[f"{gameId}-Alice"]
+
+		assert playerData["object"].identifier == ready["playerId"]
+		assert playerData["object"].routerId == f"{gameId}-Alice"
+
+		participant = manager.games[gameId].roster.getParticipantByRouterId(f"{gameId}-Alice")
+
+		assert participant is playerData["participant"]
+		assert participant.participantId == ready["playerId"]
+		assert participant.name == "Alice"
+		assert participant.active is True
+		assert participant.websocket is not None
+
 
 def test_unknown_game_closes_websocket_with_4001(client):
 	with client.websocket_connect("/toc/ws/DOES-NOT-EXIST/Alice") as websocket:
@@ -481,10 +494,10 @@ def test_four_configured_players_start_game_once(client, gameId, monkeypatch):
 		assert gameLoopCalls == [True]
 		assert session.started is True
 		assert session.order == [
-			f"{gameId}-Alice",
-			f"{gameId}-Bob",
-			f"{gameId}-Carol",
-			f"{gameId}-Diana",
+			session.players[f"{gameId}-Alice"]["seat"].seatId,
+			session.players[f"{gameId}-Bob"]["seat"].seatId,
+			session.players[f"{gameId}-Carol"]["seat"].seatId,
+			session.players[f"{gameId}-Diana"]["seat"].seatId,
 		]
 		assert len(session.events) == 1
 		assert session.events[0].eventType is GameEventType.GAME_STARTED
@@ -765,3 +778,48 @@ def test_player_cannot_reconnect_with_another_players_token(client, gameId):
 			aliceSocket.receive_json()
 
 		assert error.value.code == 4005
+
+def test_disconnection_updates_participant_state(client, gameId):
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
+		identifyWebSocket(websocket)
+		receiveLobbyState(websocket)
+
+		session = manager.games[gameId]
+		participant = session.roster.getParticipantByRouterId(f"{gameId}-Alice")
+
+		assert participant.active is True
+		assert participant.websocket is not None
+
+	session = manager.games[gameId]
+	playerData = session.players[f"{gameId}-Alice"]
+	participant = session.roster.getParticipantByRouterId(f"{gameId}-Alice")
+
+	assert playerData["active"] is False
+	assert playerData["websocket"] is None
+	assert participant.active is False
+	assert participant.websocket is None
+
+def test_player_configuration_creates_logical_seat(client, gameId):
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
+		ready = identifyWebSocket(websocket)
+		receiveLobbyState(websocket)
+
+		websocket.send_json({"type": "configure-player", "team": "0", "color": "red"})
+		state = receiveLobbyState(websocket)
+
+		assert getLobbyPlayer(state, "Alice")["configured"] is True
+
+		session = manager.games[gameId]
+		playerData = session.players[f"{gameId}-Alice"]
+		participant = session.roster.getParticipantByRouterId(f"{gameId}-Alice")
+		seat = session.roster.getSeatById(ready["playerId"])
+
+		assert session.roster.participantCount == 1
+		assert session.roster.seatCount == 1
+		assert seat is playerData["seat"]
+		assert seat.player is playerData["object"]
+		assert seat.participantId == participant.participantId
+		assert seat.team == "0"
+		assert seat.color == "red"
+		assert participant.seatIds == [seat.seatId]
+		assert participant.configured is True
