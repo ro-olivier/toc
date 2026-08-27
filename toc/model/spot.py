@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Optional
 
-from player import Player
+from toc.model.player import Player
 
 
 class Spot:
@@ -10,6 +10,7 @@ class Spot:
 		self._number = number
 		self._isOccupied = False
 		self._isBlocking = False
+		self._isFreshlyDeployed = False
 		self._occupant = None
 
 	def __str__(self) -> str:
@@ -40,10 +41,14 @@ class Spot:
 		return self._isBlocking
 
 	@property
+	def isFreshlyDeployed(self) -> bool:
+		return self._isFreshlyDeployed
+
+	@property
 	def occupant(self) -> Player:
 		return self._occupant
 
-	def setOccupant(self, player : Player, isOwnPlayerTakingAPieceOut : bool = False) -> Optional[Player]:
+	def setOccupant(self, player : Player, isOwnPlayerTakingAPieceOut : bool = False, isBlocking: Optional[bool] = None) -> Optional[Player]:
 		# The 'result' variable is returned with the previous occupant of the spot, if there is one. This is used by the game.py logic to decrease the counter keeping track of how many pieces any given player has on the board. 
 		result = None
 		if self._isOccupied:
@@ -52,8 +57,8 @@ class Spot:
 		self._occupant = player
 		self._isOccupied = True
 
-		if isOwnPlayerTakingAPieceOut:
-			self._isBlocking = True
+		self._isFreshlyDeployed = isOwnPlayerTakingAPieceOut
+		self._isBlocking = isOwnPlayerTakingAPieceOut if isBlocking is None else isBlocking
 
 		return result
 
@@ -61,6 +66,7 @@ class Spot:
 		self._occupant = None
 		self._isOccupied = False
 		self._isBlocking = False
+		self._isFreshlyDeployed = False
 
 
 class House(Spot):

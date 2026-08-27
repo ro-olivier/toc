@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Play Toc Online!</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="toc.css">
+</head>
+<body>
+  <div class="app-frame">
+    <header class="app-header">
+      <h1 class="app-title" data-i18n="app.name">TOC Online</h1>
+
+      <label class="language-selector" for="language-select">
+        <span data-i18n="language.label">Language</span>
+        <select id="language-select"></select>
+      </label>
+    </header>
+
+    <!-- Start screen -->
+    <div id="start-screen" class="pre-game-screen space-y-4">
+
+      <input id="name-input" type="text" placeholder="Enter your name" data-i18n-placeholder="start.name_placeholder"
+             class="w-full p-2 bg-gray-800 border border-gray-600 rounded" />
+
+      <input id="game-id-input" type="text" placeholder="Enter Game ID (for joining)" data-i18n-placeholder="start.game_id_placeholder"
+             class="w-full p-2 bg-gray-800 border border-gray-600 rounded" />
+
+      <section class="rules-setup">
+        <div class="rules-preset-row">
+          <div>
+            <label for="rule-preset-select" data-i18n="rules.new_game_title">Rules for the new game</label>
+            <p id="rule-preset-summary" data-i18n="rules.loading">Loading available rules…</p>
+          </div>
+
+          <select id="rule-preset-select" disabled>
+            <option>Loading…</option>
+          </select>
+        </div>
+
+        <div id="custom-rules-editor" class="custom-rules-editor hidden">
+          <div class="custom-rules-heading">
+            <div>
+              <h2 data-i18n="rules.custom_title">Custom rules</h2>
+              <p data-i18n="rules.custom_intro">Settings start from the default preset.</p>
+            </div>
+            <button id="reset-custom-rules" type="button" data-i18n="common.reset">Reset</button>
+          </div>
+
+          <div id="custom-rules-fields" class="custom-rules-fields"></div>
+        </div>
+      </section>
+
+      <div class="flex space-x-2">
+        <button id="create-btn" class="w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" disabled>
+          <span data-i18n="start.create_game">Create Game</span>
+        </button>
+        <button id="join-btn" class="w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50" disabled>
+          <span data-i18n="start.join_game">Join Game</span>
+        </button>
+      </div>
+
+      <div id="error-msg" class="text-red-400 text-sm hidden"></div>
+    </div>
+
+    <!-- Lobby screen -->
+    <div id="lobby-screen" class="pre-game-screen hidden space-y-5">
+      <div class="lobby-heading">
+        <div>
+          <p class="lobby-label" data-i18n="lobby.game">Game</p>
+          <p id="lobby-game-id" class="lobby-game-id"></p>
+        </div>
+        <p id="lobby-player-count" class="lobby-player-count"></p>
+      </div>
+
+      <div id="lobby-players" class="lobby-players"></div>
+
+      <details id="lobby-rules-panel" class="rules-display-panel">
+        <summary>
+          <span data-i18n="rules.display_title">Game rules</span>
+          <span id="lobby-rules-preset" class="ruleset-badge"></span>
+        </summary>
+        <div id="lobby-rules-list" class="rules-display-list"></div>
+      </details>
+
+      <form id="lobby-choice-form" class="lobby-choice-form">
+        <h2 class="text-xl font-bold" data-i18n="lobby.choose_seat">Choose your seat</h2>
+
+      <label for="team-select" data-i18n="lobby.team">Team</label>
+      <select id="team-select" class="lobby-select">
+        <option value="0" data-i18n="lobby.team_0">Team 0</option>
+        <option value="1" data-i18n="lobby.team_1">Team 1</option>
+      </select>
+
+      <label for="color-select" data-i18n="lobby.colour">Colour</label>
+      <select id="color-select" class="lobby-select"></select>
+
+      <button id="confirm-lobby-choice" type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded" data-i18n="lobby.confirm_choices">Confirm choices</button>
+      </form>
+
+      <p id="lobby-status" class="lobby-status"></p>
+      <p id="lobby-error" class="text-red-400 text-sm hidden"></p>
+    </div>
+
+    <!-- Game screen -->
+    <div id="game-screen" class="game-screen hidden">
+      <header class="game-topbar">
+        <div>
+          <p class="game-topbar-label" data-i18n="lobby.game">Game</p>
+          <p id="game-id-display" class="game-topbar-value">—</p>
+        </div>
+        <div class="game-topbar-meta">
+          <div>
+            <span class="game-topbar-label" data-i18n="game.dealer">Dealer</span>
+            <strong id="dealer-name" data-i18n-dynamic="game.waiting">Waiting…</strong>
+          </div>
+          <div id="connection-status" class="connection-badge connected">
+            <span class="connection-dot"></span>
+            <span id="connection-status-text" data-i18n-dynamic="connection.connected">Connected</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="game-layout">
+        <main class="board-panel">
+          <div class="turn-banner">
+            <div>
+              <span class="turn-label" data-i18n="game.current_turn">Current turn</span>
+              <strong id="current-player-name" data-i18n-dynamic="game.waiting_to_start">Waiting for the game to start</strong>
+            </div>
+            <p id="turn-instruction" data-i18n-dynamic="game.next_action">The next action will appear here.</p>
+            <button id="cancel-card-selection" type="button" class="cancel-selection-button hidden" data-i18n="game.cancel_selection">Cancel card selection</button>
+          </div>
+
+          <div id="board-wrapper">
+            <div id="board">
+              <div class="board-center-mark"><span>TOC</span><small>Online</small></div>
+            </div>
+            <div id="player-info-top-left" class="player-info-block"></div>
+            <div id="card-box-top-left" class="card-box"></div>
+            <div id="player-info-top-right" class="player-info-block"></div>
+            <div id="card-box-top-right" class="card-box"></div>
+            <div id="player-info-bottom-left" class="player-info-block"></div>
+            <div id="card-box-bottom-left" class="card-box"></div>
+            <div id="player-info-bottom-right" class="player-info-block"></div>
+            <div id="card-box-bottom-right" class="card-box"></div>
+          </div>
+        </main>
+
+        <aside class="game-sidebar">
+          <section class="sidebar-card">
+            <div class="sidebar-heading">
+              <div>
+                <span class="sidebar-eyebrow" data-i18n="game.history">Game history</span>
+                <h2 data-i18n="game.latest_actions">Latest actions</h2>
+              </div>
+              <span class="live-indicator" data-i18n="game.live">Live</span>
+            </div>
+            <div id="terminal" class="activity-log"></div>
+          </section>
+
+          <details id="game-rules-panel" class="rules-display-panel game-rules-panel">
+            <summary>
+              <span data-i18n="rules.display_title">Game rules</span>
+              <span id="game-rules-preset" class="ruleset-badge"></span>
+            </summary>
+            <div id="game-rules-list" class="rules-display-list"></div>
+          </details>
+
+          <details class="debug-panel">
+            <summary data-i18n="game.debug_tools">Debug tools</summary> 
+            <div class="debug-controls">
+              <input id="command-input" type="text" placeholder="Type a command" data-i18n-placeholder="game.command_placeholder" />
+              <button id="send-btn" type="button" data-i18n="game.send">Send</button>
+            </div>
+          </details>
+        </aside>
+      </div>
+
+      <section class="local-hand-panel">
+        <div class="local-hand-heading">
+          <div>
+            <span class="sidebar-eyebrow" data-i18n="game.your_cards">Your cards</span>
+            <h2 data-i18n="game.your_hand">Your hand</h2>
+          </div>
+          <p data-i18n="game.hand_instruction">Select a card, then confirm it with a second click.</p>
+        </div>
+        <div id="local-hand-slot" class="local-hand-slot">
+          <span id="empty-hand-message" data-i18n-dynamic="game.cards_when_round_starts">Cards will appear when the round starts.</span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="translations.js"></script>
+  <script src="logic.js"></script>
+</body>
+</html>
