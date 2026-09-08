@@ -110,23 +110,24 @@ class Board:
 
 		return self.getSpot(self.getPreviousColor(color), self._rules.enter_house_at_spot)
 
-	def getOccupiedSpotsOnTheBoard(self, player) -> list[Spot]:
-		return [spot for spot in self._spots if not spot.occupant is None and spot.occupant.name == player]
+	def getOccupiedSpotsOnTheBoard(self, player: Player) -> list[Spot]:
+		return [spot for spot in self._spots if spot.isOccupied and spot.occupant is player]
 
-	def getOccupiedHouses(self, player) -> list[House]:
-			return [house for house in self._houses if house.isOccupied and house.occupant.name == player]
+	def getOccupiedHouses(self, player: Player) -> list[House]:
+		return [house for house in self._houses if house.isOccupied and house.occupant is player]
 
-	def getOtherPiecesOnTheBoard(self, player) -> list[Spot]:
-		return [spot for spot in self._spots if spot.occupant != player and spot.isOccupied]
+	def getOtherPiecesOnTheBoard(self, player: Player) -> list[Spot]:
+		return [spot for spot in self._spots if spot.isOccupied and spot.occupant is not player]
 
-	def getOpponentPiecesOnTheBoard(self, player) -> list[Spot]:
+	def getOpponentPiecesOnTheBoard(self, player: Player) -> list[Spot]:
 		return [spot for spot in self._spots if spot.isOccupied and spot.occupant.team != player.team]
 
-	def getAllPiecesOfOtherPlayer(self, player) -> list[Spot]:
+	def getAllPiecesOfOtherPlayer(self, player: Player) -> list[Spot]:
 		return self.getOtherPiecesOnTheBoard(player)
 
-	def getAllPiecesOnTheBoard(self) -> list[Spot]:
-		return [{"spotIndex": str(house), "playerId": house.occupant.name} for house in self._houses if house.isOccupied] + [{"spotIndex": str(spot), "playerId": spot.occupant.name} for spot in self._spots if spot.isOccupied]
+	def getAllPiecesOnTheBoard(self) -> list[dict]:
+		occupiedPositions = [position for position in self._houses + self._spots if position.isOccupied]
+		return [{"spotIndex": str(position), **position.occupant.getMessageIdentity()} for position in occupiedPositions]
 
 	def getSpotFromDistance(self, originSpot: Spot, distance: int) -> Spot:
 		originIndex = self._spots.index(originSpot)
@@ -181,8 +182,8 @@ class Board:
 		pieceOwner = pieceOwner if pieceOwner is not None else player
 		options = []
 
-		boardPieces = self.getOccupiedSpotsOnTheBoard(pieceOwner.name)
-		housePieces = self.getOccupiedHouses(pieceOwner.name)
+		boardPieces = self.getOccupiedSpotsOnTheBoard(pieceOwner)
+		housePieces = self.getOccupiedHouses(pieceOwner)
 
 		for distance in distances:
 			# Pieces on the circular track can either remain on the track
@@ -369,7 +370,7 @@ class Board:
 
 		elif card.value == "J":
 			if self._rules.jacks_can_switch:
-				ownPieces = self.getOccupiedSpotsOnTheBoard(pieceOwner.name)
+				ownPieces = self.getOccupiedSpotsOnTheBoard(pieceOwner)
 				otherPieces = self.getOtherPiecesOnTheBoard(pieceOwner)
 
 				for ownPiece in ownPieces:
@@ -388,7 +389,7 @@ class Board:
 
 			# Backward four applies only to pieces on the circular track.
 			if self._rules.four_can_move_backward:
-				for piece in self.getOccupiedSpotsOnTheBoard(pieceOwner.name):
+				for piece in self.getOccupiedSpotsOnTheBoard(pieceOwner):
 					backwardMove = Move("BACK", piece, self.getSpotFromDistance(piece, -4), card, player, pieceOwner)
 
 					if self.isMoveValid(backwardMove):

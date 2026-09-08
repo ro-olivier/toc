@@ -29,6 +29,7 @@ MESSAGE_KEYS = frozenset({
 	"lobby.errors.invalid_color",
 	"lobby.errors.invalid_team",
 	"lobby.errors.team_full",
+	"lobby.errors.invalid_color_count",
 	"prompts.card_unplayable",
 	"prompts.choose_card",
 	"prompts.choose_origin",

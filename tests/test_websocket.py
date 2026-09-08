@@ -9,6 +9,7 @@ from starlette.websockets import WebSocketDisconnect
 from main import app, manager, router
 from toc.model.audit import GameEventType
 from toc.infrastructure.identity import resumeTokenMatches
+from toc.model.game_mode import getGameModeDefinition
 
 
 PLAYER_NAMES = ["Alice", "Bob", "Carol", "Diana"]
@@ -425,6 +426,8 @@ def test_started_game_reconnection_restores_ui_hand_and_prompt(client, gameId):
 		assert "msg" not in rejoinedMessage
 
 		assert handMessage["playerId"] == "Alice"
+		assert handMessage["seatId"] == ready["playerId"]
+		assert handMessage["playerColor"] == "red"
 		assert "cards" in handMessage
 
 		assert replayedPrompt == pendingPrompt
@@ -823,3 +826,21 @@ def test_player_configuration_creates_logical_seat(client, gameId):
 		assert seat.color == "red"
 		assert participant.seatIds == [seat.seatId]
 		assert participant.configured is True
+
+def test_create_game_uses_requested_game_mode(client):
+	response = client.post("/toc/api/create-game", json={
+		"preset": "montsurvent",
+		"mode": "duel_four",
+		"layout": "adjacent",
+	})
+
+	assert response.status_code == 200
+	assert response.json()["gameMode"] == {
+		"name": "duel_four",
+		"layout": "adjacent",
+	}
+
+	gameId = response.json()["game_id"]
+	session = manager.games[gameId]
+
+	assert session.modeDefinition == getGameModeDefinition("duel_four", "adjacent")

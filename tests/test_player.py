@@ -45,6 +45,8 @@ def test_origin_selection_accepts_house_position():
 	result = asyncio.run(player.getOriginChoiceFromPlayer([origin]))
 
 	assert result is origin
+	assert router.outputs[0][1]["seatId"] == "TEST-Alice"
+	assert router.outputs[0][1]["playerColor"] == "red"
 
 
 def test_origin_selection_rejects_position_not_offered():
@@ -78,6 +80,8 @@ def test_target_selection_accepts_house_position():
 	result = asyncio.run(player.getTargetChoiceFromPlayer([target]))
 
 	assert result is target
+	assert router.outputs[0][1]["seatId"] == "TEST-Alice"
+	assert router.outputs[0][1]["playerColor"] == "red"
 
 
 def test_origin_selection_can_cancel_when_allowed():
@@ -170,7 +174,14 @@ def test_card_choice_can_use_custom_prompt():
 		"messageKey": "prompts.discard_card",
 		"parameters": {},
 		"fallback": "Choose one card to discard.",
+		"playerId": "Alice",
+		"seatId": "TEST-Alice",
+		"playerName": "Alice",
+		"playerColor": "red",
+		"playerTeam": "0",
 	}
+	assert len(router.outputs) == 1
+	assert [message[1]["type"] for message in router.outputs] == ["query-card"]
 
 def test_card_exchange_log_uses_translation_message():
 	cardGiven = Card("♥️", "2")
@@ -188,6 +199,14 @@ def test_card_exchange_log_uses_translation_message():
 	assert message["parameters"] == {"givenCard": "♥️2", "receivedCard": "♠️3"}
 	assert message["fallback"]
 	assert "msg" not in message
+	assert message["seatId"] == "TEST-Alice"
+
+	receivedCardMessage = router.outputs[0][1]
+
+	assert receivedCardMessage["type"] == "receive-card-from-friend"
+	assert receivedCardMessage["seatId"] == "TEST-Alice"
+	assert receivedCardMessage["value"] == "3"
+	assert receivedCardMessage["suit"] == "♠️"
 
 def test_card_exchange_uses_reconnectable_prompt():
 	card = Card("♥️", "2")
@@ -204,6 +223,8 @@ def test_card_exchange_uses_reconnectable_prompt():
 	assert message["messageKey"] == "prompts.exchange_card"
 	assert message["fallback"] == "Please choose a card to give to your teammate."
 	assert "msg" not in message
+	assert message["seatId"] == "TEST-Alice"
+	assert message["playerColor"] == "red"
 
 def test_player_uses_participant_router_id_for_communication():
 	card = Card("♥️", "2")
@@ -229,3 +250,42 @@ def test_player_uses_identifier_as_router_id_by_default():
 	assert player.identifier == "TEST-Alice"
 	assert player.routerId == "TEST-Alice"
 	assert router.outputs == [("TEST-Alice", {"type": "test"})]
+
+def test_player_message_identity_contains_stable_seat_id():
+	player = Player("seat-red", "Alice", "0", "red")
+
+	assert player.getMessageIdentity() == {
+		"playerId": "Alice",
+		"seatId": "seat-red",
+		"playerName": "Alice",
+		"playerColor": "red",
+		"playerTeam": "0",
+	}
+
+
+def test_prefixed_player_identity_can_describe_moved_piece_owner():
+	player = Player("seat-blue", "Bob", "1", "blue")
+
+	assert player.getMessageIdentity("moved") == {
+		"movedPlayerId": "Bob",
+		"movedSeatId": "seat-blue",
+		"movedPlayerName": "Bob",
+		"movedPlayerColor": "blue",
+		"movedPlayerTeam": "1",
+	}
+
+def test_seven_hop_prompt_identifies_deciding_seat():
+	board = Board(COLORS)
+	router = FakeRouter([{"type": "seven_hop_choice", "result": True}])
+	player = Player(identifier="seat-red", name="Alice", team="0", color="red", router=router, routerId="TEST-Alice")
+
+	result = asyncio.run(player.getSevenHopChoiceFromPlayer(board.getSpot("red", 7), board.getSpot("blue", 7)))
+
+	assert result is True
+
+	message = router.outputs[0][1]
+
+	assert message["type"] == "query-seven-hop"
+	assert message["seatId"] == "seat-red"
+	assert message["playerId"] == "Alice"
+	assert message["playerColor"] == "red"

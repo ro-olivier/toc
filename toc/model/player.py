@@ -31,12 +31,28 @@ class Player:
 	def __str__(self) -> str:
 		return f'{self._name} in team {self._team} playing {self._color}'
 
+	def getMessageIdentity(self, prefix: str = "") -> dict:
+		if prefix:
+			return {
+				f"{prefix}PlayerId": self._name,
+				f"{prefix}SeatId": self._id,
+				f"{prefix}PlayerName": self._name,
+				f"{prefix}PlayerColor": self._color,
+				f"{prefix}PlayerTeam": self._team,
+			}
+
+		return {
+			"playerId": self._name,
+			"seatId": self._id,
+			"playerName": self._name,
+			"playerColor": self._color,
+			"playerTeam": self._team,
+		}
+
 	async def send_message_to_user(self, message: str) -> None:
 		await self._router.send_output(self._routerId, message)
 
 	async def get_input_from_prompt(self, messageKey: str, fallback: str, parameters: dict = None) -> str:
-		await self.send_message_to_user(build_message("query", messageKey, fallback, parameters))
-		logger.info("Waiting for input from player", extra={"player_name": self._name})
 		return await self._router.wait_for_input(self._routerId)
 		
 	@property
@@ -91,11 +107,18 @@ class Player:
 
 	async def setHand(self, hand : Hand) -> None:
 		self._hand = hand
-		await self.send_message_to_user({"type": "draw", "playerId": self._name, "cards": [c.json for c in self._hand.cards]})
-		await self.send_message_to_user({"type": "reveal", "playerId": self._name, "cards": [c.json for c in self._hand.cards]})
+		identity = self.getMessageIdentity()
+		cards = [card.json for card in self._hand.cards]
+
+		await self.send_message_to_user({"type": "draw", **identity, "cards": cards})
+		await self.send_message_to_user({"type": "reveal", **identity, "cards": cards})
 
 	async def sendHandAgain(self) -> None:
-		await self.send_message_to_user({"type": "reveal", "playerId": self._name, "cards": [c.json for c in self._hand.cards]})
+		await self.send_message_to_user({
+			"type": "reveal",
+			**self.getMessageIdentity(),
+			"cards": [card.json for card in self._hand.cards],
+		})
 
 	@property
 	def isDealer(self) -> bool:
@@ -108,7 +131,7 @@ class Player:
 		 self._hand.fold()
 
 	async def getCardChoiceFromPlayer(self, messageKey: str = "prompts.choose_card", fallback: str = "What card do you want to play?") -> Card:
-		await self.send_message_to_user(build_message("query-card", messageKey, fallback))
+		await self.send_message_to_user(build_message("query-card", messageKey, fallback, **self.getMessageIdentity()))
 		cardChoice = await self.get_input_from_prompt(messageKey, fallback)
 
 		while not cardChoice or (not 'type' in cardChoice.keys()) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
@@ -132,7 +155,7 @@ class Player:
 			possibleMoves = [move for move in options if move.card == cardChoice]
 			logger.debug('Possible moves with this card:', extra={"possibleMoves": [f'{str(m)} ---- origin: {m.originSpot} {id(m.originSpot)}' for m in possibleMoves]})
 			if len(possibleMoves) == 0:
-				await self.send_message_to_user(build_message("reject-card-selection", "prompts.card_unplayable", "You cannot play that card right now!"))
+				await self.send_message_to_user(build_message("reject-card-selection", "prompts.card_unplayable", "You cannot play that card right now!", **self.getMessageIdentity()))
 				cardChoice = await self.getCardChoiceFromPlayer()
 			elif len(possibleMoves) == 1:
 				moveChoice = possibleMoves[0]
@@ -170,7 +193,7 @@ class Player:
 		messageKey = "prompts.choose_origin"
 		fallback = "What piece do you want to play this card on?"
 
-		await self.send_message_to_user(build_message("query-origin", messageKey, fallback, originOptions=[str(origin) for origin in possibleOrigins], canCancel=canCancel))
+		await self.send_message_to_user(build_message("query-origin", messageKey, fallback, originOptions=[str(origin) for origin in possibleOrigins], canCancel=canCancel, **self.getMessageIdentity()))
 
 		originsById = {str(origin): origin for origin in possibleOrigins}
 		while True:
@@ -186,7 +209,7 @@ class Player:
 		messageKey = "prompts.choose_target"
 		fallback = "Where do you want to move this piece?"
 
-		await self.send_message_to_user(build_message("query-target", messageKey, fallback, targetOptions=[str(target) for target in possibleTargets], canCancel=canCancel))
+		await self.send_message_to_user(build_message("query-target", messageKey, fallback, targetOptions=[str(target) for target in possibleTargets], canCancel=canCancel, **self.getMessageIdentity()))
 
 		targetsById = {str(target): target for target in possibleTargets}
 		while True:
@@ -227,7 +250,7 @@ class Player:
 	async def requestCardExchange(self) -> Card:
 		messageKey = "prompts.exchange_card"
 		fallback = "Please choose a card to give to your teammate."
-		message = build_message("query-card-exchange", messageKey, fallback)
+		message = build_message("query-card-exchange", messageKey, fallback, **self.getMessageIdentity())
 
 		while True:
 			await self.send_message_to_user(message)
@@ -246,7 +269,12 @@ class Player:
 	async def switchCard(self, card1, card2) -> None:
 		self._hand.discardFromHand(card1)
 		self._hand.addToHand(card2)
-		await self.send_message_to_user({"type": "receive-card-from-friend", "value": card2.value, "suit": card2.suit})
+		await self.send_message_to_user({
+			"type": "receive-card-from-friend",
+			**self.getMessageIdentity(),
+			"value": card2.value,
+			"suit": card2.suit,
+		})
 		
 		givenCard = f"{card1.suit}{card1.value}"
 		receivedCard = f"{card2.suit}{card2.value}"
@@ -256,6 +284,7 @@ class Player:
 			"gameplay.card_exchange_complete",
 			f"You gave {givenCard} to your teammate and received {receivedCard}. The round will start when the other team finishes exchanging cards.",
 			{"givenCard": givenCard, "receivedCard": receivedCard},
+			**self.getMessageIdentity(),
 		))
 
 	async def forceRandomMove(self) -> None:
@@ -268,7 +297,7 @@ class Player:
 	async def getSevenHopChoiceFromPlayer(self, originSpot: Spot, targetSpot: Spot) -> bool:
 		origin = str(originSpot)
 		target = str(targetSpot)
-		message = build_message("query-seven-hop", "prompts.seven_hop", f"Do you want to seven-hop from {origin} to {target}?", {"origin": origin, "target": target}, origin=origin, target=target)
+		message = build_message("query-seven-hop", "prompts.seven_hop", f"Do you want to seven-hop from {origin} to {target}?", {"origin": origin, "target": target}, origin=origin, target=target, **self.getMessageIdentity())
 
 		while True:
 			await self.send_message_to_user(message)

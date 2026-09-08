@@ -19,11 +19,16 @@ logger = logging.getLogger("toc.game")
 
 
 class Game:
-	def __init__(self, gameSession : GameSession, colors : List, rules: GameRules = MONTSURVENT_RULES):
+	def __init__(self, gameSession : GameSession, colors : List, rules: GameRules = MONTSURVENT_RULES, dealCardCounts: tuple[int, ...] = None, jokerCount: int = 0):
 		self._gameSession = gameSession
 		self._rules = rules
+		self._dealCardCounts = rules.deal_card_counts if dealCardCounts is None else dealCardCounts
+
+		if type(self._dealCardCounts) is not tuple or not self._dealCardCounts or any(type(cardCount) is not int or cardCount <= 0 for cardCount in self._dealCardCounts):
+			raise ValueError("Invalid dealing schedule")
+
 		self._board = Board(colors, rules)
-		self._deck = Deck()
+		self._deck = Deck(jokerCount)
 		self._isStarted = False
 		self._isFinished = False
 		self._numPlayers = 0
@@ -57,6 +62,10 @@ class Game:
 	@property
 	def rules(self) -> GameRules:
 		return self._rules
+
+	@property
+	def dealCardCounts(self) -> tuple[int, ...]:
+		return self._dealCardCounts
 
 	@property
 	def deck(self) -> Deck:
@@ -192,7 +201,7 @@ class Game:
 		self._players[0].setDealer()
 		self._dealerRotationCount += 1
 		
-		await self.broadcast({"type": "dealer", "playerId": self._players[0].name})
+		await self.broadcast({"type": "dealer", **self._players[0].getMessageIdentity()})
 
 	def shouldShuffleRecycledDeck(self) -> bool:
 		if self._rules.shuffle_cards is ShuffleMode.ON_DEALER_CHANGE:
@@ -221,10 +230,14 @@ class Game:
 	async def requestCardExchange(self, players: Tuple[Player, Player]) -> tuple[Player, Card, Player, Card]:
 		player1, player2 = players
 
-		card1, card2 = await asyncio.gather(
-			player1.requestCardExchange(),
-			player2.requestCardExchange(),
-		)
+		if player1.routerId == player2.routerId:
+			card1 = await player1.requestCardExchange()
+			card2 = await player2.requestCardExchange()
+		else:
+			card1, card2 = await asyncio.gather(
+				player1.requestCardExchange(),
+				player2.requestCardExchange(),
+			)
 
 		return player1, card1, player2, card2
 
@@ -265,19 +278,19 @@ class Game:
 		await self.broadcast(build_message("log", "gameplay.deal_finished", f"Deal {dealNumber} is finished.", {"deal": dealNumber}))
 
 	async def runDeckCycle(self) -> None:
-		for roundNumber, cardsPerPlayer in enumerate(self._rules.deal_card_counts, start=1):
+		for roundNumber, cardsPerPlayer in enumerate(self._dealCardCounts, start=1):
 			await self.runRound(roundNumber, cardsPerPlayer)
 
 			if self._isFinished:
 				return
 
-		self._gameSession.setGamePhase(GamePhase.DECK_CYCLE_END, len(self._rules.deal_card_counts) - 1)
+		self._gameSession.setGamePhase(GamePhase.DECK_CYCLE_END, len(self._dealCardCounts) - 1)
 		await self._gameSession.checkpointActive()
 
 	async def start(self) -> None:
 		self._isStarted = True
 		self._players[0].setDealer()
-		await self.broadcast({"type": "dealer", "playerId": self._players[0].name})
+		await self.broadcast({"type": "dealer", **self._players[0].getMessageIdentity()})
 
 		while not self._isFinished:
 			await self.runDeckCycle()
@@ -293,6 +306,11 @@ class Game:
 		target = move.targetSpot
 
 		pathKickPositions = []
+
+		movementTypes = {"MOVE", "BACK", "FIVE", "HOP", "SWITCH", "ENTER"}
+
+		if move.ID in movementTypes and (origin is None or origin.occupant is not move.pieceOwner):
+			raise ValueError("Move origin is not occupied by the piece owner")
 
 		if self._rules.king_kicks_pieces_on_path and move.card is not None and move.card.value == "K" and move.ID in ["MOVE", "ENTER"]:
 			for position in self._board.getPositionsCrossedByMove(move):
@@ -358,8 +376,8 @@ class Game:
 
 			await self.broadcast({
 				"type": "seven-step",
-				"playerId": player.name,
-				"movedPlayerId": move.pieceOwner.name,
+				**player.getMessageIdentity(),
+				**move.pieceOwner.getMessageIdentity("moved"),
 				"origin": str(move.originSpot),
 				"target": str(move.targetSpot),
 				"stepsRemaining": nextStepsRemaining,
@@ -429,8 +447,8 @@ class Game:
 
 		await self.broadcast({
 			"type": "seven-hop",
-			"playerId": hopMove.player.name,
-			"movedPlayerId": hopMove.pieceOwner.name,
+			**hopMove.player.getMessageIdentity(),
+			**hopMove.pieceOwner.getMessageIdentity("moved"),
 			"origin": str(hopMove.originSpot),
 			"target": str(hopMove.targetSpot),
 		})
@@ -449,8 +467,8 @@ class Game:
 
 		await self.broadcast({
 			"type": "seven-hop",
-			"playerId": hopMove.player.name,
-			"movedPlayerId": hopMove.pieceOwner.name,
+			**hopMove.player.getMessageIdentity(),
+			**hopMove.pieceOwner.getMessageIdentity("moved"),
 			"origin": str(hopMove.originSpot),
 			"target": str(hopMove.targetSpot),
 		})
@@ -471,7 +489,7 @@ class Game:
 				"gameplay.next_player",
 				f"Moving on to {self._activePlayer.name} from team {self._activePlayer.team}, playing {self._activePlayer.color}.",
 				{"player": self._activePlayer.name, "team": self._activePlayer.team, "color": self._activePlayer.color},
-				playerId=self._activePlayer.name,
+				**self._activePlayer.getMessageIdentity(),
 			))
 
 			controlledPlayer = self.getControlledPlayer(self._activePlayer)
@@ -484,7 +502,7 @@ class Game:
 						"gameplay.player_folded",
 						f"{self._activePlayer.name} has no available move and must fold.",
 						{"player": self._activePlayer.name},
-						playerId=self._activePlayer.name,
+						**self._activePlayer.getMessageIdentity(),
 					))
 					self._deck.discardCards(self._activePlayer.hand)
 					await self._activePlayer.foldHand()
@@ -497,7 +515,7 @@ class Game:
 						"gameplay.card_discarded",
 						f"{self._activePlayer.name} cannot make a move and discards one card.",
 						{"player": self._activePlayer.name},
-						playerId=self._activePlayer.name,
+						**self._activePlayer.getMessageIdentity(),
 						value=cardChoice.value,
 						suit=cardChoice.suit,
 					))
@@ -512,7 +530,7 @@ class Game:
 						"gameplay.forced_play",
 						f"You have only one legal move, so you must play {cardLabel}.",
 						{"card": cardLabel},
-						playerId=self._activePlayer.name,
+						**self._activePlayer.getMessageIdentity(),
 						value=moveChoice.card.value,
 						suit=moveChoice.card.suit,
 						origin=str(moveChoice.originSpot),
@@ -535,7 +553,7 @@ class Game:
 						"gameplay.seven_split_started",
 						f"{self._activePlayer.name} played {cardLabel} and is starting a seven split.",
 						{"player": self._activePlayer.name, "card": cardLabel},
-						playerId=self._activePlayer.name,
+						**self._activePlayer.getMessageIdentity(),
 						value=cardChoice.value,
 						suit=cardChoice.suit,
 					))
@@ -548,12 +566,12 @@ class Game:
 					target = str(moveChoice.targetSpot)
 
 					eventPayload = {
-						"playerId": self._activePlayer.name,
+						**self._activePlayer.getMessageIdentity(),
+						**moveChoice.pieceOwner.getMessageIdentity("moved"),
 						"value": cardChoice.value,
 						"suit": cardChoice.suit,
 						"origin": origin,
 						"target": target,
-						"movedPlayerId": moveChoice.pieceOwner.name,
 					}
 
 					if moveChoice.ID == "OUT":

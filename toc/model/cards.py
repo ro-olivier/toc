@@ -7,8 +7,15 @@ import random
 
 
 class Deck:
-	def __init__(self):
-		self._cards = [Card(suit, value, self) for value in VALUES for suit in SUITS]
+	def __init__(self, jokerCount: int = 0):
+		if type(jokerCount) is not int or not 0 <= jokerCount <= len(JOKER_COLORS):
+			raise ValueError("Invalid Joker count")
+
+		standardCards = [Card(suit, value, self) for value in VALUES for suit in SUITS]
+		jokers = [Card(color, JOKER_VALUE, self) for color in JOKER_COLORS[:jokerCount]]
+
+		self._cards = standardCards + jokers
+		self._expectedCardCount = len(self._cards)
 		random.shuffle(self._cards)
 		self._discardPile = []
 		self._player = None
@@ -22,20 +29,31 @@ class Deck:
 		return len(self._cards)
 
 	@property
+	def expectedCardCount(self) -> int:
+		return self._expectedCardCount
+
+	@property
 	def discardPile(self) -> list[Card]:
 		return self._discardPile
 
 	@classmethod
-	def fromPiles(cls, drawPile: list[Card], discardPile: list[Card]) -> "Deck":
+	def fromPiles(cls, drawPile: list[Card], discardPile: list[Card], expectedCardCount: int = 52) -> "Deck":
 		if type(drawPile) is not list or type(discardPile) is not list:
 			raise ValueError("Deck piles must be lists")
 
 		if not all(isinstance(card, Card) for card in drawPile + discardPile):
 			raise ValueError("Deck piles contain an invalid card")
 
+		if type(expectedCardCount) is not int or expectedCardCount not in (52, 54):
+			raise ValueError("Invalid expected deck size")
+
+		if len(drawPile) + len(discardPile) > expectedCardCount:
+			raise ValueError("Deck piles contain too many cards")
+
 		deck = cls.__new__(cls)
 		deck._cards = list(drawPile)
 		deck._discardPile = list(discardPile)
+		deck._expectedCardCount = expectedCardCount
 		deck._player = None
 
 		for card in deck._cards + deck._discardPile:
@@ -60,9 +78,7 @@ class Deck:
 		if self._cards:
 			raise RuntimeError("Cannot recycle the discard pile while cards remain in the deck")
 
-		expectedCardCount = len(SUITS) * len(VALUES)
-
-		if len(self._discardPile) != expectedCardCount:
+		if len(self._discardPile) != self._expectedCardCount:
 			raise RuntimeError(f"Cannot recycle an incomplete discard pile containing {len(self._discardPile)} cards")
 
 		self._cards = self._discardPile
@@ -115,5 +131,7 @@ class Card:
 			return 13
 		elif self._value == 'A':
 			return 11
+		elif self._value == JOKER_VALUE:
+			return 18
 		else:
 			return 0

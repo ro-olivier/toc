@@ -55,3 +55,33 @@ def test_recycled_discard_pile_can_be_shuffled(monkeypatch):
     deck.recycleDiscardPile(shuffle=True)
 
     assert shuffleCalls == [drawnCards]
+
+def test_deck_can_include_red_and_black_jokers():
+    deck = Deck(jokerCount=2)
+    jokers = [card for card in deck.cards if card.value == "JOKER"]
+
+    assert deck.size == 54
+    assert deck.expectedCardCount == 54
+    assert {(card.suit, card.value) for card in jokers} == {
+        ("red", "JOKER"),
+        ("black", "JOKER"),
+    }
+
+
+def test_joker_numeric_value_is_eighteen():
+    assert Card("red", "JOKER").numValue == 18
+    assert Card("black", "JOKER").numValue == 18
+
+
+def test_54_card_discard_pile_can_be_recycled():
+    deck = Deck(jokerCount=2)
+    drawnCards = [deck.drawCard() for _ in range(54)]
+
+    for card in drawnCards:
+        deck.discardCard(card)
+
+    deck.recycleDiscardPile()
+
+    assert deck.cards == drawnCards
+    assert deck.size == 54
+    assert deck.discardPile == []

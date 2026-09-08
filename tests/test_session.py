@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from main import app, ConnectionManager, GameSession, PlayerInputRouter, create_game as create_game_endpoint, get_rule_presets, manager
 from toc.model.rules import GameRules, MONTSURVENT_RULES
 from toc.model.player import Player
+from toc.model.cards import Card
 from toc.model.rules import GameRules
 from toc.model.game_phase import GamePhase
 from toc.model.params import AVAILABLE_COLORS
@@ -54,6 +55,9 @@ def add_player(session, router, name, team="", color="", configured=False, activ
 		"seat": seat,
 		"active": active,
 		"configured": configured,
+		"colors": [color] if configured else [],
+		"objects": [player] if configured else [],
+		"seats": [seat] if configured else [],
 	}
 
 	return routerId, player
@@ -94,12 +98,13 @@ def test_create_game_endpoint_accepts_custom_rules():
 		manager.games.pop(result["game_id"], None)
 
 def test_create_game_endpoint_remains_backward_compatible():
-	result = asyncio.run(create_game_endpoint())
+	result = asyncio.run(create_game_endpoint(None))
 	session = manager.get_game(result["game_id"])
 
 	try:
 		assert result["preset"] == "montsurvent"
 		assert session.rules is MONTSURVENT_RULES
+		assert result["gameMode"] == {"name": "team_four", "layout": None}
 	finally:
 		manager.games.pop(result["game_id"], None)
 
@@ -398,6 +403,7 @@ def test_lobby_state_reports_game_mode_capacities():
 	assert state["seatCapacity"] == 4
 	assert state["teamCapacity"] == 1
 	assert state["teamCounts"] == {"0": 0, "1": 0}
+	assert state["seatsPerParticipant"] == 2
 
 
 def test_team_six_mode_exposes_three_teams():
@@ -411,3 +417,265 @@ def test_team_six_mode_exposes_three_teams():
 	assert state["seatCapacity"] == 6
 	assert state["teamCapacity"] == 2
 	assert state["teamCounts"] == {"0": 0, "1": 0, "2": 0}
+	assert state["seatsPerParticipant"] == 1
+
+def test_create_game_endpoint_accepts_game_mode_and_layout():
+	result = asyncio.run(create_game_endpoint({"mode": "duel_four", "layout": "cross"}))
+	session = manager.get_game(result["game_id"])
+
+	try:
+		assert session.modeDefinition == getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
+		assert result["gameMode"] == {"name": "duel_four", "layout": "cross"}
+	finally:
+		manager.games.pop(result["game_id"], None)
+
+
+def test_create_game_endpoint_uses_team_four_by_default():
+	result = asyncio.run(create_game_endpoint(None))
+	session = manager.get_game(result["game_id"])
+
+	try:
+		assert session.modeDefinition == getGameModeDefinition(GameMode.TEAM_FOUR)
+		assert result["gameMode"] == {"name": "team_four", "layout": None}
+	finally:
+		manager.games.pop(result["game_id"], None)
+
+
+@pytest.mark.parametrize(
+	"payload",
+	[
+		{"mode": "unknown"},
+		{"mode": "duel_four"},
+		{"mode": "team_four", "layout": "cross"},
+	],
+)
+def test_create_game_endpoint_rejects_invalid_game_mode_configuration(payload):
+	existingGameIds = set(manager.games)
+
+	with pytest.raises(HTTPException) as caughtError:
+		asyncio.run(create_game_endpoint(payload))
+
+	assert caughtError.value.status_code == 422
+	assert caughtError.value.detail["type"] == "http-error"
+	assert caughtError.value.detail["messageKey"] == "errors.invalid_game_configuration"
+	assert set(manager.games) == existingGameIds
+
+@pytest.mark.parametrize(
+	("mode", "layout", "expectedSchedule"),
+	[
+		(GameMode.DUEL_TWO, None, (10, 8, 8)),
+		(GameMode.DUEL_FOUR, DuelFourLayout.CROSS, (5, 4, 4)),
+		(GameMode.TEAM_FOUR, None, (5, 4, 4)),
+		(GameMode.TEAM_SIX, None, (3, 3, 3)),
+	],
+)
+def test_game_session_exposes_mode_appropriate_dealing_schedule(mode, layout, expectedSchedule):
+	modeDefinition = getGameModeDefinition(mode, layout)
+	session = GameSession("TEST", PlayerInputRouter(), modeDefinition=modeDefinition)
+
+	assert session.dealCardCounts == expectedSchedule
+
+def test_duel_four_participant_can_configure_two_seats():
+	async def scenario():
+		router = PlayerInputRouter()
+		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.ADJACENT)
+		session = GameSession("TEST", router, modeDefinition=modeDefinition)
+		aliceId, alice = add_player(session, router, "Alice")
+
+		assert await session.configure_player(aliceId, "0", ["red", "blue"])
+
+		playerData = session.players[aliceId]
+
+		assert session.roster.seatCount == 2
+		assert playerData["configured"]
+		assert playerData["colors"] == ["red", "blue"]
+		assert len(playerData["objects"]) == 2
+		assert len(playerData["seats"]) == 2
+		assert playerData["object"] is alice
+		assert playerData["seat"] is playerData["seats"][0]
+		assert [seat.color for seat in playerData["seats"]] == ["red", "blue"]
+		assert all(seat.team == "0" for seat in playerData["seats"])
+		assert all(player.routerId == aliceId for player in playerData["objects"])
+
+	asyncio.run(scenario())
+
+
+def test_duel_four_configuration_requires_two_colours():
+	async def scenario():
+		router = PlayerInputRouter()
+		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
+		session = GameSession("TEST", router, modeDefinition=modeDefinition)
+		aliceId, alice = add_player(session, router, "Alice")
+
+		assert not await session.configure_player(aliceId, "0", ["red"])
+		assert session.roster.seatCount == 0
+		assert alice.team == ""
+		assert alice.color == ""
+
+		message = await router.get_output(aliceId)
+
+		assert message["type"] == "lobby-error"
+		assert message["messageKey"] == "lobby.errors.invalid_color_count"
+		assert message["parameters"] == {"count": 2}
+
+	asyncio.run(scenario())
+
+
+def test_multi_seat_configuration_rejects_duplicate_colours_atomically():
+	async def scenario():
+		router = PlayerInputRouter()
+		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.ADJACENT)
+		session = GameSession("TEST", router, modeDefinition=modeDefinition)
+		aliceId, alice = add_player(session, router, "Alice")
+
+		assert not await session.configure_player(aliceId, "0", ["red", "red"])
+		assert session.roster.seatCount == 0
+		assert session.players[aliceId]["seats"] == []
+		assert alice.team == ""
+		assert alice.color == ""
+
+		message = await router.get_output(aliceId)
+
+		assert message["messageKey"] == "lobby.errors.invalid_color"
+
+	asyncio.run(scenario())
+
+
+def test_multi_seat_lobby_state_reports_all_selected_colours():
+	async def scenario():
+		router = PlayerInputRouter()
+		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
+		session = GameSession("TEST", router, modeDefinition=modeDefinition)
+		aliceId, _ = add_player(session, router, "Alice")
+
+		assert await session.configure_player(aliceId, "0", ["red", "green"])
+
+		state = await router.get_output(aliceId)
+		aliceState = state["players"][0]
+
+		assert aliceState["color"] == "red"
+		assert aliceState["colors"] == ["red", "green"]
+		assert [seat["color"] for seat in aliceState["seats"]] == ["red", "green"]
+		assert "red" not in state["availableColors"]
+		assert "green" not in state["availableColors"]
+		assert state["teamCounts"] == {"0": 1, "1": 0}
+
+	asyncio.run(scenario())
+
+@pytest.mark.parametrize(
+	("layout", "expectedColors"),
+	[
+		(DuelFourLayout.ADJACENT, ["red", "blue", "green", "yellow"]),
+		(DuelFourLayout.CROSS, ["red", "green", "blue", "yellow"]),
+	],
+)
+def test_complete_duel_four_lobby_starts_with_correct_seat_order(layout, expectedColors):
+	async def scenario():
+		router = PlayerInputRouter()
+		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, layout)
+		session = GameSession("TEST", router, modeDefinition=modeDefinition)
+		startCalls = []
+
+		async def fakeGameLoop():
+			startCalls.append([seat.color for seat in session.orderedSeats])
+
+		session.game_loop = fakeGameLoop
+
+		aliceId, _ = add_player(session, router, "Alice")
+		bobId, _ = add_player(session, router, "Bob")
+
+		assert await session.configure_player(aliceId, "0", ["red", "blue"])
+		assert not session.started
+
+		assert await session.configure_player(bobId, "1", ["green", "yellow"])
+		assert session.started
+		assert session.gameTask is not None
+
+		await session.gameTask
+
+		assert session.roster.participantCount == 2
+		assert session.roster.seatCount == 4
+		assert len(session.order) == 4
+		assert [seat.color for seat in session.orderedSeats] == expectedColors
+		assert startCalls == [expectedColors]
+
+	asyncio.run(scenario())
+
+def test_duel_four_order_can_start_with_team_one():
+	async def scenario():
+		router = PlayerInputRouter()
+		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
+		session = GameSession("TEST", router, modeDefinition=modeDefinition)
+
+		async def fakeGameLoop():
+			pass
+
+		session.game_loop = fakeGameLoop
+
+		aliceId, _ = add_player(session, router, "Alice")
+		bobId, _ = add_player(session, router, "Bob")
+
+		assert await session.configure_player(aliceId, "1", ["red", "green"])
+		assert await session.configure_player(bobId, "0", ["blue", "yellow"])
+
+		await session.gameTask
+
+		assert [seat.color for seat in session.orderedSeats] == ["red", "blue", "green", "yellow"]
+		assert [seat.team for seat in session.orderedSeats] == ["1", "0", "1", "0"]
+
+		assert session.lobby_state()["seatOrder"] == session.order
+
+	asyncio.run(scenario())
+
+def test_full_ui_state_contains_one_entry_per_logical_seat():
+	async def scenario():
+		router = PlayerInputRouter()
+		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
+		session = GameSession("TEST", router, modeDefinition=modeDefinition)
+		aliceId, _ = add_player(session, router, "Alice")
+
+		assert await session.configure_player(aliceId, "0", ["red", "green"])
+
+		state = session.fullUI()
+
+		assert len(state["players"]) == 2
+		assert [player["name"] for player in state["players"]] == ["Alice", "Alice"]
+		assert [player["color"] for player in state["players"]] == ["red", "green"]
+		assert len({player["seatId"] for player in state["players"]}) == 2
+		assert all(player["participantId"] == session.players[aliceId]["participantId"] for player in state["players"])
+		assert state["active_player"] == ""
+		assert state["activeSeatId"] is None
+
+	asyncio.run(scenario())
+
+def test_duel_four_reconnection_replays_both_controlled_hands():
+	async def scenario():
+		router = PlayerInputRouter()
+		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.ADJACENT)
+		session = GameSession("TEST", router, modeDefinition=modeDefinition)
+		aliceId, _ = add_player(session, router, "Alice")
+
+		assert await session.configure_player(aliceId, "0", ["red", "blue"])
+
+		await router.get_output(aliceId)
+
+		redPlayer, bluePlayer = session.players[aliceId]["objects"]
+		redPlayer.hand.addToHand(Card("♥️", "A"))
+		bluePlayer.hand.addToHand(Card("♠️", "K"))
+
+		await session.sendHandsAgain(session.players[aliceId])
+
+		redMessage = await router.get_output(aliceId)
+		blueMessage = await router.get_output(aliceId)
+
+		assert redMessage["type"] == "reveal"
+		assert redMessage["seatId"] == redPlayer.identifier
+		assert redMessage["playerColor"] == "red"
+		assert redMessage["cards"] == [{"suit": "♥️", "value": "A"}]
+
+		assert blueMessage["type"] == "reveal"
+		assert blueMessage["seatId"] == bluePlayer.identifier
+		assert blueMessage["playerColor"] == "blue"
+		assert blueMessage["cards"] == [{"suit": "♠️", "value": "K"}]
+
+	asyncio.run(scenario())

@@ -947,3 +947,33 @@ def test_backward_house_entry_uses_configured_entry_spot():
 	options = board.getMoveOptions(player, Card("♥️", "4"))
 
 	assert any(move.ID == "ENTER" and move.originSpot is origin and move.targetSpot is target for move in options)
+
+def test_board_piece_state_contains_owning_seat_id():
+	board = Board(COLORS)
+	alice = make_player("Alice", "red", "0")
+	spot = place_piece(board, alice, "red", 1)
+
+	state = board.getAllPiecesOnTheBoard()
+
+	assert state == [{
+		"spotIndex": str(spot),
+		"playerId": "Alice",
+		"seatId": alice.identifier,
+		"playerName": "Alice",
+		"playerColor": "red",
+		"playerTeam": "0",
+	}]
+
+def test_players_with_same_name_do_not_share_piece_ownership():
+	board = Board(COLORS)
+	redPlayer = Player("red-seat", "Robin", "0", "red")
+	limePlayer = Player("lime-seat", "Robin", "0", "lime")
+
+	redPlayer.setBoard(board)
+	limePlayer.setBoard(board)
+
+	redSpot = place_piece(board, redPlayer, "red", 5)
+
+	assert board.getOccupiedSpotsOnTheBoard(redPlayer) == [redSpot]
+	assert board.getOccupiedSpotsOnTheBoard(limePlayer) == []
+	assert board.getMoveOptions(limePlayer, Card("♥️", "6")) == []

@@ -27,6 +27,23 @@
       <input id="game-id-input" type="text" placeholder="Enter Game ID (for joining)" data-i18n-placeholder="start.game_id_placeholder"
              class="w-full p-2 bg-gray-800 border border-gray-600 rounded" />
 
+      <section class="rules-setup game-mode-setup">
+        <div class="rules-preset-row">
+          <div>
+            <label for="game-mode-select" data-i18n="game_modes.title">Game mode</label>
+            <p data-i18n="game_modes.intro">Choose the number of players and seating layout.</p>
+          </div>
+
+          <select id="game-mode-select">
+            <option value="team-four" data-mode="team_four" data-i18n="game_modes.team_four">Four players — 2v2</option>
+            <option value="duel-four-cross" data-mode="duel_four" data-layout="cross" data-i18n="game_modes.duel_four_cross">Two players — four-seat cross</option>
+            <option value="duel-four-adjacent" data-mode="duel_four" data-layout="adjacent" data-i18n="game_modes.duel_four_adjacent">Two players — four-seat adjacent</option>
+            <option value="duel-two" data-mode="duel_two" data-i18n="game_modes.duel_two_soon" disabled>Two players — two-seat board (coming soon)</option>
+            <option value="team-six" data-mode="team_six" data-i18n="game_modes.team_six_soon" disabled>Six players — 2v2v2 (coming soon)</option>
+          </select>
+        </div>
+      </section>
+
       <section class="rules-setup">
         <div class="rules-preset-row">
           <div>
@@ -93,8 +110,7 @@
         <option value="1" data-i18n="lobby.team_1">Team 1</option>
       </select>
 
-      <label for="color-select" data-i18n="lobby.colour">Colour</label>
-      <select id="color-select" class="lobby-select"></select>
+      <div id="color-selects" class="lobby-color-selects"></div>
 
       <button id="confirm-lobby-choice" type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded" data-i18n="lobby.confirm_choices">Confirm choices</button>
       </form>

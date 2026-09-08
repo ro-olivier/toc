@@ -19,7 +19,7 @@ from toc.persistence.archive_store import ArchiveCategory, CompressedJsonStore
 from toc.persistence.snapshot_state import CardState, DeckState, GameProgressState, GameState, PlayerGameState, PositionState, SessionSnapshotState, SevenHopProgressState, SevenSplitProgressState
 from toc.persistence.finished_state import FinishedArchiveState
 from main import GameSession, ConnectionManager, PlayerInputRouter
-from toc.model.game_mode import GameMode, getGameModeDefinition
+from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
 from toc.session.roster import Participant, PlayerSeat
 
 class FakeClock:
@@ -250,7 +250,7 @@ def test_game_state_rejects_missing_card():
 	payload = GameState.fromGameSession(session).to_dict()
 	payload["deck"]["drawPile"].pop()
 
-	with pytest.raises(ValueError, match="exactly 52 unique cards"):
+	with pytest.raises(ValueError, match="complete 52-card or 54-card deck"):
 		GameState.from_dict(payload)
 
 
@@ -497,6 +497,10 @@ def test_restored_players_start_disconnected_with_fresh_router_queues():
 		assert seat.team == playerData["team"]
 		assert seat.color == playerData["color"]
 		assert participant.seatIds == [seat.seatId]
+
+		assert playerData["objects"] == [playerData["object"]]
+		assert playerData["seats"] == [playerData["seat"]]
+		assert playerData["colors"] == [playerData["color"]]
 
 def test_session_restoration_preserves_resume_token_hashes():
 	originalSession = makeGameSessionState()
@@ -1513,3 +1517,80 @@ def test_game_state_snapshot_uses_roster_instead_of_compatibility_dictionary():
 
 	assert set(state.playerOrder) == set(expectedPlayerOrder)
 	assert {player.playerId for player in state.players} == set(expectedPlayerOrder)
+
+def test_joker_card_state_survives_json_round_trip():
+	originalState = CardState.fromCard(Card("red", "JOKER"))
+	restoredState = CardState.from_dict(json.loads(json.dumps(originalState.to_dict())))
+
+	assert restoredState == originalState
+	assert restoredState.toCard() == Card("red", "JOKER")
+
+
+def test_game_state_accepts_complete_54_card_deck():
+	session = makeGameSessionState()
+	payload = GameState.fromGameSession(session).to_dict()
+	payload["deck"]["drawPile"].extend([
+		{"suit": "red", "value": "JOKER"},
+		{"suit": "black", "value": "JOKER"},
+	])
+
+	restoredState = GameState.from_dict(payload)
+
+	assert len(restoredState.deck.drawPile) + len(restoredState.deck.discardPile) + sum(len(player.hand) for player in restoredState.players) == 54
+
+def test_session_snapshot_rejects_deck_size_that_does_not_match_mode():
+	session = makeGameSessionState()
+	payload = session.snapshotState().to_dict()
+	payload["game"]["deck"]["drawPile"].extend([
+		{"suit": "red", "value": "JOKER"},
+		{"suit": "black", "value": "JOKER"},
+	])
+
+	with pytest.raises(ValueError, match="Game card count does not match game mode"):
+		SessionSnapshotState.from_dict(payload)
+
+def test_duel_four_session_restores_two_seats_per_participant():
+	originalSession = makeGameSessionState()
+	payload = originalSession.snapshotState().to_dict()
+
+	payload["metadata"]["gameMode"] = {
+		"name": "duel_four",
+		"layout": "cross",
+	}
+
+	aliceParticipant = payload["metadata"]["participants"][0]
+	bobParticipant = payload["metadata"]["participants"][1]
+	payload["metadata"]["participants"] = [aliceParticipant, bobParticipant]
+
+	for seatIndex, seat in enumerate(payload["metadata"]["seats"]):
+		if seatIndex % 2 == 0:
+			seat["participantId"] = aliceParticipant["participantId"]
+		else:
+			seat["participantId"] = bobParticipant["participantId"]
+
+	snapshot = SessionSnapshotState.from_dict(payload)
+	restoredSession = GameSession.fromSnapshot(snapshot, PlayerInputRouter())
+
+	assert restoredSession.modeDefinition == getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
+	assert restoredSession.roster.participantCount == 2
+	assert restoredSession.roster.seatCount == 4
+	assert len(restoredSession.players) == 2
+
+	aliceData = restoredSession.players["TEST-Alice"]
+	bobData = restoredSession.players["TEST-Bob"]
+
+	assert len(aliceData["objects"]) == 2
+	assert len(aliceData["seats"]) == 2
+	assert aliceData["colors"] == ["red", "green"]
+	assert aliceData["object"] is aliceData["objects"][0]
+	assert aliceData["seat"] is aliceData["seats"][0]
+
+	assert len(bobData["objects"]) == 2
+	assert len(bobData["seats"]) == 2
+	assert bobData["colors"] == ["blue", "yellow"]
+	assert bobData["object"] is bobData["objects"][0]
+	assert bobData["seat"] is bobData["seats"][0]
+
+	assert all(player.routerId == "TEST-Alice" for player in aliceData["objects"])
+	assert all(player.routerId == "TEST-Bob" for player in bobData["objects"])
+	assert restoredSession.snapshotState() == snapshot

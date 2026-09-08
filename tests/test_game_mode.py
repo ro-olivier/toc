@@ -93,3 +93,18 @@ def test_number_of_seats_per_participant(mode, layout, expectedSeats):
 	definition = getGameModeDefinition(mode, layout)
 
 	assert definition.seatsPerParticipant == expectedSeats
+
+@pytest.mark.parametrize(
+	("mode", "layout", "configuredSchedule", "expectedSchedule"),
+	[
+		(GameMode.DUEL_TWO, None, (5, 4, 4), (10, 8, 8)),
+		(GameMode.DUEL_FOUR, DuelFourLayout.ADJACENT, (4, 5, 4), (4, 5, 4)),
+		(GameMode.DUEL_FOUR, DuelFourLayout.CROSS, (4, 4, 5), (4, 4, 5)),
+		(GameMode.TEAM_FOUR, None, (4, 5, 4), (4, 5, 4)),
+		(GameMode.TEAM_SIX, None, (5, 4, 4), (3, 3, 3)),
+	],
+)
+def test_game_mode_resolves_effective_dealing_schedule(mode, layout, configuredSchedule, expectedSchedule):
+	definition = getGameModeDefinition(mode, layout)
+
+	assert definition.resolveDealCardCounts(configuredSchedule) == expectedSchedule

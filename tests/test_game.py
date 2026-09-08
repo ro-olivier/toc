@@ -83,6 +83,18 @@ class DiscardChoosingPlayer(Player):
 	async def send_message_to_user(self, message):
 		pass
 
+class ExchangeOrderPlayer(Player):
+	def __init__(self, identifier, name, team, color, routerId, card, calls):
+		super().__init__(identifier, name, team, color, routerId=routerId)
+		self.card = card
+		self.calls = calls
+
+	async def requestCardExchange(self):
+		self.calls.append(("start", self.color))
+		await asyncio.sleep(0)
+		self.calls.append(("end", self.color))
+		return self.card
+
 class ExchangeRecordingGame(Game):
 	def __init__(self, rules):
 		super().__init__(FakeGameSession(), COLORS, rules)
@@ -145,6 +157,9 @@ def test_play_seven_moves_exactly_seven_steps():
 	assert stepMessages[-1]["stepsRemaining"] == 0
 	assert [change[1] for change in session.progressChanges if change[0] == "seven-progress"] == [6, 5, 4, 3, 2, 1]
 	assert session.checkpointCount == 6
+
+	assert all(message["seatId"] == "TEST-Alice" for message in stepMessages)
+	assert all(message["movedSeatId"] == "TEST-Alice" for message in stepMessages)
 
 def test_play_seven_without_path_kicks_only_kicks_at_final_position():
 	session = FakeGameSession()
@@ -383,6 +398,8 @@ def test_five_player_can_accept_hop_for_opponents_piece():
 	assert len(hopMessages) == 1
 	assert hopMessages[0]["playerId"] == "Alice"
 	assert hopMessages[0]["movedPlayerId"] == "Bob"
+	assert hopMessages[0]["seatId"] == "TEST-Alice"
+	assert hopMessages[0]["movedSeatId"] == "TEST-Bob"
 
 def test_seven_split_can_hop_after_final_step():
 	session = FakeGameSession()
@@ -483,7 +500,14 @@ def test_dealer_rotates_clockwise():
 	assert game.dealer is players[1]
 	assert players[1].isDealer
 	assert not players[0].isDealer
-	assert session.messages[-1] == {"type": "dealer", "playerId": "Bob"}
+	assert session.messages[-1] == {
+		"type": "dealer",
+		"playerId": "Bob",
+		"seatId": "TEST-Bob",
+		"playerName": "Bob",
+		"playerColor": "blue",
+		"playerTeam": "1",
+	}
 
 @pytest.mark.parametrize("schedule", [(5, 4, 4), (4, 5, 4), (4, 4, 5)])
 def test_deck_cycle_uses_configured_deal_schedule(schedule):
@@ -794,7 +818,14 @@ def test_dealer_can_rotate_counterclockwise():
 	assert game.dealer is players[3]
 	assert players[3].isDealer
 	assert not players[0].isDealer
-	assert session.messages[-1] == {"type": "dealer", "playerId": "Diana"}
+	assert session.messages[-1] == {
+		"type": "dealer",
+		"playerId": "Diana",
+		"seatId": "TEST-Diana",
+		"playerName": "Diana",
+		"playerColor": "yellow",
+		"playerTeam": "1",
+	}
 
 def test_king_does_not_kick_crossed_pieces_when_rule_is_disabled():
 	game = Game(None, COLORS, GameRules(king_kicks_pieces_on_path=False))
@@ -1179,3 +1210,63 @@ def test_optional_seven_hop_checkpoints_prompt_and_result():
 	asyncio.run(game.playSevenHop(triggeringMove, triggeringMove.card))
 
 	assert session.checkpointCount == 2
+
+def test_exchange_seats_sharing_router_choose_cards_sequentially():
+	calls = []
+	redCard = Card("♥️", "2")
+	blueCard = Card("♠️", "3")
+	redPlayer = ExchangeOrderPlayer("seat-red", "Alice", "0", "red", "TEST-Alice", redCard, calls)
+	bluePlayer = ExchangeOrderPlayer("seat-blue", "Alice", "0", "blue", "TEST-Alice", blueCard, calls)
+	game = Game(FakeGameSession(), COLORS)
+
+	result = asyncio.run(game.requestCardExchange((redPlayer, bluePlayer)))
+
+	assert result == (redPlayer, redCard, bluePlayer, blueCard)
+	assert calls == [
+		("start", "red"),
+		("end", "red"),
+		("start", "blue"),
+		("end", "blue"),
+	]
+
+def test_exchange_seats_using_different_routers_choose_cards_concurrently():
+	calls = []
+	redCard = Card("♥️", "2")
+	blueCard = Card("♠️", "3")
+	redPlayer = ExchangeOrderPlayer("seat-red", "Alice", "0", "red", "TEST-Alice", redCard, calls)
+	bluePlayer = ExchangeOrderPlayer("seat-blue", "Bob", "0", "blue", "TEST-Bob", blueCard, calls)
+	game = Game(FakeGameSession(), COLORS)
+
+	result = asyncio.run(game.requestCardExchange((redPlayer, bluePlayer)))
+
+	assert result == (redPlayer, redCard, bluePlayer, blueCard)
+	assert calls == [
+		("start", "red"),
+		("start", "blue"),
+		("end", "red"),
+		("end", "blue"),
+	]
+
+def test_duel_four_exchange_swaps_cards_between_same_participants_hands():
+	async def scenario():
+		calls = []
+		redCard = Card("♥️", "2")
+		blueCard = Card("♠️", "3")
+		redPlayer = ExchangeOrderPlayer("seat-red", "Alice", "0", "red", "TEST-Alice", redCard, calls)
+		bluePlayer = ExchangeOrderPlayer("seat-blue", "Alice", "0", "blue", "TEST-Alice", blueCard, calls)
+		game = Game(FakeGameSession(), COLORS)
+
+		redPlayer.hand.addToHand(redCard)
+		bluePlayer.hand.addToHand(blueCard)
+
+		player1, card1, player2, card2 = await game.requestCardExchange((redPlayer, bluePlayer))
+
+		player1.hand.discardFromHand(card1)
+		player1.hand.addToHand(card2)
+		player2.hand.discardFromHand(card2)
+		player2.hand.addToHand(card1)
+
+		assert redPlayer.hand.cards == [blueCard]
+		assert bluePlayer.hand.cards == [redCard]
+
+	asyncio.run(scenario())

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from toc.model.cards import Card, Deck
-from toc.model.params import SPOTS_PER_HOUSE, SUITS, VALUES
+from toc.model.params import JOKER_COLORS, JOKER_VALUE, SPOTS_PER_HOUSE, SUITS, VALUES
 from toc.model.game import Game
 from toc.model.audit import GameEvent
 from toc.model.game_phase import GamePhase
@@ -39,7 +39,10 @@ class CardState:
 	value: str
 
 	def __post_init__(self) -> None:
-		if self.suit not in SUITS or self.value not in VALUES:
+		standardCard = self.suit in SUITS and self.value in VALUES
+		jokerCard = self.suit in JOKER_COLORS and self.value == JOKER_VALUE
+
+		if not standardCard and not jokerCard:
 			raise ValueError("Invalid card state")
 
 	def to_dict(self) -> dict:
@@ -445,10 +448,17 @@ class GameState:
 		for player in self.players:
 			allCards.extend(player.hand)
 
-		expectedCardCount = len(SUITS) * len(VALUES)
+		standardCardIdentities = {(suit, value) for value in VALUES for suit in SUITS}
+		jokerCardIdentities = {(color, JOKER_VALUE) for color in JOKER_COLORS}
+		cardIdentities = {(card.suit, card.value) for card in allCards}
 
-		if len(allCards) != expectedCardCount or len(set(allCards)) != expectedCardCount:
-			raise ValueError("Game state must contain exactly 52 unique cards")
+		validCardSets = (
+			standardCardIdentities,
+			standardCardIdentities | jokerCardIdentities,
+		)
+
+		if len(allCards) != len(cardIdentities) or cardIdentities not in validCardSets:
+			raise ValueError("Game state must contain a complete 52-card or 54-card deck")
 
 		pieceCounts = {playerId: 0 for playerId in self.playerOrder}
 
@@ -569,7 +579,7 @@ class GameState:
 		except KeyError as error:
 			raise ValueError("Session seat has no runtime player") from error
 
-		game = Game(session, list(self.boardColors), session.rules)
+		game = Game(session, list(self.boardColors), session.rules, session.dealCardCounts, session.modeDefinition.jokerCount)
 
 		for player in players:
 			player.setDealer(False)
@@ -579,7 +589,7 @@ class GameState:
 
 		drawPile = [cardState.toCard() for cardState in self.deck.drawPile]
 		discardPile = [cardState.toCard() for cardState in self.deck.discardPile]
-		deck = Deck.fromPiles(drawPile, discardPile)
+		deck = Deck.fromPiles(drawPile, discardPile, session.modeDefinition.deckCardCount)
 
 		for playerState in self.players:
 			player = seatsById[playerState.playerId].player
@@ -644,7 +654,8 @@ class SessionSnapshotState:
 		if not self.progress.referencedPlayerIds.issubset(metadataSeatIds):
 			raise ValueError("Game progress references an unknown player")
 
-		if self.progress.dealIndex >= len(self.metadata.rules.deal_card_counts):
+		dealCardCounts = self.metadata.modeDefinition.resolveDealCardCounts(self.metadata.rules.deal_card_counts)
+		if self.progress.dealIndex >= len(dealCardCounts):
 			raise ValueError("Game progress references an invalid deal")
 
 		previousElapsedSeconds = -1
@@ -660,6 +671,12 @@ class SessionSnapshotState:
 				raise ValueError("Snapshot event references an unknown player")
 
 			previousElapsedSeconds = event.elapsedSeconds
+
+		gameCardCount = len(self.game.deck.drawPile) + len(self.game.deck.discardPile)
+		gameCardCount += sum(len(player.hand) for player in self.game.players)
+
+		if gameCardCount != self.metadata.modeDefinition.deckCardCount:
+			raise ValueError("Game card count does not match game mode")
 
 	def to_dict(self) -> dict:
 		return {

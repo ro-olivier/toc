@@ -25,7 +25,8 @@ const gameRulesPanel = document.getElementById("game-rules-panel");
 const gameRulesPreset = document.getElementById("game-rules-preset");
 const gameRulesList = document.getElementById("game-rules-list");
 const teamSelect = document.getElementById("team-select");
-const colorSelect = document.getElementById("color-select");
+const gameModeSelect = document.getElementById("game-mode-select");
+const colorSelects = document.getElementById("color-selects");
 const confirmLobbyChoice = document.getElementById("confirm-lobby-choice");
 const lobbyStatus = document.getElementById("lobby-status");
 const lobbyError = document.getElementById("lobby-error");
@@ -159,6 +160,13 @@ function refreshLanguageInterface() {
   renderActivityLog();
 }
 
+function refreshLocalHandLabels() {
+  playerAssignments.filter(player => isLocalSeat(player.seatId)).forEach(player => {
+    getCardBoxFromId(player.seatId).dataset.colorLabel = formatColorName(player.color);
+  });
+}
+
+
 function initializeLanguageInterface() {
     tocI18n.supportedLanguages.forEach(language => {
     const option = document.createElement("option");
@@ -171,6 +179,8 @@ function initializeLanguageInterface() {
 
   languageSelect.addEventListener("change", () => tocI18n.setLanguage(languageSelect.value));
   window.addEventListener("toc-language-change", refreshLanguageInterface);
+  window.addEventListener("toc-language-change", refreshLocalHandLabels);
+
 }
 
 function showStoredStartNotice() {
@@ -406,61 +416,60 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
       
       case 'assign-player':
-        assignPlayer(data.name, data.team, data.color);
+        assignPlayer(data.seatId || data.name, data.name, data.team, data.color);
         break;
 
       case "full-ui-state":
         configureBoardGeometry(data.trackRegionLength, data.enterHouseAtSpot);
         renderRulesetDisplays(data.ruleset);
 
-        data.players.forEach(p => {
-          assignPlayer(p.name, p.team, p.color);
-          if (p.number_of_cards == 0) {
-            hideCardBlock(p.name); 
+        data.players.forEach((player, seatIndex) => {
+          assignPlayer(player.seatId, player.name, player.team, player.color, seatIndex);
+
+          if (player.number_of_cards === 0) {
+            hideCardBlock(player.seatId);
           } else {
-            displayHiddenCards(p.name, p.number_of_cards);
+            displayHiddenCards(player.seatId, player.number_of_cards);
           }
         });
+
         data.pieces.forEach(piece => {
-          placePieceOnSpot(piece.playerId, piece.spotIndex);
-        })
-        displayActivePlayer(data.active_player);
+          placePieceOnSpot(piece.seatId || piece.playerId, piece.spotIndex);
+        });
+
+        displayActivePlayer(data.activeSeatId || data.active_player);
         break;
 
       case "draw":
         // When we receive the draw order, we only display the (hidden) cards of the players unless they are already displayed
-        playerAssignments.forEach(p => {
-          displayHiddenCards(p.name, data.cards.length);
+        playerAssignments.forEach(player => {
+          displayHiddenCards(player.seatId, data.cards.length);
         });
         break;
 
       case "reveal":
-        // When we receive the reveal order, the card of the player whose UI this is are revealed (to him only)
-        setTimeout(() => {
-          setupPlayerCards(data.playerId, data.cards);
-        }, 1500);
+        setupPlayerCards(getMessageSeatId(data), data.cards);
         break;
 
       case "dealer":
-        toogleDealerOnPlayerBlock(data.playerId);
-        setRawText(dealerName, data.playerId);
+        toogleDealerOnPlayerBlock(getMessageSeatId(data));
         break;
 
       case "receive-card-from-friend":
-        replaceCard(data.value, data.suit);
-        break
+        replaceCard(getMessageSeatId(data), data.value, data.suit);
+        break;
 
       case 'move':
-        placePieceOnSpot(data.playerId, data.spotIndex);
+        placePieceOnSpot(getMessageSeatId(data), data.spotIndex);
         break;
 
       case "fold":
-        foldAllCardsOfPlayer(data.playerId);
+        foldAllCardsOfPlayer(getMessageSeatId(data));
         log(data);
         break;
 
-      case 'discard':
-        removeCard(data.playerId, data.value, data.suit);
+      case "discard":
+        removeCard(getMessageSeatId(data), data.value, data.suit);
         log(data);
         break;
 
@@ -472,39 +481,46 @@ async function connectToGame(gameId, name, rejoin = false) {
         log(data);
         break;
 
-      case 'next-player':
+      case "next-player":
+        disableCardSelection();
         setCancelSelectionVisible(false);
         clearSpotSelection();
-        displayActivePlayer(data.playerId);
+        displayActivePlayer(getMessageSeatId(data));
         log(data);
         break;
 
-      case "play":
+      case "play": {
         setCancelSelectionVisible(false);
         clearSpotSelection();
-        removeCard(data.playerId, data.value, data.suit);
+
+        const actingSeatId = getMessageSeatId(data);
+        const movedSeatId = getMessageSeatId(data, "moved") || actingSeatId;
+
+        removeCard(actingSeatId, data.value, data.suit);
 
         if (data.value === "J") {
-          switchPieces(data.movedPlayerId || data.playerId, data.origin, data.target);
+          switchPieces(movedSeatId, data.origin, data.target);
         } else {
-          const movedPlayerId = data.movedPlayerId || data.playerId;
-          movePieceFromSpotToSpot(movedPlayerId, data.origin, data.target);
+          movePieceFromSpotToSpot(movedSeatId, data.origin, data.target);
         }
 
         log(data);
         break;
+      }
 
       case "seven-start":
         setCancelSelectionVisible(false);
-        removeCard(data.playerId, data.value, data.suit);
+        removeCard(getMessageSeatId(data), data.value, data.suit);
         log(data);
         break;
 
       case "seven-step":
-        movePieceFromSpotToSpot(data.movedPlayerId || data.playerId, data.origin, data.target);
+        movePieceFromSpotToSpot(getMessageSeatId(data, "moved") || getMessageSeatId(data), data.origin, data.target);
         break;
 
       case "query-seven-hop":
+        disableCardSelection();
+        selectLocalSeat(getMessageSeatId(data));
         activeRequestId = data.requestId;
         setCancelSelectionVisible(false);
         clearSpotSelection();
@@ -513,7 +529,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "seven-hop":
-        movePieceFromSpotToSpot(data.movedPlayerId, data.origin, data.target);
+        movePieceFromSpotToSpot(getMessageSeatId(data, "moved"), data.origin, data.target);
         break;
 
       case "path-kicks":
@@ -524,6 +540,8 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "query-origin":
+        disableCardSelection();
+        selectLocalSeat(getMessageSeatId(data));
         activeRequestId = data.requestId;
         setCancelSelectionVisible(Boolean(data.canCancel));
         query(data);
@@ -531,6 +549,8 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "query-target":
+        disableCardSelection();
+        selectLocalSeat(getMessageSeatId(data));
         activeRequestId = data.requestId;
         setCancelSelectionVisible(Boolean(data.canCancel));
         query(data);
@@ -538,6 +558,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "query-card":
+        selectLocalSeat(getMessageSeatId(data));
         activeRequestId = data.requestId;
         setCancelSelectionVisible(false);
         clearSpotSelection();
@@ -547,11 +568,13 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "query-card-exchange":
+        selectLocalSeat(getMessageSeatId(data));
         activeRequestId = data.requestId;
         setCancelSelectionVisible(false);
         clearSpotSelection();
         query(data);
         showAllCardUp();
+        requestCardExchangeSelection();
         break;
 
       case "query":
@@ -560,11 +583,14 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "reject-card-selection":
+        selectLocalSeat(getMessageSeatId(data));
         error(data);
         showAllCardUp();
+        requestCardSelection();
         break;
 
       case "game-over":
+        disableCardSelection();
         setCancelSelectionVisible(false);
         clearSpotSelection();
         displayNoActivePlayers();
@@ -878,7 +904,17 @@ createBtn.addEventListener("click", async () => {
 
   try {
     const payload = {preset: rulePresetSelect.value};
-    if (rulePresetSelect.value === "custom") payload.rules = collectCustomRuleValues();
+    const selectedMode = gameModeSelect.selectedOptions[0];
+
+    payload.mode = selectedMode.dataset.mode;
+
+    if (selectedMode.dataset.layout) {
+      payload.layout = selectedMode.dataset.layout;
+    }
+
+    if (rulePresetSelect.value === "custom") {
+      payload.rules = collectCustomRuleValues();
+    }
 
     const res = await fetch("/toc/api/create-game", {
       method: "POST",
@@ -981,14 +1017,93 @@ lobbyChoiceForm.addEventListener("submit", (event) => {
   confirmLobbyChoice.disabled = true;
   lobbyStatus.textContent = tocI18n.t("lobby.confirming");
 
-  const message = {"id": crypto.randomUUID(), "type": "configure-player", "team": teamSelect.value, "color": colorSelect.value};
+  const colors = Array.from(colorSelects.querySelectorAll("select"), select => select.value);
+
+  const message = {
+    "id": crypto.randomUUID(),
+    "type": "configure-player",
+    "team": teamSelect.value,
+    "colors": colors,
+  };
+
   ws.send(JSON.stringify(message));
 });
+
+function renderLobbyTeamOptions(state) {
+  const previousTeam = teamSelect.value;
+  teamSelect.replaceChildren();
+
+  Object.keys(state.teamCounts).forEach(team => {
+    const option = document.createElement("option");
+
+    option.value = team;
+    option.textContent = tocI18n.t(`lobby.team_${team}`);
+    option.disabled = state.teamCounts[team] >= state.teamCapacity;
+    teamSelect.appendChild(option);
+  });
+
+  const previousOption = Array.from(teamSelect.options).find(option => option.value === previousTeam && !option.disabled);
+  const firstAvailableOption = Array.from(teamSelect.options).find(option => !option.disabled);
+
+  if (previousOption) {
+    teamSelect.value = previousOption.value;
+  } else if (firstAvailableOption) {
+    teamSelect.value = firstAvailableOption.value;
+  }
+}
+
+function synchronizeLobbyColorOptions() {
+  const selects = Array.from(colorSelects.querySelectorAll("select"));
+  const selectedValues = selects.map(select => select.value);
+
+  selects.forEach((select, selectIndex) => {
+    Array.from(select.options).forEach(option => {
+      option.disabled = selectedValues.some((value, valueIndex) => valueIndex !== selectIndex && value === option.value);
+    });
+  });
+}
+
+function renderLobbyColorOptions(state) {
+  const previousValues = Array.from(colorSelects.querySelectorAll("select"), select => select.value);
+  colorSelects.replaceChildren();
+
+  for (let colorIndex = 0; colorIndex < state.seatsPerParticipant; colorIndex++) {
+    const field = document.createElement("label");
+    const labelText = document.createElement("span");
+    const select = document.createElement("select");
+
+    field.className = "lobby-color-field";
+    labelText.textContent = state.seatsPerParticipant === 1 ? tocI18n.t("lobby.colour") : tocI18n.t("lobby.colour_number", {number: colorIndex + 1});
+    select.className = "lobby-select";
+    select.dataset.colorIndex = colorIndex;
+
+    state.availableColors.forEach(color => {
+      const option = document.createElement("option");
+      option.value = color;
+      option.textContent = formatColorName(color);
+      select.appendChild(option);
+    });
+
+    const previousValue = previousValues[colorIndex];
+
+    if (previousValue && state.availableColors.includes(previousValue)) {
+      select.value = previousValue;
+    } else if (state.availableColors[colorIndex]) {
+      select.value = state.availableColors[colorIndex];
+    }
+
+    select.addEventListener("change", synchronizeLobbyColorOptions);
+    field.append(labelText, select);
+    colorSelects.appendChild(field);
+  }
+
+  synchronizeLobbyColorOptions();
+}
 
 function renderLobbyState(state) {
   currentLobbyState = state;
   lobbyGameId.textContent = state.gameId;
-  lobbyPlayerCount.textContent = tocI18n.t("lobby.players_count", {count: state.players.length, capacity: 4});
+  lobbyPlayerCount.textContent = tocI18n.t("lobby.players_count", {count: state.players.length, capacity: state.participantCapacity});
   lobbyPlayers.replaceChildren();
   renderRulesetDisplays(state.ruleset);
 
@@ -1003,7 +1118,8 @@ function renderLobbyState(state) {
     name.className = "lobby-player-name";
     choice.className = "lobby-player-choice";
     name.textContent = player.name === local_player_name ? tocI18n.t("game.player_you", {player: player.name}) : player.name;
-    choice.textContent = player.configured ? tocI18n.t("lobby.configured_choice", {team: player.team, color: formatColorName(player.color)}) : tocI18n.t("lobby.choosing");
+    const colorNames = (player.colors || [player.color]).filter(Boolean).map(formatColorName).join(", ");
+    choice.textContent = player.configured ? tocI18n.t("lobby.configured_choice", {team: player.team, color: colorNames}) : tocI18n.t("lobby.choosing");
 
     row.append(connection, name, choice);
     lobbyPlayers.appendChild(row);
@@ -1012,7 +1128,24 @@ function renderLobbyState(state) {
   const localPlayer = state.players.find((player) => player.name === local_player_name);
 
   if (state.started) {
-    state.players.filter((player) => player.configured).forEach((player) => assignPlayer(player.name, player.team, player.color));
+    const seatsById = new Map();
+
+    state.players.forEach(player => {
+      player.seats.forEach(seat => {
+        seatsById.set(seat.seatId, {
+          seatId: seat.seatId,
+          name: player.name,
+          team: player.team,
+          color: seat.color,
+        });
+      });
+    });
+
+    state.seatOrder.forEach((seatId, seatIndex) => {
+      const seat = seatsById.get(seatId);
+      if (seat) assignPlayer(seat.seatId, seat.name, seat.team, seat.color, seatIndex);
+    });
+
     showGameUI();
     return;
   }
@@ -1029,39 +1162,38 @@ function renderLobbyState(state) {
   confirmLobbyChoice.disabled = false;
   lobbyError.classList.add("hidden");
 
-  Array.from(teamSelect.options).forEach((option) => {
-    option.disabled = state.teamCounts[option.value] >= state.teamCapacity;
-  });
+  renderLobbyTeamOptions(state);
+  renderLobbyColorOptions(state);
 
-  if (teamSelect.selectedOptions[0]?.disabled) {
-    const availableTeam = Array.from(teamSelect.options).find((option) => !option.disabled);
-    if (availableTeam) teamSelect.value = availableTeam.value;
-  }
-
-  colorSelect.replaceChildren();
-  state.availableColors.forEach((color) => {
-    const option = document.createElement("option");
-    option.value = color;
-    option.textContent = formatColorName(color);
-    colorSelect.appendChild(option);
-  });
-
-  confirmLobbyChoice.disabled = state.availableColors.length === 0;
-  lobbyStatus.textContent = state.players.length < 4 ? tocI18n.t("lobby.choose_while_waiting") : tocI18n.t("lobby.choose_to_start");
+  confirmLobbyChoice.disabled = state.availableColors.length < state.seatsPerParticipant;
+  lobbyStatus.textContent = state.players.length < state.participantCapacity ? tocI18n.t("lobby.choose_while_waiting") : tocI18n.t("lobby.choose_to_start");
 }
 
-function sendCardSelection(player_name, rank, suit) {
-  const message = {"id": crypto.randomUUID(), "requestId": activeRequestId, "type": "card_selection", "name": player_name, "value": rank, "suit": suit};
-  const message_json = JSON.stringify(message);
-  console.log('[sendCardSelection] Sending following content to back-end:' + message_json);
-  ws.send(message_json);
+function sendCardSelection(seatId, rank, suit) {
+  const message = {
+    "id": crypto.randomUUID(),
+    "requestId": activeRequestId,
+    "type": "card_selection",
+    "name": local_player_name,
+    "seatId": seatId,
+    "value": rank,
+    "suit": suit,
+  };
+
+  ws.send(JSON.stringify(message));
 }
 
-function sendSpotSelection(player_name, spot) {
-  const message = {"id": crypto.randomUUID(), "requestId": activeRequestId, "type": "spot_selection", "name": player_name, "result": spot};
-  const message_json = JSON.stringify(message);
-  console.log('[sendSpotSelection] Sending following content to back-end:' + message_json);
-  ws.send(message_json);
+function sendSpotSelection(seatId, spot) {
+  const message = {
+    "id": crypto.randomUUID(),
+    "requestId": activeRequestId,
+    "type": "spot_selection",
+    "name": local_player_name,
+    "seatId": seatId,
+    "result": spot,
+  };
+
+  ws.send(JSON.stringify(message));
 }
 
 function sendSevenHopChoice(result) {
@@ -1093,7 +1225,7 @@ const houseDistance = 40;
 const spotElements = [];
 const houseElements = [];
 
-const positions = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const positions = ['top-left', 'top-right', 'bottom-right', 'bottom-left'];
 const positionMap = {
   'top-left':    { index: 2, info_box: document.getElementById('player-info-top-left'), card_box: document.getElementById('card-box-top-left') },
   'top-right':   { index: 3, info_box: document.getElementById('player-info-top-right'), card_box: document.getElementById('card-box-top-right') },
@@ -1101,10 +1233,26 @@ const positionMap = {
   'bottom-right':{ index: 0, info_box: document.getElementById('player-info-bottom-right'), card_box: document.getElementById('card-box-bottom-right') },
 };
 
-const playerAssignments = []; // { name, team, color, position }
+const playerAssignments = []; // { seatId, name, team, color, position }
 const usedColors = [];
 const usedPositions = [];
 let selectedCard = null;
+const pendingExchangeCards = new Map();
+
+const PLAYER_ACCENT_RGB = {
+  red: "220, 38, 38",
+  green: "22, 163, 74",
+  blue: "37, 99, 235",
+  yellow: "234, 179, 8",
+  orange: "234, 88, 12",
+  purple: "147, 51, 234",
+  pink: "219, 39, 119",
+  cyan: "8, 145, 178",
+  lime: "101, 163, 13",
+  brown: "146, 64, 14",
+  black: "100, 116, 139",
+  white: "226, 232, 240",
+};
 
 // Click anywhere outside of cards to cancel card selection
 document.addEventListener('click', () => {
@@ -1245,58 +1393,82 @@ function clearSpotSelection() {
 
 
 //// Player-sits-down-at-the-table function //// 
-function assignPlayer(name, team, color) {
-  // if the player is already in the playerAssignements array, we don't add it again. 
-  // This can happen because the full_ui uses the assignPlayer method (#TODO: refactor this?)
-  const player_test = playerAssignments.find(p => p.name === name);
-  if (player_test) return;
+function assignPlayer(seatId, name, team, color, seatIndex = playerAssignments.length) {
+  const existingPlayer = playerAssignments.find(player => player.seatId === seatId);
+  if (existingPlayer) return existingPlayer;
 
-  const newPlayer = { name, team, color };
+  const position = positions[seatIndex];
 
-  if (playerAssignments.length === 0) {
-    newPlayer.position = 'top-left';
-  } else {
-    const teammate = playerAssignments.find(p => p.team === team);
-    if (teammate) {
-      newPlayer.position = getOppositePosition(teammate.position);
-    } else {
-      const opponent = playerAssignments.find(p => p.team !== team);
-      newPlayer.position = getAdjacentFreePosition(opponent.position);
-    }
+  if (!position) {
+    console.error(`No board position is available for seat "${seatId}".`);
+    return null;
   }
+
+  const newPlayer = {seatId, name, team, color, position};
 
   playerAssignments.push(newPlayer);
-
   usedColors.push(color);
-  usedPositions.push(newPlayer.position);
+  usedPositions.push(position);
 
   updatePlayerBlock(newPlayer);
-  positionMap[newPlayer.position].info_box.style.display = 'flex';
-  drawQuadrant(newPlayer.position, color);
+  positionMap[position].info_box.style.display = 'flex';
+  drawQuadrant(position, color);
 
-  // Setting a few short-hands for cleaner code
-  local_player = playerAssignments.find(p => p.name === local_player_name);
-  if (local_player) {
-    local_card_box = positionMap[local_player.position].card_box
-    local_info_box = positionMap[local_player.position].info_box
-    local_info_box.classList.add("local-player");
+  if (name === local_player_name) {
+    const cardBox = positionMap[position].card_box;
+    const infoBox = positionMap[position].info_box;
 
-    if (!local_card_box.classList.contains("local-hand")) {
-      local_card_box.classList.add("local-hand");
-      localHandSlot.appendChild(local_card_box);
+    infoBox.classList.add("local-player");
+    cardBox.classList.add("local-hand");
+
+    cardBox.dataset.colorLabel = formatColorName(color);
+    cardBox.style.setProperty("--hand-color-rgb", PLAYER_ACCENT_RGB[color] || "100, 116, 139");
+
+    if (!localHandSlot.contains(cardBox)) {
+      localHandSlot.appendChild(cardBox);
     }
+
+    const localHandCount = playerAssignments.filter(player => isLocalSeat(player.seatId)).length;
+    localHandSlot.classList.toggle("multiple-hands", localHandCount > 1);
+
+    if (!local_player) selectLocalSeat(seatId);
   }
+
+  return newPlayer;
 }
 
 
 //// Helper functions ////
-function getPlayerFromId(playerId) {
-  const player = playerAssignments.find(p => p.name === playerId);
+function getMessageSeatId(message, prefix = "") {
+  const seatField = prefix ? `${prefix}SeatId` : "seatId";
+  const legacyField = prefix ? `${prefix}PlayerId` : "playerId";
+  return message[seatField] || message[legacyField];
+}
+
+function getPlayerFromId(seatId) {
+  const player = playerAssignments.find(player => player.seatId === seatId);
+
   if (!player) {
-    console.warn(`[getPlayerFromId] No player found with ID "${playerId}"`, JSON.stringify(playerAssignments));
-    return; // or handle this gracefully
+    console.warn(`[getPlayerFromId] No seat found with ID "${seatId}"`, JSON.stringify(playerAssignments));
+    return null;
   }
-  return player
+
+  return player;
+}
+
+function isLocalSeat(seatId) {
+  return getPlayerFromId(seatId)?.name === local_player_name;
+}
+
+function selectLocalSeat(seatId) {
+  const player = getPlayerFromId(seatId);
+
+  if (!player || player.name !== local_player_name) return false;
+
+  local_player = player;
+  local_card_box = positionMap[player.position].card_box;
+  local_info_box = positionMap[player.position].info_box;
+  return true;
 }
 
 function getCardBoxFromId(playerId) {
@@ -1325,8 +1497,8 @@ function getAdjacentFreePosition(pos) {
   return candidates.find(p => !usedPositions.includes(p));
 }
 
-function getPlayerClass(playerId) {
-  const player = getPlayerFromId(playerId);
+function getPlayerClass(seatId) {
+  const player = getPlayerFromId(seatId);
   return player ? `player-${player.color}` : '';
 }
 
@@ -1336,10 +1508,13 @@ function hideCardBlock(playerId) {
   const player = getPlayerFromId(playerId);
   positionMap[player.position].card_box.style.display = 'none';
 
-  if (playerId === local_player_name) {
+  if (isLocalSeat(playerId)) {
     setTranslatedText(emptyHandMessage, "game.waiting_for_next_deal");
     emptyHandMessage.classList.remove("hidden");
   }
+
+  positionMap[player.position].card_box.replaceChildren();
+  positionMap[player.position].card_box.dataset.cardCount = "0";
 }
 
 function updatePlayerBlock(player, isDealer = false) {
@@ -1347,6 +1522,8 @@ function updatePlayerBlock(player, isDealer = false) {
   const identity = document.createElement("div");
   const name = document.createElement("span");
   const team = document.createElement("span");
+
+  block.style.setProperty("--player-color-rgb", PLAYER_ACCENT_RGB[player.color] || "100, 116, 139");
 
   identity.className = "player-identity";
   name.className = "player-name";
@@ -1365,7 +1542,7 @@ function updatePlayerBlock(player, isDealer = false) {
     block.appendChild(dealerBadge);
   }
 
-  const playerClass = getPlayerClass(player.name);
+  const playerClass = getPlayerClass(player.seatId);
   if (block.dataset.playerColorClass) block.classList.remove(block.dataset.playerColorClass);
   block.classList.add(playerClass);
   block.dataset.playerColorClass = playerClass;
@@ -1379,42 +1556,42 @@ function updateRegionColor(position, color) {
   regionHouseSpots.forEach(s => s.classList.add(color));
 }
 
-function toogleDealerOnPlayerBlock(playerId) {
-	dealerName.textContent = playerId;
+function toogleDealerOnPlayerBlock(seatId) {
+  const dealer = getPlayerFromId(seatId);
+  dealerName.textContent = dealer?.name || seatId;
 
-  playerAssignments.forEach(p => {
-    if (p.name === playerId) {
-      updatePlayerBlock(p, true);
-    } else {
-      updatePlayerBlock(p);
-    }
+  playerAssignments.forEach(player => {
+    updatePlayerBlock(player, player.seatId === seatId);
   });
 }
 
-function displayActivePlayer(playerId) {
-  if (!playerId) {
+function displayActivePlayer(seatId) {
+  if (!seatId) {
     setTranslatedText(currentPlayerName, "game.waiting_to_start");
     setTranslatedText(turnInstruction, "game.next_action");
     return;
   }
 
-  if (playerId === local_player_name) {
-    setTranslatedText(currentPlayerName, "game.player_you", {player: playerId});
-    setTranslatedText(turnInstruction, "game.your_turn");
-  } else {
-    setRawText(currentPlayerName, playerId);
-    setTranslatedText(turnInstruction, "game.waiting_for_player", {player: playerId});
-  }
-  turnInstruction.classList.remove("error-state");
-  turnBanner.classList.toggle("your-turn", playerId === local_player_name);
+  const player = getPlayerFromId(seatId);
+  if (!player) return;
 
-  playerAssignments.forEach(p => {
-    const block = positionMap[p.position].info_box;
-    if (p.name === playerId) {
-      block.classList.add('active');
-    } else {
-      block.classList.remove('active');
-    }
+  const localSeat = player.name === local_player_name;
+
+  if (localSeat) {
+    setTranslatedText(currentPlayerName, "game.player_you", {player: player.name});
+    setTranslatedText(turnInstruction, "game.your_turn");
+    selectLocalSeat(seatId);
+  } else {
+    setRawText(currentPlayerName, player.name);
+    setTranslatedText(turnInstruction, "game.waiting_for_player", {player: player.name});
+  }
+
+  turnInstruction.classList.remove("error-state");
+  turnBanner.classList.toggle("your-turn", localSeat);
+
+  playerAssignments.forEach(assignedPlayer => {
+    const block = positionMap[assignedPlayer.position].info_box;
+    block.classList.toggle("active", assignedPlayer.seatId === seatId);
   });
 }
 
@@ -1434,9 +1611,7 @@ function setupPlayerCards(playerId, cards) {
   const cardBox = getCardBoxFromId(playerId)
   cardBox.querySelectorAll('.card-container').forEach((cardContainer, i) => {
 
-    cardContainer.classList.add('hover-effect');
-
-    cardBlock = cardContainer.querySelector('.card');
+    const cardBlock = cardContainer.querySelector('.card');
 
     const rank = cards[i].value
     const suit = cards[i].suit
@@ -1450,7 +1625,6 @@ function setupPlayerCards(playerId, cards) {
 
     cardBlock.appendChild(cardFront);
 
-    cardContainer.addEventListener('click', switchCardClickListener);
     cardContainer.rank = rank;
     cardContainer.suit = suit;
     cardContainer.playerId = playerId;
@@ -1461,33 +1635,35 @@ function setupPlayerCards(playerId, cards) {
   });
 }
 
-function displayHiddenCards(playerId, number_of_cards) {
-  const block = getCardBoxFromId(playerId);
+function displayHiddenCards(seatId, numberOfCards) {
+  const block = getCardBoxFromId(seatId);
+  if (!block) return;
 
-  if (playerId === local_player_name) {
+  if (block.dataset.cardCount === String(numberOfCards)) return;
+
+  block.replaceChildren();
+  block.dataset.cardCount = String(numberOfCards);
+  block.style.display = 'flex';
+
+  if (isLocalSeat(seatId)) {
     emptyHandMessage.classList.add("hidden");
   }
-  
-  for (let i = 0; i < number_of_cards; i++) {
-    block.style.display = 'flex';
-    setTimeout(() => {
-      const cardContainer = document.createElement('div');
-      cardContainer.className = 'card-container';
 
-      const card = document.createElement('div');
-      card.className = 'card';
+  for (let cardIndex = 0; cardIndex < numberOfCards; cardIndex++) {
+    const cardContainer = document.createElement('div');
+    const card = document.createElement('div');
+    const cardBack = document.createElement('div');
+    const backImg = document.createElement('img');
 
-      const cardBack = document.createElement('div');
-      cardBack.className = 'card-back';
+    cardContainer.className = 'card-container';
+    card.className = 'card';
+    cardBack.className = 'card-back';
+    backImg.src = 'assets/card.jpg';
 
-      const backImg = document.createElement('img');
-      backImg.src = 'assets/card.jpg';
-
-      cardBack.appendChild(backImg);
-      card.appendChild(cardBack);
-      cardContainer.appendChild(card);
-      block.appendChild(cardContainer);
-    }, 250 * i);
+    cardBack.appendChild(backImg);
+    card.appendChild(cardBack);
+    cardContainer.appendChild(card);
+    block.appendChild(cardContainer);
   }
 }
 
@@ -1511,40 +1687,62 @@ function foldAllCardsOfPlayer(playerId) {
     block.style.display = 'none';
   });
 
-  if (playerId === local_player_name) {
+  if (isLocalSeat(playerId)) {
     setTranslatedText(emptyHandMessage, "game.waiting_for_next_deal");
     emptyHandMessage.classList.remove("hidden");
   }
+
+  block.dataset.cardCount = "0";
 }
 
-function replaceCard(rank, suit) {
-  // Getting the info of which card to replace is tricky, this way is much simpler than to actually look for the card based on the previous values, which would need to be passed by the back-end, which is ugly.
-  const cardContainer = window.flipped_card;
-  window.flipped_card = null;
+function replaceCard(seatId, rank, suit) {
+  const cardContainer = pendingExchangeCards.get(seatId);
+  pendingExchangeCards.delete(seatId);
+
+  if (!cardContainer) {
+    console.warn(`No pending exchanged card was found for seat "${seatId}".`);
+    return;
+  }
+
   const cardFront = cardContainer.querySelector('.card-front');
+
   cardFront.innerHTML = `
     <div class="card-value">${rank}</div>
     <div class="card-suit">${suit}</div>
   `;
-  setTimeout(100);
+
   requestAnimationFrame(() => {
     cardContainer.classList.add('flip');
   });
 }
 
-function removeCard(playerId, value, suit) {
-  const block = getCardBoxFromId(playerId);
+function removeCard(seatId, value, suit) {
+  const block = getCardBoxFromId(seatId);
+  if (!block) return;
 
-  // If the code is running the player own's UI then we remove the actual card, but for other players we remove any card (because other player's UI don't know the card value so we don't really care what card we remove).
-  if (playerId !== local_player_name) {
-    block.removeChild(block.children[0]);
+  let cardToRemove = null;
+
+  if (isLocalSeat(seatId)) {
+    cardToRemove = Array.from(block.children).find(cardContainer => {
+      const cardFront = cardContainer.querySelector(".card-front");
+      if (!cardFront) return false;
+
+      const cardSuit = cardFront.querySelector(".card-suit")?.textContent;
+      const cardValue = cardFront.querySelector(".card-value")?.textContent;
+
+      return cardSuit === suit && cardValue === value;
+    });
   } else {
-      for (cardContainer of block.children) {
-      t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit').innerHTML;
-      t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
-      if (t_suit === suit && t_value === value) block.removeChild(cardContainer);
-    }
+    cardToRemove = block.firstElementChild;
   }
+
+  if (!cardToRemove) {
+    console.warn(`Could not find card ${value}${suit} for seat "${seatId}".`);
+    return;
+  }
+
+  cardToRemove.remove();
+  block.dataset.cardCount = String(block.children.length);
 }
 
 
@@ -1560,13 +1758,9 @@ function switchCardClickListener(event) {
     // Second click confirms selection
     cardContainer.classList.remove('selected');
     cardContainer.classList.remove('flip');
-    window.flipped_card = cardContainer // storing that for later when we receive the new card from the team-mate
+    pendingExchangeCards.set(playerId, cardContainer);
     selectedCard = null;
-    // we loop over all cards and remove the switchCardClickListener event listener now that the switch has been triggered.
-    event.currentTarget.parentElement.querySelectorAll('.card-container').forEach(c => {
-        c.removeEventListener('click', switchCardClickListener);
-        console.log('[switchCardClickListener] Removed switchCardClickListener.');
-    });
+    disableCardSelection();
     // only triggering the WS call to replace the card after twice the amount of time it takes for the front-to-back flip animation to execute, to make sure we do play the animation
     setTimeout(() => {
       sendCardSelection(playerId, rank, suit);
@@ -1612,13 +1806,16 @@ function clickCardClickListener(event) {
 
   if (selectedCard === cardContainer) {
     // Second click confirms selection
+    const seatId = local_player.seatId;
+
     cardContainer.classList.remove('selected');
     cardContainer.classList.remove('flip');
     selectedCard = null;
-    sendCardSelection(local_player_name, t_value, t_suit);
+    disableCardSelection();
+    sendCardSelection(seatId, t_value, t_suit);
   } else {
     // First click triggers highlight
-    if (selectedCard) selectedCard.classList.add('selected');
+    if (selectedCard) selectedCard.classList.remove("selected");
     selectedCard = cardContainer;
     cardContainer.classList.add('selected');
   }
@@ -1637,7 +1834,7 @@ function requestSpotSelection(spotOptions) {
       const selectedPositionId = event.currentTarget.id;
 
       clearSpotSelection();
-      sendSpotSelection(local_player_name, selectedPositionId);
+      sendSpotSelection(local_player.seatId, selectedPositionId);
     };
 
     position.classList.add("glow");
@@ -1646,11 +1843,39 @@ function requestSpotSelection(spotOptions) {
   });
 }
 
+function disableCardSelection() {
+  localHandSlot.querySelectorAll(".card-box.local-hand").forEach(cardBox => {
+    cardBox.classList.remove("awaiting-selection");
+
+    cardBox.querySelectorAll(".card-container").forEach(cardContainer => {
+      cardContainer.classList.remove("hover-effect", "selected");
+      cardContainer.removeEventListener("click", clickCardClickListener);
+      cardContainer.removeEventListener("click", switchCardClickListener);
+    });
+  });
+
+  selectedCard = null;
+}
+
+function enableCardSelection(listener) {
+  disableCardSelection();
+
+  if (!local_card_box) return;
+
+  local_card_box.classList.add("awaiting-selection");
+
+  local_card_box.querySelectorAll(".card-container").forEach(cardContainer => {
+    cardContainer.classList.add("hover-effect");
+    cardContainer.addEventListener("click", listener);
+  });
+}
+
 function requestCardSelection() {
-  local_card_box.querySelectorAll('.card-container').forEach(c => {
-    c.addEventListener('click', clickCardClickListener);
-    console.log('[requestCardSelection] Added clickCardClickListener.');
-  });       
+  enableCardSelection(clickCardClickListener);
+}
+
+function requestCardExchangeSelection() {
+  enableCardSelection(switchCardClickListener);
 }
 
 

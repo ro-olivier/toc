@@ -135,6 +135,18 @@ class GameModeDefinition:
 
 		return definition
 
+	def resolveDealCardCounts(self, configuredDealCardCounts: tuple[int, ...]) -> tuple[int, ...]:
+		if type(configuredDealCardCounts) is not tuple or not configuredDealCardCounts:
+			raise ValueError("Configured dealing schedule must be a non-empty tuple")
+
+		if any(type(cardCount) is not int or cardCount <= 0 for cardCount in configuredDealCardCounts):
+			raise ValueError("Configured deal card counts must be positive integers")
+
+		if self.seatCount * sum(configuredDealCardCounts) == self.deckCardCount:
+			return configuredDealCardCounts
+
+		return self.defaultDealCardCounts
+
 
 DEFAULT_GAME_MODE = GameMode.TEAM_FOUR
 
