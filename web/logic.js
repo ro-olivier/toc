@@ -1679,14 +1679,7 @@ function setupPlayerCards(playerId, cards) {
     const rank = cards[i].value
     const suit = cards[i].suit
 
-    const cardFront = document.createElement('div');
-    cardFront.className = 'card-front';
-    cardFront.innerHTML = `
-      <div class="card-value">${rank}</div>
-      <div class="card-suit">${suit}</div>
-    `;
-
-    cardBlock.appendChild(cardFront);
+    cardBlock.appendChild(createCardFront(rank, suit));
 
     cardContainer.rank = rank;
     cardContainer.suit = suit;
@@ -1696,6 +1689,44 @@ function setupPlayerCards(playerId, cards) {
       cardContainer.classList.add('flip');
     }, 250 * i);
   });
+}
+
+function createCardFront(rank, suit) {
+  const cardFront = document.createElement("div");
+  cardFront.className = "card-front";
+
+  if (rank === "JOKER") {
+    cardFront.classList.add("joker-card", `joker-card-${suit}`);
+
+    const topCorner = document.createElement("span");
+    const symbol = document.createElement("span");
+    const label = document.createElement("span");
+    const bottomCorner = document.createElement("span");
+
+    topCorner.className = "joker-corner joker-corner-top";
+    symbol.className = "joker-symbol";
+    label.className = "joker-label";
+    bottomCorner.className = "joker-corner joker-corner-bottom";
+
+    topCorner.textContent = "J";
+    symbol.textContent = "★";
+    label.textContent = "JOKER";
+    bottomCorner.textContent = "J";
+
+    cardFront.append(topCorner, symbol, label, bottomCorner);
+    return cardFront;
+  }
+
+  const valueElement = document.createElement("div");
+  const suitElement = document.createElement("div");
+
+  valueElement.className = "card-value";
+  suitElement.className = "card-suit";
+  valueElement.textContent = rank;
+  suitElement.textContent = suit;
+
+  cardFront.append(valueElement, suitElement);
+  return cardFront;
 }
 
 function renderHiddenCards(block, numberOfCards) {
@@ -1783,12 +1814,14 @@ function replaceCard(seatId, rank, suit) {
     return;
   }
 
-  const cardFront = cardContainer.querySelector('.card-front');
+  const previousCardFront = cardContainer.querySelector(".card-front");
+  const cardBlock = cardContainer.querySelector(".card");
 
-  cardFront.innerHTML = `
-    <div class="card-value">${rank}</div>
-    <div class="card-suit">${suit}</div>
-  `;
+  previousCardFront?.remove();
+  cardBlock.appendChild(createCardFront(rank, suit));
+
+  cardContainer.rank = rank;
+  cardContainer.suit = suit;
 
   requestAnimationFrame(() => {
     cardContainer.classList.add('flip');
@@ -1802,15 +1835,7 @@ function removeCard(seatId, value, suit) {
   let cardToRemove = null;
 
   if (isLocalSeat(seatId)) {
-    cardToRemove = Array.from(block.children).find(cardContainer => {
-      const cardFront = cardContainer.querySelector(".card-front");
-      if (!cardFront) return false;
-
-      const cardSuit = cardFront.querySelector(".card-suit")?.textContent;
-      const cardValue = cardFront.querySelector(".card-value")?.textContent;
-
-      return cardSuit === suit && cardValue === value;
-    });
+    cardToRemove = Array.from(block.children).find(cardContainer => cardContainer.suit === suit && cardContainer.rank === value);
   } else {
     cardToRemove = block.firstElementChild;
   }
@@ -1891,8 +1916,8 @@ function clickCardClickListener(event) {
     break;
   }
 
-  const t_suit = cardContainer.children[0].querySelector('.card-front').querySelector('.card-suit').innerHTML;
-  const t_value = cardContainer.children[0].querySelector('.card-front').querySelector('.card-value').innerHTML;
+  const t_suit = cardContainer.suit;
+  const t_value = cardContainer.rank;
 
   if (selectedCard === cardContainer) {
     // Second click confirms selection
