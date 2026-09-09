@@ -388,6 +388,62 @@ body {
   text-transform: uppercase;
 }
 
+.discard-pile {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.discard-pile-label {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(11, 17, 32, 0.82);
+  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.discard-pile-card {
+  display: flex;
+  width: 68px;
+  height: 102px;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.38);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
+.discard-pile-card:not(:empty) {
+  border-color: transparent;
+  background: transparent;
+}
+
+.discard-pile-card > .card-container {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+.card-container.played-card-animation {
+  position: fixed;
+  z-index: 1000;
+  margin: 0;
+  pointer-events: none;
+  transition: none;
+  will-change: left, top, width, height, opacity, transform;
+}
+
 .spot {
   position: absolute;
   z-index: 2;
@@ -514,6 +570,29 @@ body {
   content: "YOU";
   font-size: 9px;
   letter-spacing: 1px;
+}
+
+.player-info-block.playing-card,
+.card-box.playing-card {
+  animation: card-play-source-glow 900ms ease-out;
+}
+
+@keyframes card-play-source-glow {
+  0% {
+    outline: 0 solid rgba(var(--player-color-rgb, 100, 116, 139), 0);
+  }
+
+  25%,
+  45% {
+    outline: 3px solid rgba(var(--player-color-rgb, 100, 116, 139), 0.8);
+    box-shadow:
+      0 0 0 6px rgba(var(--player-color-rgb, 100, 116, 139), 0.18),
+      0 0 32px rgba(var(--player-color-rgb, 100, 116, 139), 0.75);
+  }
+
+  100% {
+    outline: 0 solid rgba(var(--player-color-rgb, 100, 116, 139), 0);
+  }
 }
 
 #player-info-top-left { top: 10px; left: 0; }

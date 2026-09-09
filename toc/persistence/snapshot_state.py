@@ -386,6 +386,7 @@ class GameState:
 	players: tuple[PlayerGameState, ...]
 	positions: tuple[PositionState, ...]
 	deck: DeckState
+	lastPlayedCard: CardState | None = None
 
 	def __post_init__(self) -> None:
 		if type(self.isStarted) is not bool or type(self.isFinished) is not bool:
@@ -443,6 +444,13 @@ class GameState:
 		if not isinstance(self.deck, DeckState):
 			raise ValueError("Invalid deck state")
 
+		if self.lastPlayedCard is not None:
+			if not isinstance(self.lastPlayedCard, CardState):
+				raise ValueError("Invalid last played card")
+
+			if self.lastPlayedCard not in self.deck.discardPile:
+				raise ValueError("Last played card is not in the discard pile")
+
 		allCards = list(self.deck.drawPile) + list(self.deck.discardPile)
 
 		for player in self.players:
@@ -482,6 +490,7 @@ class GameState:
 			"players": [player.to_dict() for player in self.players],
 			"positions": [position.to_dict() for position in self.positions],
 			"deck": self.deck.to_dict(),
+			"lastPlayedCard": self.lastPlayedCard.to_dict() if self.lastPlayedCard is not None else None,
 		}
 
 	@classmethod
@@ -489,7 +498,7 @@ class GameState:
 		expectedFields = {
 			"isStarted", "isFinished", "handsFinished", "activePlayerIndex",
 			"activePlayerId", "dealerRotationCount", "boardColors", "playerOrder",
-			"players", "positions", "deck",
+			"players", "positions", "deck", "lastPlayedCard",
 		}
 
 		if type(values) is not dict or set(values) != expectedFields:
@@ -511,6 +520,7 @@ class GameState:
 			players=tuple(PlayerGameState.from_dict(player) for player in values["players"]),
 			positions=tuple(PositionState.from_dict(position) for position in values["positions"]),
 			deck=DeckState.from_dict(values["deck"]),
+			lastPlayedCard=CardState.from_dict(values["lastPlayedCard"]) if values["lastPlayedCard"] is not None else None,
 		)
 
 	@classmethod
@@ -560,6 +570,7 @@ class GameState:
 			players=players,
 			positions=tuple(positions),
 			deck=DeckState.fromDeck(game.deck),
+			lastPlayedCard=CardState.fromCard(game.lastPlayedCard) if game.lastPlayedCard is not None else None,
 		)
 
 	def restoreGame(self, session) -> Game:
@@ -591,6 +602,14 @@ class GameState:
 		discardPile = [cardState.toCard() for cardState in self.deck.discardPile]
 		deck = Deck.fromPiles(drawPile, discardPile, session.modeDefinition.deckCardCount)
 
+		lastPlayedCard = None
+
+		if self.lastPlayedCard is not None:
+			lastPlayedCard = next(
+				card for card in deck.discardPile
+				if card.suit == self.lastPlayedCard.suit and card.value == self.lastPlayedCard.value
+			)
+
 		for playerState in self.players:
 			player = seatsById[playerState.playerId].player
 			player.restoreHand([cardState.toCard(deck) for cardState in playerState.hand])
@@ -621,6 +640,7 @@ class GameState:
 			self.activePlayerIndex,
 			activePlayer,
 			self.dealerRotationCount,
+			lastPlayedCard,
 		)
 
 		session.game = game

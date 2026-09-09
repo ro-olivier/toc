@@ -174,6 +174,16 @@ class Player:
 
 				possibleTargets = list(set([move.targetSpot for move in possibleMoves if move.originSpot == origin and move.card == cardChoice]))
 
+				logger.debug("Move targets calculated", extra={
+					"seatId": self.identifier,
+					"routerId": self.routerId,
+					"playerName": self.name,
+					"playerColor": self.color,
+					"card": str(cardChoice),
+					"origin": str(origin),
+					"targetOptions": [str(target) for target in possibleTargets],
+				})
+
 				if len(possibleTargets) == 1: # There could be only one possible target for several moves from different origins (for example you have two pieces seperated by 4 spots and you have only a 4 and an 8 to play), and se here we may skip asking the player to choose the target
 					target = possibleTargets[0]
 				else:

@@ -45,6 +45,8 @@ const cancelCardSelection = document.getElementById("cancel-card-selection");
 const localHandSlot = document.getElementById("local-hand-slot");
 const emptyHandMessage = document.getElementById("empty-hand-message");
 const board = document.getElementById('board');
+const discardPile = document.getElementById("discard-pile");
+const discardPileCard = document.getElementById("discard-pile-card");
 
 
 const selectableSpotHandlers = new Map();
@@ -527,6 +529,7 @@ async function connectToGame(gameId, name, rejoin = false) {
     }
     console.log('[ws.oneMessage top handler] Received the following message from back-end:' + JSON.stringify(data))
 
+    const actingSeatId = getMessageSeatId(data);
     switch (data.type) {
       case 'ready':
 
@@ -587,6 +590,12 @@ async function connectToGame(gameId, name, rejoin = false) {
         });
 
         displayActivePlayer(data.activeSeatId || data.active_player);
+
+        if (data.lastPlayedCard) {
+          showCardOnDiscardPile(data.lastPlayedCard.value, data.lastPlayedCard.suit);
+        } else {
+          clearDiscardPile();
+        }
         break;
 
       case "draw":
@@ -597,28 +606,29 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "reveal":
-        setupPlayerCards(getMessageSeatId(data), data.cards);
+        setupPlayerCards(actingSeatId, data.cards);
         break;
 
       case "dealer":
-        toogleDealerOnPlayerBlock(getMessageSeatId(data));
+        toogleDealerOnPlayerBlock(actingSeatId);
         break;
 
       case "receive-card-from-friend":
-        replaceCard(getMessageSeatId(data), data.value, data.suit);
+        replaceCard(actingSeatId, data.value, data.suit);
         break;
 
       case 'move':
-        placePieceOnSpot(getMessageSeatId(data), data.spotIndex);
+        placePieceOnSpot(actingSeatId, data.spotIndex);
         break;
 
       case "fold":
-        foldAllCardsOfPlayer(getMessageSeatId(data));
+        foldAllCardsOfPlayer(actingSeatId);
         log(data);
         break;
 
       case "discard":
-        removeCard(getMessageSeatId(data), data.value, data.suit);
+        animateCardToDiscardPile(actingSeatId, data.value, data.suit);
+        removeCard(actingSeatId, data.value, data.suit);
         log(data);
         break;
 
@@ -634,7 +644,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         disableCardSelection();
         setCancelSelectionVisible(false);
         clearSpotSelection();
-        displayActivePlayer(getMessageSeatId(data));
+        displayActivePlayer(actingSeatId);
         log(data);
         break;
 
@@ -642,9 +652,10 @@ async function connectToGame(gameId, name, rejoin = false) {
         setCancelSelectionVisible(false);
         clearSpotSelection();
 
-        const actingSeatId = getMessageSeatId(data);
+        
         const movedSeatId = getMessageSeatId(data, "moved") || actingSeatId;
 
+        animateCardToDiscardPile(actingSeatId, data.value, data.suit);
         removeCard(actingSeatId, data.value, data.suit);
 
         if (data.value === "J") {
@@ -659,17 +670,18 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case "seven-start":
         setCancelSelectionVisible(false);
-        removeCard(getMessageSeatId(data), data.value, data.suit);
+        animateCardToDiscardPile(actingSeatId, data.value, data.suit);
+        removeCard(actingSeatId, data.value, data.suit);
         log(data);
         break;
 
       case "seven-step":
-        movePieceFromSpotToSpot(getMessageSeatId(data, "moved") || getMessageSeatId(data), data.origin, data.target);
+        movePieceFromSpotToSpot(getMessageSeatId(data, "moved") || actingSeatId, data.origin, data.target);
         break;
 
       case "query-seven-hop":
         disableCardSelection();
-        selectLocalSeat(getMessageSeatId(data));
+        selectLocalSeat(actingSeatId);
         activeRequestId = data.requestId;
         setCancelSelectionVisible(false);
         clearSpotSelection();
@@ -690,7 +702,7 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case "query-origin":
         disableCardSelection();
-        selectLocalSeat(getMessageSeatId(data));
+        selectLocalSeat(actingSeatId);
         activeRequestId = data.requestId;
         setCancelSelectionVisible(Boolean(data.canCancel));
         query(data);
@@ -699,7 +711,7 @@ async function connectToGame(gameId, name, rejoin = false) {
 
       case "query-target":
         disableCardSelection();
-        selectLocalSeat(getMessageSeatId(data));
+        selectLocalSeat(actingSeatId);
         activeRequestId = data.requestId;
         setCancelSelectionVisible(Boolean(data.canCancel));
         query(data);
@@ -707,7 +719,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "query-card":
-        selectLocalSeat(getMessageSeatId(data));
+        selectLocalSeat(actingSeatId);
         activeRequestId = data.requestId;
         setCancelSelectionVisible(false);
         clearSpotSelection();
@@ -717,7 +729,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "query-card-exchange":
-        selectLocalSeat(getMessageSeatId(data));
+        selectLocalSeat(actingSeatId);
         activeRequestId = data.requestId;
         setCancelSelectionVisible(false);
         clearSpotSelection();
@@ -732,10 +744,14 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "reject-card-selection":
-        selectLocalSeat(getMessageSeatId(data));
+        selectLocalSeat(actingSeatId);
         error(data);
         showAllCardUp();
         requestCardSelection();
+        break;
+
+      case "discard-pile-cleared":
+        clearDiscardPile();
         break;
 
       case "game-over":
@@ -1451,6 +1467,8 @@ const PLAYER_ACCENT_RGB = {
   white: "226, 232, 240",
 };
 
+let cardAnimationId = 0;
+
 // Click anywhere outside of cards to cancel card selection
 document.addEventListener('click', () => {
   if (selectedCard) {
@@ -1616,8 +1634,10 @@ function assignPlayer(seatId, name, team, color, seatIndex = playerAssignments.l
   positionMap[position].info_box.style.display = 'flex';
   drawRegion(color, regionIndex);
 
-  const boardCardBox = positionMap[position].card_box;
-  boardCardBox.style.setProperty("--player-color-rgb", PLAYER_ACCENT_RGB[color] || "100, 116, 139");
+  const playerColorRgb = PLAYER_ACCENT_RGB[color] || "100, 116, 139";
+
+  positionMap[position].info_box.style.setProperty("--player-color-rgb", playerColorRgb);
+  positionMap[position].card_box.style.setProperty("--player-color-rgb", playerColorRgb);
 
   if (name === local_player_name) {
     const infoBox = positionMap[position].info_box;
@@ -1879,6 +1899,118 @@ function createCardFront(rank, suit) {
   return cardFront;
 }
 
+function createVisibleCardContainer(rank, suit) {
+  const cardContainer = document.createElement("div");
+  const card = document.createElement("div");
+
+  cardContainer.className = "card-container flip";
+  card.className = "card";
+
+  card.appendChild(createCardFront(rank, suit));
+  cardContainer.appendChild(card);
+
+  return cardContainer;
+}
+
+function clearDiscardPile() {
+  cardAnimationId++;
+  discardPileCard.replaceChildren();
+  delete discardPileCard.dataset.rank;
+  delete discardPileCard.dataset.suit;
+}
+
+function showCardOnDiscardPile(rank, suit) {
+  cardAnimationId++;
+
+  discardPileCard.replaceChildren(createVisibleCardContainer(rank, suit));
+  discardPileCard.dataset.rank = rank;
+  discardPileCard.dataset.suit = suit;
+}
+
+function animateCardToDiscardPile(seatId, rank, suit) {
+  const boardCardBox = getBoardCardBoxFromId(seatId);
+  const regularCardBox = getCardBoxFromId(seatId);
+  const sourceCard = boardCardBox?.querySelector(".card-container") || regularCardBox?.querySelector(".card-container");
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (!sourceCard || !discardPileCard || prefersReducedMotion || typeof sourceCard.animate !== "function") {
+    showCardOnDiscardPile(rank, suit);
+    return;
+  }
+
+  const sourceBounds = sourceCard.getBoundingClientRect();
+  const targetBounds = discardPileCard.getBoundingClientRect();
+
+  if (sourceBounds.width === 0 || sourceBounds.height === 0 || targetBounds.width === 0 || targetBounds.height === 0) {
+    showCardOnDiscardPile(rank, suit);
+    return;
+  }
+
+  const expandedLeft = sourceBounds.left + sourceBounds.width / 2 - targetBounds.width / 2;
+  const expandedTop = sourceBounds.top + sourceBounds.height / 2 - targetBounds.height / 2;
+  const animationId = ++cardAnimationId;
+  const flyingCard = createVisibleCardContainer(rank, suit);
+
+  flyingCard.classList.add("played-card-animation");
+  flyingCard.style.left = `${sourceBounds.left}px`;
+  flyingCard.style.top = `${sourceBounds.top}px`;
+  flyingCard.style.width = `${sourceBounds.width}px`;
+  flyingCard.style.height = `${sourceBounds.height}px`;
+
+  document.body.appendChild(flyingCard);
+  setCardPlayEmphasis(seatId, true);
+
+  const animation = flyingCard.animate([
+    {
+      left: `${sourceBounds.left}px`,
+      top: `${sourceBounds.top}px`,
+      width: `${sourceBounds.width}px`,
+      height: `${sourceBounds.height}px`,
+      opacity: 0,
+      transform: "rotate(-10deg) scale(0.8)",
+    },
+    {
+      offset: 0.16,
+      left: `${expandedLeft}px`,
+      top: `${expandedTop}px`,
+      width: `${targetBounds.width}px`,
+      height: `${targetBounds.height}px`,
+      opacity: 1,
+      transform: "rotate(-7deg) scale(1.08)",
+    },
+    {
+      offset: 0.36,
+      left: `${expandedLeft}px`,
+      top: `${expandedTop}px`,
+      width: `${targetBounds.width}px`,
+      height: `${targetBounds.height}px`,
+      opacity: 1,
+      transform: "rotate(-7deg) scale(1.08)",
+    },
+    {
+      left: `${targetBounds.left}px`,
+      top: `${targetBounds.top}px`,
+      width: `${targetBounds.width}px`,
+      height: `${targetBounds.height}px`,
+      opacity: 1,
+      transform: "rotate(0deg) scale(1)",
+    },
+  ], {
+    duration: 900,
+    easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+    fill: "forwards",
+  });
+
+  animation.finished.catch(() => {}).finally(() => {
+    flyingCard.remove();
+    setCardPlayEmphasis(seatId, false);
+
+    if (animationId === cardAnimationId) {
+      showCardOnDiscardPile(rank, suit);
+    }
+  });
+}
+
 function renderHiddenCards(block, numberOfCards) {
   if (!block || block.dataset.cardCount === String(numberOfCards)) return;
 
@@ -2089,11 +2221,21 @@ function clickCardClickListener(event) {
 function requestSpotSelection(spotOptions) {
   clearSpotSelection();
 
-  spotOptions.forEach((option) => {
-    const position = document.getElementById(option);
-    if (!position) return;
+  console.debug("[requestSpotSelection] Highlighting positions", {
+    seatId: local_player?.seatId,
+    color: local_player?.color,
+    spotOptions,
+  });
 
-    const handler = (event) => {
+  spotOptions.forEach(option => {
+    const position = document.getElementById(option);
+
+    if (!position) {
+      console.error(`[requestSpotSelection] Board position "${option}" does not exist in the DOM.`);
+      return;
+    }
+
+    const handler = event => {
       event.stopPropagation();
 
       const selectedPositionId = event.currentTarget.id;
@@ -2171,4 +2313,14 @@ function simulate(gameId = local_game_Id) {
   ws4.onopen = () => {
     log(`Simulated p4 joined game ${gameId}.`);
   };
+}
+
+function setCardPlayEmphasis(seatId, enabled) {
+  const player = getPlayerFromId(seatId);
+  if (!player) return;
+
+  const playerPosition = positionMap[player.position];
+
+  playerPosition.info_box.classList.toggle("playing-card", enabled);
+  playerPosition.card_box.classList.toggle("playing-card", enabled);
 }

@@ -1765,3 +1765,46 @@ def test_new_game_cannot_reuse_suspended_game_join_code(tmp_path, monkeypatch):
 	assert newGameId == "brave-fox"
 	assert connectionManager.get_game("brave-fox") is not None
 	assert connectionManager.get_game("calm-otter") is None
+
+def test_full_ui_reports_last_played_card():
+	session = makeGameSessionState()
+	card = Card("♣️", "6")
+
+	session.game.rememberPlayedCard(card)
+
+	assert session.fullUI()["lastPlayedCard"] == {
+		"value": "6",
+		"suit": "♣️",
+	}
+
+def test_full_ui_reports_no_last_played_card_for_new_game():
+	session = makeGameSessionState()
+
+	assert session.fullUI()["lastPlayedCard"] is None
+
+def test_last_played_card_survives_session_snapshot_round_trip():
+	originalSession = makeGameSessionState()
+	card = originalSession.game.deck.drawCard()
+
+	originalSession.game.deck.discardCard(card)
+	originalSession.game.rememberPlayedCard(card)
+
+	payload = json.loads(json.dumps(originalSession.snapshotState().to_dict()))
+	snapshot = SessionSnapshotState.from_dict(payload)
+	restoredSession = GameSession.fromSnapshot(snapshot, PlayerInputRouter())
+
+	assert restoredSession.game.lastPlayedCard == card
+	assert restoredSession.fullUI()["lastPlayedCard"] == {
+		"value": card.value,
+		"suit": card.suit,
+	}
+
+def test_snapshot_rejects_last_played_card_outside_discard_pile():
+	session = makeGameSessionState()
+	payload = session.snapshotState().to_dict()
+	drawnCard = payload["game"]["deck"]["drawPile"][0]
+
+	payload["game"]["lastPlayedCard"] = drawnCard
+
+	with pytest.raises(ValueError, match="Last played card is not in the discard pile"):
+		SessionSnapshotState.from_dict(payload)

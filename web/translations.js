@@ -240,6 +240,7 @@
         game_over: "Game over",
         cancel_selection: "Cancel card selection",
         returning_to_cards: "Returning to card selection…",
+        discard_pile: "Discard pile",
       },
       connection: {
         connected: "Connected",
@@ -530,6 +531,7 @@
         game_over: "Partie terminée",
         cancel_selection: "Annuler la sélection",
         returning_to_cards: "Retour à la sélection d'une carte…",
+        discard_pile: "Défausse",
       },
       connection: {
         connected: "Connecté",

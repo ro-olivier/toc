@@ -820,7 +820,7 @@ class GameSession:
 			return
 
 		if progress.phase is GamePhase.DECK_CYCLE_END:
-			self.game.deck.recycleDiscardPile(shuffle=self.game.shouldShuffleRecycledDeck())
+			await self.game.recycleDeck()
 			await self.game.nextDealer()
 			self.setGamePhase(GamePhase.DEAL_START, 0)
 			await self.checkpointActive()
@@ -1078,6 +1078,8 @@ class GameSession:
 
 		activePlayer = self.game.activePlayer if self.game is not None else None
 
+		lastPlayedCard = self.game.lastPlayedCard if self.game is not None else None
+
 		players = [
 			{
 				"name": seat.player.name,
@@ -1101,6 +1103,10 @@ class GameSession:
 			"trackRegionCount": self._modeDefinition.seatCount,
 			"enterHouseAtSpot": self._rules.enter_house_at_spot,
 			"ruleset": self.ruleset_state(),
+			"lastPlayedCard": {
+				"value": lastPlayedCard.value,
+				"suit": lastPlayedCard.suit,
+			} if lastPlayedCard is not None else None,
 		}
 
 	def team_is_full(self, team: str) -> bool:

@@ -289,3 +289,32 @@ def test_seven_hop_prompt_identifies_deciding_seat():
 	assert message["seatId"] == "seat-red"
 	assert message["playerId"] == "Alice"
 	assert message["playerColor"] == "red"
+
+def test_yellow_six_prompt_offers_track_and_fourth_house_in_cross_mode():
+	router = FakeRouter([
+		{"type": "card_selection", "seatId": "yellow-seat", "suit": "♣️", "value": "6"},
+		{"type": "spot_selection", "seatId": "yellow-seat", "result": "spot-blue-16"},
+		{"type": "spot_selection", "seatId": "yellow-seat", "result": "house-yellow-3"},
+	])
+
+	board = Board(["red", "green", "blue", "yellow"])
+	player = Player("yellow-seat", "Zigo", "1", "yellow", router=router, routerId="TEST-Zigo")
+	player.setBoard(board)
+
+	card = Card("♣️", "6")
+	player.hand.addToHand(card)
+
+	for position in [board.getSpot("blue", 3), board.getSpot("blue", 16)]:
+		position.setOccupant(player)
+		player.addAPieceOnTheBoard()
+
+	options = board.getMoveOptions(player, card)
+	result = asyncio.run(player.getMoveChoiceFromPlayer(options))
+
+	targetPrompt = next(message for _, message in router.outputs if message["type"] == "query-target")
+
+	assert set(targetPrompt["targetOptions"]) == {"spot-yellow-4", "house-yellow-3"}
+	assert targetPrompt["seatId"] == "yellow-seat"
+	assert result.ID == "ENTER"
+	assert str(result.originSpot) == "spot-blue-16"
+	assert str(result.targetSpot) == "house-yellow-3"

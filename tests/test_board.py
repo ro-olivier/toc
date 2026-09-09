@@ -1135,3 +1135,18 @@ def test_joker_cannot_kick_through_protected_house_positions():
 	options = board.getMoveOptions(alice, Card("black", "JOKER"))
 
 	assert not any(move.ID == "ENTER" and move.originSpot is origin and move.targetSpot is target for move in options)
+
+def test_yellow_six_can_enter_fourth_house_with_cross_board_order():
+	board = Board(["red", "green", "blue", "yellow"])
+	zigo = Player("yellow-seat", "Zigo", "1", "yellow")
+	zigo.setBoard(board)
+
+	origin = board.getSpot("blue", 16)
+	origin.setOccupant(zigo)
+	zigo.addAPieceOnTheBoard()
+
+	moves = board.getMoveOptions(zigo, Card("♣️", "6"))
+	moveTargets = {(move.ID, str(move.originSpot), str(move.targetSpot)) for move in moves}
+
+	assert ("MOVE", "spot-blue-16", "spot-yellow-4") in moveTargets
+	assert ("ENTER", "spot-blue-16", "house-yellow-3") in moveTargets

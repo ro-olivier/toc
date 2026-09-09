@@ -37,6 +37,7 @@ class Game:
 		self._activePlayerIndex = -1
 		self._activePlayer = None
 		self._dealerRotationCount = 0
+		self._lastPlayedCard: Optional[Card] = None
 
 	def __str__(self) -> str:
 		s = f'This game has {self._numPlayers} players.\r\n'
@@ -98,6 +99,13 @@ class Game:
 	@property
 	def dealerRotationCount(self) -> int:
 		return self._dealerRotationCount
+
+	@property
+	def lastPlayedCard(self) -> Optional[Card]:
+		return self._lastPlayedCard
+
+	def rememberPlayedCard(self, card: Card) -> None:
+		self._lastPlayedCard = card
 
 	def getTeammate(self, player) -> Optional[Player]:
 		for player2 in self._players:
@@ -193,7 +201,7 @@ class Game:
 		for player in self._players:
 			player.setBoard(self._board)
 
-	def restoreRuntimeState(self, deck: Deck, isStarted: bool, isFinished: bool, handsFinished: int, activePlayerIndex: int, activePlayer: Optional[Player], dealerRotationCount: int) -> None:
+	def restoreRuntimeState(self, deck: Deck, isStarted: bool, isFinished: bool, handsFinished: int, activePlayerIndex: int, activePlayer: Optional[Player], dealerRotationCount: int, lastPlayedCard: Optional[Card] = None) -> None:
 		self._deck = deck
 		self._isStarted = isStarted
 		self._isFinished = isFinished
@@ -201,6 +209,7 @@ class Game:
 		self._activePlayerIndex = activePlayerIndex
 		self._activePlayer = activePlayer
 		self._dealerRotationCount = dealerRotationCount
+		self._lastPlayedCard = lastPlayedCard
 
 	async def nextDealer(self) -> None:
 		self._players[0].setDealer(False)
@@ -308,7 +317,7 @@ class Game:
 			await self.runDeckCycle()
 
 			if not self._isFinished:
-				self._deck.recycleDiscardPile(shuffle=self.shouldShuffleRecycledDeck())
+				await self.recycleDeck()
 				await self.nextDealer()
 				self._gameSession.setGamePhase(GamePhase.DEAL_START, 0)
 				await self._gameSession.checkpointActive()
@@ -527,6 +536,7 @@ class Game:
 					cardChoice = await self._activePlayer.getCardChoiceFromPlayer("prompts.discard_card", "You cannot make a move. Choose one card to discard.")
 					self._activePlayer.discard(cardChoice)
 					self._deck.discardCard(cardChoice)
+					self.rememberPlayedCard(cardChoice)
 					await self.broadcast(build_message(
 						"discard",
 						"gameplay.card_discarded",
@@ -561,6 +571,7 @@ class Game:
 
 				self._activePlayer.discard(cardChoice)
 				self._deck.discardCard(cardChoice)
+				self.rememberPlayedCard(cardChoice)
 
 				if moveChoice.ID == "SEVEN":
 					cardLabel = f"{cardChoice.suit}{cardChoice.value}"
@@ -628,6 +639,11 @@ class Game:
 		else:
 			await self.finishCurrentTurn(skipped=True)
 
+
+	async def recycleDeck(self) -> None:
+		self._deck.recycleDiscardPile(shuffle=self.shouldShuffleRecycledDeck())
+		self._lastPlayedCard = None
+		await self.broadcast({"type": "discard-pile-cleared"})
 
 	async def finishCurrentTurn(self, skipped: bool = False) -> None:
 		if await self.finishGameIfWon():
