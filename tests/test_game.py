@@ -1270,3 +1270,56 @@ def test_duel_four_exchange_swaps_cards_between_same_participants_hands():
 		assert bluePlayer.hand.cards == [redCard]
 
 	asyncio.run(scenario())
+
+def test_duel_two_skips_card_exchange_even_when_rule_is_enabled():
+	game = ExchangeRecordingGame(GameRules(card_exchange=True))
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	game.setPlayers([alice, bob])
+
+	asyncio.run(game.runRound(1, 10))
+
+	assert game.exchangeRequests == []
+	assert (GamePhase.CARD_EXCHANGE, 0) not in game._gameSession.phaseChanges
+
+def test_duel_two_player_wins_when_house_lane_is_full():
+	session = FakeGameSession()
+	game = Game(session, ["red", "blue"])
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	game.setPlayers([alice, bob])
+	fill_houses(game.board, alice)
+
+	result = asyncio.run(game.finishGameIfWon())
+
+	assert result is True
+	assert game.isFinished
+
+	message = session.messages[-1]
+
+	assert message["type"] == "game-over"
+	assert message["messageKey"] == "gameplay.player_won"
+	assert message["parameters"] == {"player": "Alice"}
+	assert message["fallback"] == "Alice wins!"
+	assert message["winners"] == ["Alice"]
+
+def test_duel_four_controller_is_only_reported_once_as_winner():
+	session = FakeGameSession()
+	game = Game(session, COLORS)
+	redSeat = Player("seat-red", "Alice", "0", "red")
+	blueSeat = Player("seat-blue", "Alice", "0", "blue")
+	greenSeat = Player("seat-green", "Bob", "1", "green")
+	yellowSeat = Player("seat-yellow", "Bob", "1", "yellow")
+	game.setPlayers([redSeat, greenSeat, blueSeat, yellowSeat])
+	fill_houses(game.board, redSeat)
+	fill_houses(game.board, blueSeat)
+
+	result = asyncio.run(game.finishGameIfWon())
+
+	assert result is True
+
+	message = session.messages[-1]
+
+	assert message["messageKey"] == "gameplay.player_won"
+	assert message["parameters"] == {"player": "Alice"}
+	assert message["winners"] == ["Alice"]

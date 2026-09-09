@@ -113,7 +113,7 @@ class Game:
 
 		return player
 
-	def getWinningTeam(self) -> Optional[Tuple[Player, Player]]:
+	def getWinningTeam(self) -> Optional[tuple[Player, ...]]:
 		for team in self.getPlayersInTeams():
 			if all(self._board.areAllHouseFilled(player.color) for player in team):
 				return team
@@ -130,34 +130,46 @@ class Game:
 			return False
 
 		self._isFinished = True
-		winnerNames = [player.name for player in winningTeam]
-		playerOne, playerTwo = winnerNames
+		winnerNames = list(dict.fromkeys(player.name for player in winningTeam))
 
-		await self.broadcast(build_message(
-			"game-over",
-			"gameplay.team_won",
-			f"{playerOne} and {playerTwo} win!",
-			{"playerOne": playerOne, "playerTwo": playerTwo},
-			winners=winnerNames,
-		))
+		if len(winnerNames) == 1:
+			winner = winnerNames[0]
+
+			await self.broadcast(build_message(
+				"game-over",
+				"gameplay.player_won",
+				f"{winner} wins!",
+				{"player": winner},
+				winners=winnerNames,
+			))
+		else:
+			playerOne, playerTwo = winnerNames
+
+			await self.broadcast(build_message(
+				"game-over",
+				"gameplay.team_won",
+				f"{playerOne} and {playerTwo} win!",
+				{"playerOne": playerOne, "playerTwo": playerTwo},
+				winners=winnerNames,
+			))
 		return True
 
 	@property
 	def dealer(self) -> Player:
 		return self._players[0]
 
-	def getPlayersInTeams(self) -> list[Tuple[Player, Player]]:
-		seen_players = set()
-		res = []
+	def getPlayersInTeams(self) -> list[tuple[Player, ...]]:
+		playersByTeam = {}
+
 		for player in self._players:
-			if player in seen_players:
-				continue
-			teammate = self.getTeammate(player)
-			if teammate and teammate not in seen_players:
-				res.append((player, teammate))
-				seen_players.add(player)
-				seen_players.add(teammate)
-		return res
+			playersByTeam.setdefault(player.team, []).append(player)
+
+		return [tuple(players) for players in playersByTeam.values()]
+
+	@property
+	def canExchangeCards(self) -> bool:
+		teams = self.getPlayersInTeams()
+		return self._rules.card_exchange and bool(teams) and all(len(team) == 2 for team in teams)
 
 	def resetActivePlayerIndex(self) -> None:
 		self._activePlayerIndex = 0
@@ -261,7 +273,7 @@ class Game:
 		await self.drawHands(cardsPerPlayer)
 		self._handsFinished = 0
 
-		if self._rules.card_exchange:
+		if self.canExchangeCards:
 			self._gameSession.setGamePhase(GamePhase.CARD_EXCHANGE, dealIndex)
 			await self._gameSession.checkpointActive()
 			await self.exchangeCards()

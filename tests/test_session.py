@@ -11,6 +11,7 @@ from toc.model.cards import Card
 from toc.model.rules import GameRules
 from toc.model.game_phase import GamePhase
 from toc.model.params import AVAILABLE_COLORS
+from toc.model.game import Game
 from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
 from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken
 from toc.session.roster import Participant, PlayerSeat
@@ -404,6 +405,7 @@ def test_lobby_state_reports_game_mode_capacities():
 	assert state["teamCapacity"] == 1
 	assert state["teamCounts"] == {"0": 0, "1": 0}
 	assert state["seatsPerParticipant"] == 2
+	assert state["trackRegionCount"] == 4
 
 
 def test_team_six_mode_exposes_three_teams():
@@ -679,3 +681,95 @@ def test_duel_four_reconnection_replays_both_controlled_hands():
 		assert blueMessage["cards"] == [{"suit": "♠️", "value": "K"}]
 
 	asyncio.run(scenario())
+
+def test_duel_two_lobby_state_reports_two_participants_and_regions():
+	modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
+	session = GameSession("TEST", PlayerInputRouter(), modeDefinition=modeDefinition)
+
+	state = session.lobby_state()
+
+	assert state["gameMode"] == {"name": "duel_two", "layout": None}
+	assert state["participantCapacity"] == 2
+	assert state["seatCapacity"] == 2
+	assert state["teamCapacity"] == 1
+	assert state["teamCounts"] == {"0": 0, "1": 0}
+	assert state["seatsPerParticipant"] == 1
+	assert state["trackRegionCount"] == 2
+
+def test_duel_two_rejects_two_participants_on_the_same_team():
+	async def scenario():
+		router = PlayerInputRouter()
+		modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
+		session = GameSession("TEST", router, modeDefinition=modeDefinition)
+		aliceId, _ = add_player(session, router, "Alice")
+
+		assert await session.configure_player(aliceId, "0", "red")
+
+		bobId, bob = add_player(session, router, "Bob")
+
+		assert not await session.configure_player(bobId, "0", "blue")
+		assert not session.players[bobId]["configured"]
+		assert bob.team == ""
+		assert bob.color == ""
+
+		message = await router.get_output(bobId)
+
+		assert message["type"] == "lobby-error"
+		assert message["messageKey"] == "lobby.errors.team_full"
+		assert message["parameters"] == {"team": "0"}
+
+	asyncio.run(scenario())
+
+def test_complete_duel_two_lobby_builds_two_region_game(monkeypatch):
+	async def scenario():
+		router = PlayerInputRouter()
+		modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
+		session = GameSession("TEST", router, modeDefinition=modeDefinition)
+		startedGames = []
+
+		async def fakeStart(game):
+			startedGames.append({
+				"colors": game.board.colors,
+				"dealCardCounts": game.dealCardCounts,
+				"players": tuple(player.name for player in game.players),
+			})
+
+		async def fakeFinalizeFinishedGame():
+			pass
+
+		monkeypatch.setattr(Game, "start", fakeStart)
+		session.finalizeFinishedGame = fakeFinalizeFinishedGame
+
+		aliceId, _ = add_player(session, router, "Alice")
+		bobId, _ = add_player(session, router, "Bob")
+
+		assert await session.configure_player(aliceId, "0", "red")
+		assert not session.started
+
+		assert await session.configure_player(bobId, "1", "blue")
+		assert session.started
+		assert session.gameTask is not None
+
+		await session.gameTask
+
+		assert session.roster.participantCount == 2
+		assert session.roster.seatCount == 2
+		assert [seat.color for seat in session.orderedSeats] == ["red", "blue"]
+		assert startedGames == [{
+			"colors": ("red", "blue"),
+			"dealCardCounts": (10, 8, 8),
+			"players": ("Alice", "Bob"),
+		}]
+
+	asyncio.run(scenario())
+
+def test_create_game_endpoint_accepts_duel_two_mode():
+	result = asyncio.run(create_game_endpoint({"mode": "duel_two"}))
+	session = manager.get_game(result["game_id"])
+
+	try:
+		assert result["gameMode"] == {"name": "duel_two", "layout": None}
+		assert session.modeDefinition == getGameModeDefinition(GameMode.DUEL_TWO)
+		assert session.dealCardCounts == (10, 8, 8)
+	finally:
+		manager.games.pop(result["game_id"], None)

@@ -23,6 +23,7 @@ MESSAGE_KEYS = frozenset({
 	"gameplay.player_folded",
 	"gameplay.seven_split_started",
 	"gameplay.team_won",
+	"gameplay.player_won",
 	"gameplay.turn_ended",
 	"lobby.errors.already_confirmed",
 	"lobby.errors.color_taken",

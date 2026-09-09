@@ -1042,6 +1042,7 @@ class GameSession:
 			"active_player": activePlayer.name if activePlayer is not None else "",
 			"activeSeatId": activePlayer.identifier if activePlayer is not None else None,
 			"trackRegionLength": self._rules.track_region_length,
+			"trackRegionCount": self._modeDefinition.seatCount,
 			"enterHouseAtSpot": self._rules.enter_house_at_spot,
 			"ruleset": self.ruleset_state(),
 		}
@@ -1093,6 +1094,7 @@ class GameSession:
 				"layout": self._modeDefinition.layout.value if self._modeDefinition.layout is not None else None,
 			},
 			"trackRegionLength": self._rules.track_region_length,
+			"trackRegionCount": self._modeDefinition.seatCount,
 			"enterHouseAtSpot": self._rules.enter_house_at_spot,
 			"ruleset": self.ruleset_state(),
 			"seatsPerParticipant": self._modeDefinition.seatsPerParticipant,
