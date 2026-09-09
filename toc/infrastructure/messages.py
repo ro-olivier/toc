@@ -9,6 +9,8 @@ MESSAGE_KEYS = frozenset({
 	"errors.invalid_json_message",
 	"errors.invalid_message_format",
 	"errors.unknown_creation_fields",
+	"errors.unknown_message_type",
+	"errors.invalid_creator_name",
 	"gameplay.card_discarded",
 	"gameplay.card_exchange_complete",
 	"gameplay.deal_finished",
@@ -38,7 +40,6 @@ MESSAGE_KEYS = frozenset({
 	"prompts.discard_card",
 	"prompts.exchange_card",
 	"prompts.seven_hop",
-	"errors.unknown_message_type",
 })
 
 def build_message(messageType: str, messageKey: str, fallback: str, parameters: dict | None = None, **payload) -> dict:

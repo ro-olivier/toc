@@ -186,9 +186,9 @@ class ConnectionManager:
 			if gameId not in reservedJoinCodes:
 				return gameId
 
-	def create_game(self, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None, modeDefinition: GameModeDefinition = None) -> str:
+	def create_game(self, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None, modeDefinition: GameModeDefinition = None, creatorName: str = "") -> str:
 		game_id = self._generate_game_id()
-		self.games[game_id] = GameSession(game_id, msg_router, rules, rulesetName, self._clock, self._archiveStore, modeDefinition)
+		self.games[game_id] = GameSession(game_id, msg_router, rules, rulesetName, self._clock, self._archiveStore, modeDefinition, creatorName)
 		return game_id
 
 	def get_game(self, game_id: str):
@@ -388,7 +388,7 @@ class ConnectionManager:
 		}
 
 class GameSession:
-	def __init__(self, game_id: str, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None, clock: Clock = SYSTEM_CLOCK, archiveStore: CompressedJsonStore = None, modeDefinition: GameModeDefinition = None):
+	def __init__(self, game_id: str, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None, clock: Clock = SYSTEM_CLOCK, archiveStore: CompressedJsonStore = None, modeDefinition: GameModeDefinition = None, creatorName: str = ""):
 		self.id = game_id
 		self._sessionId = createSessionId()
 		self._rules = rules
@@ -416,6 +416,7 @@ class GameSession:
 		self._archiveStore = archiveStore
 		self._checkpointLock = asyncio.Lock()
 		self._allPlayersDisconnectedMonotonic = None
+		self._creatorName = creatorName
 
 		if modeDefinition is None:
 			modeDefinition = getGameModeDefinition(DEFAULT_GAME_MODE)
@@ -428,6 +429,10 @@ class GameSession:
 	@property
 	def sessionId(self) -> str:
 		return self._sessionId
+
+	@property
+	def creatorName(self) -> str:
+		return self._creatorName
 
 	@property
 	def modeDefinition(self) -> GameModeDefinition:
@@ -1129,6 +1134,7 @@ class GameSession:
 			"enterHouseAtSpot": self._rules.enter_house_at_spot,
 			"ruleset": self.ruleset_state(),
 			"seatsPerParticipant": self._modeDefinition.seatsPerParticipant,
+			"creatorName": self._creatorName,
 			}
 
 	async def broadcast_lobby_state(self) -> None:
@@ -1582,7 +1588,7 @@ async def create_game(payload: Any = Body(default=None)):
 		detail = build_message("http-error", "errors.creation_data_object", "Game creation data must be an object.")
 		raise HTTPException(status_code=422, detail=detail)
 
-	unknownFields = set(payload) - {"preset", "rules", "mode", "layout"}
+	unknownFields = set(payload) - {"preset", "rules", "mode", "layout", "creatorName"}
 
 	if unknownFields:
 		fields = ", ".join(sorted(unknownFields))
@@ -1593,6 +1599,17 @@ async def create_game(payload: Any = Body(default=None)):
 	modeName = payload.get("mode", DEFAULT_GAME_MODE)
 	layoutName = payload.get("layout")
 
+	creatorName = ""
+
+	if "creatorName" in payload:
+		rawCreatorName = payload["creatorName"]
+
+		if type(rawCreatorName) is not str or not rawCreatorName.strip() or len(rawCreatorName.strip()) > MAX_PLAYER_NAME_LENGTH:
+			detail = build_message("http-error", "errors.invalid_creator_name", f"Creator name must contain between 1 and {MAX_PLAYER_NAME_LENGTH} characters.")
+			raise HTTPException(status_code=422, detail=detail)
+
+		creatorName = rawCreatorName.strip()
+
 	try:
 		rules = resolve_ruleset(presetName, payload.get("rules"))
 		modeDefinition = getGameModeDefinition(modeName, layoutName)
@@ -1600,10 +1617,11 @@ async def create_game(payload: Any = Body(default=None)):
 		detail = build_message("http-error", "errors.invalid_game_configuration", str(error))
 		raise HTTPException(status_code=422, detail=detail) from error
 
-	gameId = manager.create_game(router, rules, presetName, modeDefinition)
+	gameId = manager.create_game(router, rules, presetName, modeDefinition, creatorName)
 
 	return {
 		"game_id": gameId,
+		"creatorName": creatorName,
 		"preset": presetName,
 		"rules": rules.to_dict(),
 		"gameMode": modeDefinition.to_dict(),

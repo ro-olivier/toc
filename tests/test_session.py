@@ -829,3 +829,29 @@ def test_connection_manager_finds_human_join_code_case_insensitively(monkeypatch
 
 	assert connectionManager.get_game("CALM-OTTER") is session
 	assert connectionManager.get_game("  Calm-Otter  ") is session
+
+def test_create_game_endpoint_stores_creator_name():
+	result = asyncio.run(create_game_endpoint({
+		"creatorName": "  Alice  ",
+		"mode": "team_four",
+	}))
+	session = manager.get_game(result["game_id"])
+
+	try:
+		assert result["creatorName"] == "Alice"
+		assert session.creatorName == "Alice"
+		assert session.lobby_state()["creatorName"] == "Alice"
+	finally:
+		manager.games.pop(result["game_id"], None)
+
+@pytest.mark.parametrize("creatorName", ["", "   ", 42, [], "A" * 41])
+def test_create_game_endpoint_rejects_invalid_creator_name(creatorName):
+	existingGameIds = set(manager.games)
+
+	with pytest.raises(HTTPException) as caughtError:
+		asyncio.run(create_game_endpoint({"creatorName": creatorName}))
+
+	assert caughtError.value.status_code == 422
+	assert caughtError.value.detail["type"] == "http-error"
+	assert caughtError.value.detail["messageKey"] == "errors.invalid_creator_name"
+	assert set(manager.games) == existingGameIds

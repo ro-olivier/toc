@@ -275,6 +275,7 @@
         invalid_resume_token: "This browser does not have valid credentials for that player.",
         lobby_expired: "This lobby expired after 15 minutes. Create a new game or join another one.",
         game_suspended: "This game was suspended after a period of inactivity. You can resume it using the same name and Game ID.",
+        invalid_creator_name: "The player name must contain between 1 and 40 characters.",
       },
     },
 
@@ -553,6 +554,7 @@
         invalid_resume_token: "Ce navigateur ne possède pas d’identifiants valides pour ce joueur.",
         lobby_expired: "Ce salon a expiré après 15 minutes. Créez une nouvelle partie ou rejoignez-en une autre.",
         game_suspended: "Cette partie a été suspendue après une période d’inactivité. Vous pouvez la reprendre avec le même nom et le même identifiant.",
+        invalid_creator_name: "Le nom du joueur doit contenir entre 1 et 40 caractères.",
       },
     },
   };

@@ -905,7 +905,7 @@ createBtn.addEventListener("click", async () => {
   createBtn.disabled = true;
 
   try {
-    const payload = {preset: rulePresetSelect.value};
+    const payload = {preset: rulePresetSelect.value, creatorName: name};
     const selectedMode = gameModeSelect.selectedOptions[0];
 
     payload.mode = selectedMode.dataset.mode;
