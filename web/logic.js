@@ -1456,7 +1456,7 @@ function assignPlayer(seatId, name, team, color, seatIndex = playerAssignments.l
   }
 
   const {position, regionIndex} = seatLayout;
-  const newPlayer = {seatId, name, team, color, position, regionIndex};
+  const newPlayer = {seatId, name, team, color, position, regionIndex, handCardBox: null};
 
   playerAssignments.push(newPlayer);
   usedColors.push(color);
@@ -1466,27 +1466,28 @@ function assignPlayer(seatId, name, team, color, seatIndex = playerAssignments.l
   positionMap[position].info_box.style.display = 'flex';
   drawRegion(color, regionIndex);
 
+  const boardCardBox = positionMap[position].card_box;
+  boardCardBox.style.setProperty("--player-color-rgb", PLAYER_ACCENT_RGB[color] || "100, 116, 139");
+
   if (name === local_player_name) {
-    const cardBox = positionMap[position].card_box;
     const infoBox = positionMap[position].info_box;
+    const handCardBox = document.createElement("div");
 
     infoBox.classList.add("local-player");
-    cardBox.classList.add("local-hand");
 
-    cardBox.dataset.colorLabel = formatColorName(color);
-    cardBox.style.setProperty("--hand-color-rgb", PLAYER_ACCENT_RGB[color] || "100, 116, 139");
+    handCardBox.className = "card-box local-hand";
+    handCardBox.dataset.seatId = seatId;
+    handCardBox.dataset.colorLabel = formatColorName(color);
+    handCardBox.style.setProperty("--hand-color-rgb", PLAYER_ACCENT_RGB[color] || "100, 116, 139");
 
-    if (!localHandSlot.contains(cardBox)) {
-      localHandSlot.appendChild(cardBox);
-    }
+    newPlayer.handCardBox = handCardBox;
+    localHandSlot.appendChild(handCardBox);
 
     const localHandCount = playerAssignments.filter(player => isLocalSeat(player.seatId)).length;
     localHandSlot.classList.toggle("multiple-hands", localHandCount > 1);
 
     if (!local_player) selectLocalSeat(seatId);
   }
-
-  return newPlayer;
 }
 
 
@@ -1518,14 +1519,21 @@ function selectLocalSeat(seatId) {
   if (!player || player.name !== local_player_name) return false;
 
   local_player = player;
-  local_card_box = positionMap[player.position].card_box;
+  local_card_box = player.handCardBox || positionMap[player.position].card_box;
   local_info_box = positionMap[player.position].info_box;
   return true;
 }
 
-function getCardBoxFromId(playerId) {
-  const player = getPlayerFromId(playerId);
-  return positionMap[player.position].card_box;
+function getBoardCardBoxFromId(seatId) {
+  const player = getPlayerFromId(seatId);
+  return player ? positionMap[player.position].card_box : null;
+}
+
+function getCardBoxFromId(seatId) {
+  const player = getPlayerFromId(seatId);
+  if (!player) return null;
+
+  return player.handCardBox || positionMap[player.position].card_box;
 }
 
 function getOppositePosition(pos) {
@@ -1556,17 +1564,23 @@ function getPlayerClass(seatId) {
 
 
 //// Simple UI update functions ////
-function hideCardBlock(playerId) {
-  const player = getPlayerFromId(playerId);
-  positionMap[player.position].card_box.style.display = 'none';
+function hideCardBlock(seatId) {
+  const cardBox = getCardBoxFromId(seatId);
+  const boardCardBox = getBoardCardBoxFromId(seatId);
+  const boxes = new Set([cardBox, boardCardBox]);
 
-  if (isLocalSeat(playerId)) {
+  boxes.forEach(block => {
+    if (!block) return;
+
+    block.replaceChildren();
+    block.dataset.cardCount = "0";
+    block.style.display = "none";
+  });
+
+  if (isLocalSeat(seatId)) {
     setTranslatedText(emptyHandMessage, "game.waiting_for_next_deal");
     emptyHandMessage.classList.remove("hidden");
   }
-
-  positionMap[player.position].card_box.replaceChildren();
-  positionMap[player.position].card_box.dataset.cardCount = "0";
 }
 
 function updatePlayerBlock(player, isDealer = false) {
@@ -1635,8 +1649,12 @@ function displayActivePlayer(seatId) {
   turnBanner.classList.toggle("your-turn", localSeat);
 
   playerAssignments.forEach(assignedPlayer => {
-    const block = positionMap[assignedPlayer.position].info_box;
-    block.classList.toggle("active", assignedPlayer.seatId === seatId);
+    const isActive = assignedPlayer.seatId === seatId;
+    const infoBox = positionMap[assignedPlayer.position].info_box;
+    const boardCardBox = positionMap[assignedPlayer.position].card_box;
+
+    infoBox.classList.toggle("active", isActive);
+    boardCardBox.classList.toggle("active", isActive);
   });
 }
 
@@ -1644,9 +1662,9 @@ function displayNoActivePlayers() {
 	setTranslatedText(currentPlayerName, "game.no_active_player");
 	turnBanner.classList.remove("your-turn");
 
-  playerAssignments.forEach(p => {
-    const block = positionMap[p.position].info_box;
-    block.classList.remove('active');
+  playerAssignments.forEach(player => {
+    positionMap[player.position].info_box.classList.remove("active");
+    positionMap[player.position].card_box.classList.remove("active");
   });
 }
 
@@ -1680,35 +1698,43 @@ function setupPlayerCards(playerId, cards) {
   });
 }
 
-function displayHiddenCards(seatId, numberOfCards) {
-  const block = getCardBoxFromId(seatId);
-  if (!block) return;
-
-  if (block.dataset.cardCount === String(numberOfCards)) return;
+function renderHiddenCards(block, numberOfCards) {
+  if (!block || block.dataset.cardCount === String(numberOfCards)) return;
 
   block.replaceChildren();
   block.dataset.cardCount = String(numberOfCards);
-  block.style.display = 'flex';
-
-  if (isLocalSeat(seatId)) {
-    emptyHandMessage.classList.add("hidden");
-  }
+  block.style.display = numberOfCards > 0 ? "flex" : "none";
 
   for (let cardIndex = 0; cardIndex < numberOfCards; cardIndex++) {
-    const cardContainer = document.createElement('div');
-    const card = document.createElement('div');
-    const cardBack = document.createElement('div');
-    const backImg = document.createElement('img');
+    const cardContainer = document.createElement("div");
+    const card = document.createElement("div");
+    const cardBack = document.createElement("div");
+    const backImg = document.createElement("img");
 
-    cardContainer.className = 'card-container';
-    card.className = 'card';
-    cardBack.className = 'card-back';
-    backImg.src = 'assets/card.jpg';
+    cardContainer.className = "card-container";
+    card.className = "card";
+    cardBack.className = "card-back";
+    backImg.src = "assets/card.jpg";
 
     cardBack.appendChild(backImg);
     card.appendChild(cardBack);
     cardContainer.appendChild(card);
     block.appendChild(cardContainer);
+  }
+}
+
+function displayHiddenCards(seatId, numberOfCards) {
+  const cardBox = getCardBoxFromId(seatId);
+  const boardCardBox = getBoardCardBoxFromId(seatId);
+
+  renderHiddenCards(cardBox, numberOfCards);
+
+  if (boardCardBox !== cardBox) {
+    renderHiddenCards(boardCardBox, numberOfCards);
+  }
+
+  if (isLocalSeat(seatId) && numberOfCards > 0) {
+    emptyHandMessage.classList.add("hidden");
   }
 }
 
@@ -1738,6 +1764,14 @@ function foldAllCardsOfPlayer(playerId) {
   }
 
   block.dataset.cardCount = "0";
+
+  const boardCardBox = getBoardCardBoxFromId(playerId);
+
+  if (boardCardBox && boardCardBox !== block) {
+    boardCardBox.replaceChildren();
+    boardCardBox.dataset.cardCount = "0";
+    boardCardBox.style.display = "none";
+  }
 }
 
 function replaceCard(seatId, rank, suit) {
@@ -1788,6 +1822,17 @@ function removeCard(seatId, value, suit) {
 
   cardToRemove.remove();
   block.dataset.cardCount = String(block.children.length);
+
+  const boardCardBox = getBoardCardBoxFromId(seatId);
+
+  if (boardCardBox && boardCardBox !== block) {
+    boardCardBox.firstElementChild?.remove();
+    boardCardBox.dataset.cardCount = String(boardCardBox.children.length);
+
+    if (boardCardBox.children.length === 0) {
+      boardCardBox.style.display = "none";
+    }
+  }
 }
 
 
