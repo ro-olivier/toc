@@ -1031,3 +1031,48 @@ def test_six_configured_players_start_team_six_game(client, teamSixGameId, monke
 			["Carol", "Frank"],
 		]
 		assert session.game.canExchangeCards
+
+def test_created_lobby_is_listed_and_can_be_joined_case_insensitively(client):
+	gameId = None
+
+	try:
+		response = client.post("/toc/api/create-game", json={
+			"creatorName": "Alice",
+			"mode": "duel_two",
+		})
+
+		assert response.status_code == 200
+
+		gameId = response.json()["game_id"]
+		lobbyResponse = client.get("/toc/api/open-lobbies")
+
+		assert lobbyResponse.status_code == 200
+
+		listedLobby = next(lobby for lobby in lobbyResponse.json()["lobbies"] if lobby["gameName"] == gameId)
+
+		assert listedLobby["creatorName"] == "Alice"
+		assert listedLobby["playerCount"] == 0
+		assert listedLobby["playerCapacity"] == 2
+		assert listedLobby["mode"] == {"name": "duel_two", "layout": None}
+
+		with client.websocket_connect(f"/toc/ws/{gameId.upper()}/Alice") as websocket:
+			identifyWebSocket(websocket)
+			state = receiveLobbyState(websocket)
+
+			assert state["gameId"] == gameId
+			assert state["creatorName"] == "Alice"
+			assert len(state["players"]) == 1
+			assert state["players"][0]["name"] == "Alice"
+
+			updatedLobbies = client.get("/toc/api/open-lobbies").json()["lobbies"]
+			updatedLobby = next(lobby for lobby in updatedLobbies if lobby["gameName"] == gameId)
+
+			assert updatedLobby["playerCount"] == 1
+
+	finally:
+		if gameId is not None:
+			session = manager.games.pop(gameId, None)
+
+			if session is not None:
+				for playerId in session.players:
+					router.forget(playerId)

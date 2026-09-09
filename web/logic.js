@@ -1,13 +1,17 @@
 const nameInput = document.getElementById("name-input");
-const gameIdInput = document.getElementById("game-id-input");
 const createBtn = document.getElementById("create-btn");
-const joinBtn = document.getElementById("join-btn");
+const resumeGamePanel = document.getElementById("resume-game-panel");
+const resumeGameDescription = document.getElementById("resume-game-description");
+const resumeGameBtn = document.getElementById("resume-game-btn");
 const sendBtn = document.getElementById("send-btn");
 const commandInput = document.getElementById("command-input");
 const terminal = document.getElementById("terminal");
 const startScreen = document.getElementById("start-screen");
 const lobbyScreen = document.getElementById("lobby-screen");
 const gameScreen = document.getElementById("game-screen");
+const refreshLobbiesBtn = document.getElementById("refresh-lobbies-btn");
+const openLobbiesStatus = document.getElementById("open-lobbies-status");
+const openLobbiesList = document.getElementById("open-lobbies-list");
 const errorMsg = document.getElementById("error-msg");
 const lobbyGameId = document.getElementById("lobby-game-id");
 const lobbyPlayerCount = document.getElementById("lobby-player-count");
@@ -104,11 +108,31 @@ let stored_game_id = window.localStorage.getItem("session_game_ID");
 let activeRequestId = null;
 
 nameInput.value = stored_player_name !== null ? stored_player_name : '';
-gameIdInput.value = stored_game_id !== null ? stored_game_id : '';
-joinBtn.disabled = (stored_player_name && stored_game_id) !== null ? false : true;
 
 const tocI18n = window.tocI18n;
 const languageSelect = document.getElementById("language-select");
+
+let openLobbies = [];
+let openLobbiesRequestInProgress = false;
+
+function refreshResumeGamePanel() {
+  const canResume = Boolean(stored_player_name && stored_game_id);
+
+  resumeGamePanel.classList.toggle("hidden", !canResume);
+
+  if (!canResume) return;
+
+  const displayedGameName = formatGameName(stored_game_id);
+
+  setTranslatedText(resumeGameDescription, "start.resume_description", {
+    player: stored_player_name,
+    game: displayedGameName,
+  });
+
+  resumeGameBtn.textContent = tocI18n.t("start.resume_button", {
+    game: displayedGameName,
+  });
+}
 
 function translateStaticInterface() {
   document.title = tocI18n.t("app.title");
@@ -150,15 +174,135 @@ function refreshLanguageInterface() {
     updateRulesetEditorVisibility();
   }
 
+  renderOpenLobbies();
+  refreshResumeGamePanel();
+
   if (displayedRuleset) renderRulesetDisplays(displayedRuleset);
 
-  if (currentLobbyState && !lobbyScreen.classList.contains("hidden")) renderLobbyState(currentLobbyState);
+  if (currentLobbyState && !lobbyScreen.classList.contains("hidden")) {
+    renderLobbyState(currentLobbyState);
+  }
 
-    backendMessageElements.forEach((message, element) => {
+  backendMessageElements.forEach((message, element) => {
     element.textContent = getMessage(message);
   });
 
   renderActivityLog();
+}
+
+function formatGameName(gameName) {
+  return gameName
+    .split("-")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function getGameModeLabel(mode) {
+  if (!mode?.name) return "";
+
+  if (mode.name === "duel_four" && mode.layout) {
+    return tocI18n.t(`game_modes.duel_four_${mode.layout}`);
+  }
+
+  return tocI18n.t(`game_modes.${mode.name}`);
+}
+
+function renderOpenLobbies() {
+  openLobbiesList.replaceChildren();
+
+  if (openLobbies.length === 0) {
+    setTranslatedText(openLobbiesStatus, "lobby_browser.none");
+    openLobbiesStatus.classList.remove("hidden");
+    return;
+  }
+
+  openLobbiesStatus.classList.add("hidden");
+
+  openLobbies.forEach(lobby => {
+    const card = document.createElement("article");
+    const details = document.createElement("div");
+    const gameName = document.createElement("h3");
+    const creator = document.createElement("p");
+    const metadata = document.createElement("div");
+    const mode = document.createElement("span");
+    const playerCount = document.createElement("span");
+    const joinButton = document.createElement("button");
+
+    card.className = "open-lobby-card";
+    details.className = "open-lobby-details";
+    gameName.className = "open-lobby-name";
+    creator.className = "open-lobby-creator";
+    metadata.className = "open-lobby-metadata";
+    mode.className = "open-lobby-mode";
+    playerCount.className = "open-lobby-player-count";
+    joinButton.className = "open-lobby-join";
+
+    gameName.textContent = formatGameName(lobby.gameName);
+    creator.textContent = tocI18n.t("lobby_browser.created_by", {player: lobby.creatorName || "—"});
+    mode.textContent = getGameModeLabel(lobby.mode);
+    playerCount.textContent = tocI18n.t("lobby_browser.player_count", {
+      count: lobby.playerCount,
+      capacity: lobby.playerCapacity,
+    });
+    joinButton.type = "button";
+    joinButton.textContent = tocI18n.t("lobby_browser.join");
+
+    joinButton.addEventListener("click", async () => {
+      const playerName = nameInput.value.trim();
+
+      if (!playerName) {
+        showError(tocI18n.t("errors.name_required"));
+        nameInput.focus();
+        return;
+      }
+
+      clearError();
+      await connectToGame(lobby.gameName, playerName);
+    });
+
+    metadata.append(mode, playerCount);
+    details.append(gameName, creator, metadata);
+    card.append(details, joinButton);
+    openLobbiesList.appendChild(card);
+  });
+}
+
+async function refreshOpenLobbies(showLoading = true) {
+  if (openLobbiesRequestInProgress) return;
+
+  openLobbiesRequestInProgress = true;
+  refreshLobbiesBtn.disabled = true;
+
+  if (showLoading) {
+    setTranslatedText(openLobbiesStatus, "lobby_browser.loading");
+    openLobbiesStatus.classList.remove("hidden");
+  }
+
+  try {
+    const response = await fetch("/toc/api/open-lobbies", {cache: "no-store"});
+
+    if (!response.ok) {
+      throw new Error(`Open-lobby request failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (!Array.isArray(data.lobbies)) {
+      throw new Error("Invalid open-lobby response");
+    }
+
+    openLobbies = data.lobbies;
+    renderOpenLobbies();
+  } catch (error) {
+    console.error(error);
+    openLobbies = [];
+    openLobbiesList.replaceChildren();
+    setTranslatedText(openLobbiesStatus, "lobby_browser.unavailable");
+    openLobbiesStatus.classList.remove("hidden");
+  } finally {
+    openLobbiesRequestInProgress = false;
+    refreshLobbiesBtn.disabled = false;
+  }
 }
 
 function refreshLocalHandLabels() {
@@ -390,8 +534,11 @@ async function connectToGame(gameId, name, rejoin = false) {
           window.localStorage.setItem(resumeTokenStorageKey, data.resumeToken);
         }
 
-        window.localStorage.setItem("session_player_name", name);
-        window.localStorage.setItem("session_game_ID", gameId);
+        stored_player_name = name;
+        stored_game_id = gameId;
+
+        window.localStorage.setItem("session_player_name", stored_player_name);
+        window.localStorage.setItem("session_game_ID", stored_game_id);
 
         log({
           messageKey: "connection.connected_as",
@@ -894,6 +1041,22 @@ rulePresetSelect.addEventListener("change", updateRulesetEditorVisibility);
 resetCustomRules.addEventListener("click", () => applyRuleValues(ruleConfiguration.presets[ruleConfiguration.default]));
 initializeRuleSelector();
 
+refreshLobbiesBtn.addEventListener("click", () => refreshOpenLobbies());
+
+refreshOpenLobbies();
+
+resumeGameBtn.addEventListener("click", async () => {
+  if (!stored_player_name || !stored_game_id) return;
+
+  await connectToGame(stored_game_id, stored_player_name, true);
+});
+
+window.setInterval(() => {
+  if (!startScreen.classList.contains("hidden")) {
+    refreshOpenLobbies(false);
+  }
+}, 15000);
+
 createBtn.addEventListener("click", async () => {
   const name = nameInput.value.trim();
   if (!name) {
@@ -938,16 +1101,6 @@ createBtn.addEventListener("click", async () => {
     showError(err.message || tocI18n.t("errors.game_creation_failed"));
     createBtn.disabled = false;
   }
-});
-
-joinBtn.addEventListener("click", async () => {
-  const name = nameInput.value.trim();
-  const gameId = gameIdInput.value.trim();
-  if (!name || !gameId) {
-    showError(tocI18n.t("errors.name_and_game_id_required"));
-    return;
-  }
-  await connectToGame(gameId, name);
 });
 
 if (cancelCardSelection) {
@@ -1000,10 +1153,6 @@ sendBtn.addEventListener("click", () => {
 
 commandInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendBtn.click();
-});
-
-gameIdInput.addEventListener("input", () => {
-  joinBtn.disabled = gameIdInput.value.trim() === "";
 });
 
 lobbyChoiceForm.addEventListener("submit", (event) => {

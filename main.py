@@ -215,6 +215,26 @@ class ConnectionManager:
 
 		return joinCodes
 
+	def get_open_lobbies(self) -> list[dict]:
+		lobbies = []
+
+		for session in reversed(tuple(self.games.values())):
+			if session.started or session.is_full():
+				continue
+
+			if session.lobbyAgeSeconds() >= LOBBY_LIFETIME_SECONDS:
+				continue
+
+			lobbies.append({
+				"gameName": session.joinCode,
+				"creatorName": session.creatorName,
+				"playerCount": len(session.players),
+				"playerCapacity": session.modeDefinition.participantCount,
+				"mode": session.modeDefinition.to_dict(),
+			})
+
+		return lobbies
+
 	def load_suspended_game(self, game_id: str, msg_router) -> GameSession | None:
 		if self._archiveStore is None:
 			return None
@@ -1578,6 +1598,10 @@ async def get_rule_presets():
 		"schema": get_rule_schema(),
 		"messageKeys": sorted(MESSAGE_KEYS),
 	}
+
+@app.get("/toc/api/open-lobbies")
+async def get_open_lobbies():
+	return {"lobbies": manager.get_open_lobbies()}
 
 @app.post("/toc/api/create-game")
 async def create_game(payload: Any = Body(default=None)):

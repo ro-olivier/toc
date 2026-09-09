@@ -4,7 +4,8 @@ from fastapi import HTTPException
 from uuid import UUID
 from fastapi.testclient import TestClient
 
-from main import app, ConnectionManager, GameSession, PlayerInputRouter, create_game as create_game_endpoint, get_rule_presets, manager
+from settings import *
+from main import app, ConnectionManager, GameSession, PlayerInputRouter, create_game as create_game_endpoint, get_open_lobbies, get_rule_presets, manager
 from toc.model.rules import GameRules, MONTSURVENT_RULES
 from toc.model.player import Player
 from toc.model.cards import Card
@@ -855,3 +856,76 @@ def test_create_game_endpoint_rejects_invalid_creator_name(creatorName):
 	assert caughtError.value.detail["type"] == "http-error"
 	assert caughtError.value.detail["messageKey"] == "errors.invalid_creator_name"
 	assert set(manager.games) == existingGameIds
+
+def test_open_lobby_list_contains_only_public_information():
+	router = PlayerInputRouter()
+	connectionManager = ConnectionManager()
+	modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
+	gameId = connectionManager.create_game(router, modeDefinition=modeDefinition, creatorName="Alice")
+	session = connectionManager.get_game(gameId)
+
+	add_player(session, router, "Alice")
+
+	result = connectionManager.get_open_lobbies()
+
+	assert result == [{
+		"gameName": gameId,
+		"creatorName": "Alice",
+		"playerCount": 1,
+		"playerCapacity": 2,
+		"mode": {
+			"name": "duel_two",
+			"layout": None,
+		},
+	}]
+
+def test_open_lobby_list_excludes_unjoinable_sessions(monkeypatch):
+	router = PlayerInputRouter()
+	connectionManager = ConnectionManager()
+	duelMode = getGameModeDefinition(GameMode.DUEL_TWO)
+
+	joinableId = connectionManager.create_game(router, modeDefinition=duelMode, creatorName="Joinable")
+	startedId = connectionManager.create_game(router, modeDefinition=duelMode, creatorName="Started")
+	fullId = connectionManager.create_game(router, modeDefinition=duelMode, creatorName="Full")
+	expiredId = connectionManager.create_game(router, modeDefinition=duelMode, creatorName="Expired")
+
+	startedSession = connectionManager.get_game(startedId)
+	startedSession.markStarted()
+
+	fullSession = connectionManager.get_game(fullId)
+	add_player(fullSession, router, "Alice")
+	add_player(fullSession, router, "Bob")
+
+	expiredSession = connectionManager.get_game(expiredId)
+	monkeypatch.setattr(expiredSession, "lobbyAgeSeconds", lambda: LOBBY_LIFETIME_SECONDS)
+
+	result = connectionManager.get_open_lobbies()
+
+	assert [lobby["gameName"] for lobby in result] == [joinableId]
+
+def test_open_lobbies_endpoint_returns_manager_lobbies(monkeypatch):
+	monkeypatch.setattr(manager, "get_open_lobbies", lambda: [{
+		"gameName": "calm-otter",
+		"creatorName": "Alice",
+		"playerCount": 1,
+		"playerCapacity": 4,
+		"mode": {
+			"name": "team_four",
+			"layout": None,
+		},
+	}])
+
+	result = asyncio.run(get_open_lobbies())
+
+	assert result == {
+		"lobbies": [{
+			"gameName": "calm-otter",
+			"creatorName": "Alice",
+			"playerCount": 1,
+			"playerCapacity": 4,
+			"mode": {
+				"name": "team_four",
+				"layout": None,
+			},
+		}],
+	}

@@ -24,8 +24,14 @@
       <input id="name-input" type="text" placeholder="Enter your name" data-i18n-placeholder="start.name_placeholder"
              class="w-full p-2 bg-gray-800 border border-gray-600 rounded" />
 
-      <input id="game-id-input" type="text" placeholder="Enter Game ID (for joining)" data-i18n-placeholder="start.game_id_placeholder"
-             class="w-full p-2 bg-gray-800 border border-gray-600 rounded" />
+      <section id="resume-game-panel" class="resume-game-panel hidden">
+        <div>
+          <h2 data-i18n="start.resume_title">Previous game</h2>
+          <p id="resume-game-description"></p>
+        </div>
+
+        <button id="resume-game-btn" type="button"></button>
+      </section>
 
       <section class="rules-setup game-mode-setup">
         <div class="rules-preset-row">
@@ -69,14 +75,23 @@
         </div>
       </section>
 
-      <div class="flex space-x-2">
-        <button id="create-btn" class="w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" disabled>
-          <span data-i18n="start.create_game">Create Game</span>
-        </button>
-        <button id="join-btn" class="w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50" disabled>
-          <span data-i18n="start.join_game">Join Game</span>
-        </button>
-      </div>
+      <button id="create-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" disabled>
+        <span data-i18n="start.create_game">Create Game</span>
+      </button>
+
+      <section class="open-lobbies-panel">
+        <div class="open-lobbies-heading">
+          <div>
+            <h2 data-i18n="lobby_browser.title">Open games</h2>
+            <p data-i18n="lobby_browser.intro">Join a game waiting for players.</p>
+          </div>
+
+          <button id="refresh-lobbies-btn" type="button" data-i18n="lobby_browser.refresh">Refresh</button>
+        </div>
+
+        <p id="open-lobbies-status" class="open-lobbies-status" data-i18n-dynamic="lobby_browser.loading">Loading open games…</p>
+        <div id="open-lobbies-list" class="open-lobbies-list"></div>
+      </section>
 
       <div id="error-msg" class="text-red-400 text-sm hidden"></div>
     </div>
