@@ -1323,3 +1323,15 @@ def test_duel_four_controller_is_only_reported_once_as_winner():
 	assert message["messageKey"] == "gameplay.player_won"
 	assert message["parameters"] == {"player": "Alice"}
 	assert message["winners"] == ["Alice"]
+
+def test_duel_two_first_deal_gives_ten_cards_to_each_player():
+	game = Game(FakeGameSession(), ["red", "blue"], dealCardCounts=(10, 8, 8))
+	alice = QuietPlayer("TEST-Alice", "Alice", "0", "red")
+	bob = QuietPlayer("TEST-Bob", "Bob", "1", "blue")
+	game.setPlayers([alice, bob])
+
+	asyncio.run(game.drawHands(10))
+
+	assert alice.hand.size == 10
+	assert bob.hand.size == 10
+	assert game.deck.size == 32

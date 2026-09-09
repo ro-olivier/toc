@@ -908,7 +908,13 @@ class GameSession:
 		self._lastActivityMonotonic = self._clock.monotonic()
 
 	def ruleset_state(self) -> dict:
-		return {"preset": self._rulesetName, "values": self._rules.to_dict()}
+		values = self._rules.to_dict()
+		seatsPerTeam = self._modeDefinition.seatCount // self._modeDefinition.teamCount
+
+		values["card_exchange"] = self._rules.card_exchange and seatsPerTeam == 2
+		values["deal_card_counts"] = list(self.dealCardCounts)
+
+		return {"preset": self._rulesetName, "values": values}
 
 	def metadataState(self) -> SessionMetadataState:
 		return SessionMetadataState.fromGameSession(self)

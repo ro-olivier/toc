@@ -405,7 +405,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case 'lobby-state':
-        configureBoardGeometry(data.trackRegionLength, data.enterHouseAtSpot);
+        configureBoardGeometry(data.trackRegionCount, data.trackRegionLength, data.enterHouseAtSpot);
         renderLobbyState(data);
         break;
 
@@ -420,7 +420,7 @@ async function connectToGame(gameId, name, rejoin = false) {
         break;
 
       case "full-ui-state":
-        configureBoardGeometry(data.trackRegionLength, data.enterHouseAtSpot);
+        configureBoardGeometry(data.trackRegionCount, data.trackRegionLength, data.enterHouseAtSpot);
         renderRulesetDisplays(data.ruleset);
 
         data.players.forEach((player, seatIndex) => {
@@ -1064,16 +1064,23 @@ function synchronizeLobbyColorOptions() {
 }
 
 function renderLobbyColorOptions(state) {
+  const colorCount = state.seatsPerParticipant;
+
+  if (!Number.isInteger(colorCount) || colorCount < 1) {
+    console.error("Invalid seats-per-participant value in lobby state.", state);
+    return;
+  }
+
   const previousValues = Array.from(colorSelects.querySelectorAll("select"), select => select.value);
   colorSelects.replaceChildren();
 
-  for (let colorIndex = 0; colorIndex < state.seatsPerParticipant; colorIndex++) {
+  for (let colorIndex = 0; colorIndex < colorCount; colorIndex++) {
     const field = document.createElement("label");
     const labelText = document.createElement("span");
     const select = document.createElement("select");
 
     field.className = "lobby-color-field";
-    labelText.textContent = state.seatsPerParticipant === 1 ? tocI18n.t("lobby.colour") : tocI18n.t("lobby.colour_number", {number: colorIndex + 1});
+    labelText.textContent = colorCount === 1 ? tocI18n.t("lobby.colour") : tocI18n.t("lobby.colour_number", {number: colorIndex + 1});
     select.className = "lobby-select";
     select.dataset.colorIndex = colorIndex;
 
@@ -1209,8 +1216,7 @@ function requestSevenHop(originSpot, targetSpot) {
 
 
 ////// User Interface handling //////
-const regions = ['red', 'green', 'yellow', 'blue'];
-const totalRegions = 4;
+let totalRegions = 4;
 let spotsPerRegion = 18;
 let enterHouseAtSpot = 18;
 let totalSpots = totalRegions * spotsPerRegion;
@@ -1220,12 +1226,24 @@ const centerX = 300;
 const centerY = 300;
 
 const houseLabels = ['T', 'O', 'C', '!'];
+const spotsPerHouse = houseLabels.length;
 const houseDistance = 40;
 
 const spotElements = [];
 const houseElements = [];
 
-const positions = ['top-left', 'top-right', 'bottom-right', 'bottom-left'];
+const seatLayouts = {
+  2: [
+    {position: 'bottom-right', regionIndex: 0},
+    {position: 'top-left', regionIndex: 1},
+  ],
+  4: [
+    {position: 'top-left', regionIndex: 2},
+    {position: 'top-right', regionIndex: 3},
+    {position: 'bottom-right', regionIndex: 0},
+    {position: 'bottom-left', regionIndex: 1},
+  ],
+};
 const positionMap = {
   'top-left':    { index: 2, info_box: document.getElementById('player-info-top-left'), card_box: document.getElementById('card-box-top-left') },
   'top-right':   { index: 3, info_box: document.getElementById('player-info-top-right'), card_box: document.getElementById('card-box-top-right') },
@@ -1263,13 +1281,19 @@ document.addEventListener('click', () => {
 });
 
 
-function configureBoardGeometry(regionLength, houseEntryPosition) {
+function configureBoardGeometry(regionCount, regionLength, houseEntryPosition) {
+  if (!Number.isInteger(regionCount) || regionCount < 2) return;
   if (!Number.isInteger(regionLength) || regionLength <= 0) return;
   if (!Number.isInteger(houseEntryPosition) || houseEntryPosition < 1 || houseEntryPosition > regionLength) return;
-  if (regionLength === spotsPerRegion && houseEntryPosition === enterHouseAtSpot) return;
+
+  if (regionCount === totalRegions && regionLength === spotsPerRegion && houseEntryPosition === enterHouseAtSpot) {
+    return;
+  }
 
   if (spotElements.length > 0) {
     console.error("Cannot change board geometry after the board has been drawn.", {
+      currentRegionCount: totalRegions,
+      requestedRegionCount: regionCount,
       currentRegionLength: spotsPerRegion,
       requestedRegionLength: regionLength,
       currentHouseEntry: enterHouseAtSpot,
@@ -1278,21 +1302,20 @@ function configureBoardGeometry(regionLength, houseEntryPosition) {
     return;
   }
 
+  totalRegions = regionCount;
   spotsPerRegion = regionLength;
   totalSpots = totalRegions * spotsPerRegion;
   enterHouseAtSpot = houseEntryPosition;
 }
 
 //// Board and pieces drawing and update functions ////
-function drawQuadrant(position, color) {
-  const regionIndex = positionMap[position].index;
-  const angleOffset = (regionIndex / 4) * 2 * Math.PI;
+function drawRegion(color, regionIndex) {
+  const angleOffset = (regionIndex / totalRegions) * 2 * Math.PI;
 
-  const quadrantSpots = [];
-  const quadrantHouses = [];
+  const regionSpots = [];
 
-  for (let i = 0; i < spotsPerRegion; i++) {
-    const angle = angleOffset + (i / (spotsPerRegion * totalRegions)) * 2 * Math.PI; // (spotsPerRegion * totalRegions) = total spots in circle
+  for (let spotIndex = 0; spotIndex < spotsPerRegion; spotIndex++) {
+    const angle = angleOffset + (spotIndex / totalSpots) * 2 * Math.PI;
     const x = centerX + radius * Math.cos(angle) - 15;
     const y = centerY + radius * Math.sin(angle) - 15;
 
@@ -1300,28 +1323,28 @@ function drawQuadrant(position, color) {
     spot.className = `spot ${color}`;
     spot.style.left = `${x}px`;
     spot.style.top = `${y}px`;
-    spot.innerText = (i == 0) ? '' : i;
-    spot.id = `spot-${color}-${i}`;
-    spot.color = `${color}`
-    spot.index = `${i}`
+    spot.innerText = spotIndex === 0 ? '' : spotIndex;
+    spot.id = `spot-${color}-${spotIndex}`;
+    spot.color = color;
+    spot.index = String(spotIndex);
 
-    if (i === 0) {
+    if (spotIndex === 0) {
       spot.classList.add('out-spot');
 
       const houseEntryOffset = enterHouseAtSpot - spotsPerRegion;
       const houseAngle = angleOffset + (houseEntryOffset / totalSpots) * 2 * Math.PI;
 
-      for (let j = 0; j < totalRegions; j++) {
-        const innerRadius = radius - houseDistance * (j + 1);
-        const gx = centerX + innerRadius * Math.cos(houseAngle) - 15;
-        const gy = centerY + innerRadius * Math.sin(houseAngle) - 15;
+      for (let houseIndex = 0; houseIndex < spotsPerHouse; houseIndex++) {
+        const innerRadius = radius - houseDistance * (houseIndex + 1);
+        const houseX = centerX + innerRadius * Math.cos(houseAngle) - 15;
+        const houseY = centerY + innerRadius * Math.sin(houseAngle) - 15;
 
         const houseSpot = document.createElement('div');
         houseSpot.className = `spot house ${color}`;
-        houseSpot.style.left = `${gx}px`;
-        houseSpot.style.top = `${gy}px`;
-        houseSpot.innerText = houseLabels[j];
-        houseSpot.id = `house-${color}-${j}`;
+        houseSpot.style.left = `${houseX}px`;
+        houseSpot.style.top = `${houseY}px`;
+        houseSpot.innerText = houseLabels[houseIndex];
+        houseSpot.id = `house-${color}-${houseIndex}`;
 
         board.appendChild(houseSpot);
         houseElements.push(houseSpot);
@@ -1329,11 +1352,10 @@ function drawQuadrant(position, color) {
     }
 
     board.appendChild(spot);
-    quadrantSpots.push(spot);
+    regionSpots.push(spot);
   }
 
-  // Update master spotElements list
-  spotElements.push(...quadrantSpots);
+  spotElements.push(...regionSpots);
 }
 
 function placePieceOnSpot(playerId, targetSpot) {
@@ -1397,14 +1419,15 @@ function assignPlayer(seatId, name, team, color, seatIndex = playerAssignments.l
   const existingPlayer = playerAssignments.find(player => player.seatId === seatId);
   if (existingPlayer) return existingPlayer;
 
-  const position = positions[seatIndex];
+  const seatLayout = seatLayouts[totalRegions]?.[seatIndex];
 
-  if (!position) {
-    console.error(`No board position is available for seat "${seatId}".`);
+  if (!seatLayout) {
+    console.error(`No ${totalRegions}-seat board position is available for seat "${seatId}".`);
     return null;
   }
 
-  const newPlayer = {seatId, name, team, color, position};
+  const {position, regionIndex} = seatLayout;
+  const newPlayer = {seatId, name, team, color, position, regionIndex};
 
   playerAssignments.push(newPlayer);
   usedColors.push(color);
@@ -1412,7 +1435,7 @@ function assignPlayer(seatId, name, team, color, seatIndex = playerAssignments.l
 
   updatePlayerBlock(newPlayer);
   positionMap[position].info_box.style.display = 'flex';
-  drawQuadrant(position, color);
+  drawRegion(color, regionIndex);
 
   if (name === local_player_name) {
     const cardBox = positionMap[position].card_box;
@@ -1548,13 +1571,6 @@ function updatePlayerBlock(player, isDealer = false) {
   block.dataset.playerColorClass = playerClass;
 }
 
-function updateRegionColor(position, color) {
-  const regionIndex = positionMap[position].index;
-  const regionSpots = spotElements.slice(regionIndex * spotsPerRegion, (regionIndex + 1) * spotsPerRegion);
-  const regionHouseSpots = houseElements.slice(regionIndex * totalRegions, (regionIndex + 1) * totalRegions);
-  regionSpots.forEach(s => s.classList.add(color));
-  regionHouseSpots.forEach(s => s.classList.add(color));
-}
 
 function toogleDealerOnPlayerBlock(seatId) {
   const dealer = getPlayerFromId(seatId);

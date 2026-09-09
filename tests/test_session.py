@@ -773,3 +773,14 @@ def test_create_game_endpoint_accepts_duel_two_mode():
 		assert session.dealCardCounts == (10, 8, 8)
 	finally:
 		manager.games.pop(result["game_id"], None)
+
+def test_duel_two_ruleset_state_reports_effective_mode_rules():
+	modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
+	session = GameSession("TEST", PlayerInputRouter(), modeDefinition=modeDefinition)
+
+	state = session.ruleset_state()
+
+	assert session.rules.card_exchange is True
+	assert session.rules.deal_card_counts == (5, 4, 4)
+	assert state["values"]["card_exchange"] is False
+	assert state["values"]["deal_card_counts"] == [10, 8, 8]

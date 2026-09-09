@@ -151,6 +151,39 @@ def markGameAsStarted(session) -> None:
 	session.markStarted()
 	session.game._isStarted = True
 
+def makeDuelTwoSessionState():
+	router = PlayerInputRouter()
+	modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
+	session = GameSession("TEST", router, modeDefinition=modeDefinition)
+
+	for name, team, color in [("Alice", "0", "red"), ("Bob", "1", "blue")]:
+		playerId = createPlayerId()
+		token = createResumeToken()
+		player = Player(f"TEST-{name}", name, team, color)
+		seat = PlayerSeat(seatId=playerId, participantId=playerId, team=team, color=color, player=player)
+		participant = Participant(participantId=playerId, routerId=playerId, name=name, resumeTokenHash=hashResumeToken(token))
+
+		session.roster.addParticipant(participant)
+		session.roster.addSeat(seat)
+		session.players[player.identifier] = {
+			"playerId": playerId,
+			"resumeTokenHash": hashResumeToken(token),
+			"object": player,
+			"objects": [player],
+			"seats": [seat],
+			"colors": [color],
+			"team": team,
+			"color": color,
+			"configured": True,
+			"connected": False,
+			"websocket": None,
+		}
+		session.order.append(player.identifier)
+
+	session.game = Game(session, ["red", "blue"], session.rules, session.dealCardCounts, session.modeDefinition.jokerCount)
+	session.game.setPlayers([session.players[runtimeId]["object"] for runtimeId in session.order])
+	return session
+
 def test_card_state_survives_json_round_trip():
 	originalState = CardState.fromCard(Card("♥️", "A"))
 	restoredState = CardState.from_dict(json.loads(json.dumps(originalState.to_dict())))
@@ -1594,3 +1627,29 @@ def test_duel_four_session_restores_two_seats_per_participant():
 	assert all(player.routerId == "TEST-Alice" for player in aliceData["objects"])
 	assert all(player.routerId == "TEST-Bob" for player in bobData["objects"])
 	assert restoredSession.snapshotState() == snapshot
+
+
+def test_duel_two_session_survives_snapshot_round_trip():
+	originalSession = makeDuelTwoSessionState()
+	markGameAsStarted(originalSession)
+
+	alice = originalSession.game.players[0]
+	alice.hand.addToHand(originalSession.game.deck.drawCard())
+	position = originalSession.game.board.getSpot("blue", 17)
+	position.setOccupant(alice)
+	alice.addAPieceOnTheBoard()
+
+	payload = json.loads(json.dumps(originalSession.snapshotState().to_dict()))
+	snapshot = SessionSnapshotState.from_dict(payload)
+	restoredSession = GameSession.fromSnapshot(snapshot, PlayerInputRouter())
+
+	assert restoredSession.snapshotState() == snapshot
+	assert restoredSession.modeDefinition.mode is GameMode.DUEL_TWO
+	assert restoredSession.game.board.colors == ("red", "blue")
+	assert restoredSession.game.board.boardSize == 36
+	assert restoredSession.game.dealCardCounts == (10, 8, 8)
+	assert len(restoredSession.game.players) == 2
+
+	restoredPosition = restoredSession.game.board.getSpot("blue", 17)
+	assert restoredPosition.isOccupied
+	assert restoredPosition.occupant.name == "Alice"

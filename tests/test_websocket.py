@@ -9,7 +9,8 @@ from starlette.websockets import WebSocketDisconnect
 from main import app, manager, router
 from toc.model.audit import GameEventType
 from toc.infrastructure.identity import resumeTokenMatches
-from toc.model.game_mode import getGameModeDefinition
+from toc.model.game_mode import GameMode, getGameModeDefinition
+from toc.model.game import Game
 
 
 PLAYER_NAMES = ["Alice", "Bob", "Carol", "Diana"]
@@ -24,6 +25,23 @@ def client():
 @pytest.fixture
 def gameId():
 	createdGameId = manager.create_game(router)
+
+	try:
+		yield createdGameId
+	finally:
+		session = manager.games.pop(createdGameId, None)
+
+		if session is not None:
+			for playerId in session.players:
+				router.input_queues.pop(playerId, None)
+				router.output_queues.pop(playerId, None)
+				router.recycleBin.pop(playerId, None)
+				router.pendingPrompts.pop(playerId, None)
+
+@pytest.fixture
+def duelTwoGameId():
+	modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
+	createdGameId = manager.create_game(router, modeDefinition=modeDefinition)
 
 	try:
 		yield createdGameId
@@ -844,3 +862,61 @@ def test_create_game_uses_requested_game_mode(client):
 	session = manager.games[gameId]
 
 	assert session.modeDefinition == getGameModeDefinition("duel_four", "adjacent")
+
+def test_two_configured_players_start_duel_two_game(client, duelTwoGameId, monkeypatch):
+	session = manager.games[duelTwoGameId]
+	gameStartCalls = []
+	gameStarted = Event()
+
+	async def fakeGameStart(game):
+		gameStartCalls.append(game)
+		gameStarted.set()
+
+	async def fakeFinalizeFinishedGame():
+		return None
+
+	monkeypatch.setattr(Game, "start", fakeGameStart)
+	monkeypatch.setattr(session, "finalizeFinishedGame", fakeFinalizeFinishedGame)
+
+	with ExitStack() as stack:
+		sockets = connectPlayers(stack, client, duelTwoGameId, ["Alice", "Bob"])
+
+		initialState = session.lobby_state()
+
+		assert initialState["participantCapacity"] == 2
+		assert initialState["seatCapacity"] == 2
+		assert initialState["trackRegionCount"] == 2
+		assert initialState["gameMode"] == {"name": "duel_two", "layout": None}
+		assert initialState["ruleset"]["values"]["card_exchange"] is False
+		assert initialState["ruleset"]["values"]["deal_card_counts"] == [10, 8, 8]
+
+		sockets["Alice"].send_json({"type": "configure-player", "team": "0", "color": "red"})
+
+		for websocket in sockets.values():
+			state = receiveLobbyState(websocket)
+			assert state["started"] is False
+
+		assert session.started is False
+		assert gameStartCalls == []
+
+		sockets["Bob"].send_json({"type": "configure-player", "team": "1", "color": "blue"})
+
+		for websocket in sockets.values():
+			configuredState = receiveLobbyState(websocket)
+			startedState = receiveLobbyState(websocket)
+
+			assert configuredState["started"] is False
+			assert startedState["started"] is True
+			assert startedState["participantCapacity"] == 2
+			assert startedState["seatCapacity"] == 2
+			assert startedState["trackRegionCount"] == 2
+			assert all(player["configured"] for player in startedState["players"])
+
+		assert gameStarted.wait(timeout=1)
+		assert gameStartCalls == [session.game]
+		assert session.started is True
+		assert len(session.order) == 2
+		assert len(session.game.players) == 2
+		assert session.game.board.boardSize == 36
+		assert session.game.dealCardCounts == (10, 8, 8)
+		assert [player.name for player in session.game.players] == ["Alice", "Bob"]

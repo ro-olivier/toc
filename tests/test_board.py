@@ -7,6 +7,8 @@ from toc.model.player import Player
 from toc.model.move import Move
 from toc.model.rules import FiveBehaviour, GameRules
 
+DUEL_COLORS = ["red", "blue"]
+
 
 def make_player(name="Alice", color="red", team="0"):
 	return Player(
@@ -977,3 +979,47 @@ def test_players_with_same_name_do_not_share_piece_ownership():
 	assert board.getOccupiedSpotsOnTheBoard(redPlayer) == [redSpot]
 	assert board.getOccupiedSpotsOnTheBoard(limePlayer) == []
 	assert board.getMoveOptions(limePlayer, Card("♥️", "6")) == []
+
+def test_duel_two_board_has_thirty_six_track_spots_and_eight_houses():
+	board = Board(DUEL_COLORS)
+
+	assert board.boardSize == 36
+	assert len(board.positions) == 44
+	assert len(board.getHousesByColor("red")) == 4
+	assert len(board.getHousesByColor("blue")) == 4
+
+
+def test_duel_two_track_wraps_between_both_regions():
+	board = Board(DUEL_COLORS)
+
+	assert board.getSpotFromDistance(board.getSpot("red", 17), 1) is board.getSpot("blue", 0)
+	assert board.getSpotFromDistance(board.getSpot("blue", 17), 1) is board.getSpot("red", 0)
+
+
+def test_duel_two_piece_can_enter_house_after_full_track_circuit():
+	board = Board(DUEL_COLORS)
+	alice = make_player("Alice", "red", "0")
+	place_piece(board, alice, "blue", 16)
+
+	options = board.getMoveOptions(alice, Card("♥️", "3"))
+
+	assert any(move.ID == "ENTER" and move.targetSpot is board.getHouse("red", 0) for move in options)
+	assert any(move.ID == "MOVE" and move.targetSpot is board.getSpot("red", 1) for move in options)
+
+
+@pytest.mark.parametrize(("originColor", "targetColor"), [
+	("red", "blue"),
+	("blue", "red"),
+])
+def test_duel_two_seven_hop_moves_between_both_regions(originColor, targetColor):
+	board = Board(DUEL_COLORS)
+	alice = make_player("Alice", "red", "0")
+	landingSpot = place_piece(board, alice, originColor, 7)
+	triggeringMove = Move("MOVE", board.getSpot(originColor, 5), landingSpot, Card("♥️", "2"), alice)
+
+	hop = board.getSevenHopMove(triggeringMove)
+
+	assert hop is not None
+	assert hop.originSpot is landingSpot
+	assert hop.targetSpot is board.getSpot(targetColor, 7)
+	assert hop.pieceOwner is alice
