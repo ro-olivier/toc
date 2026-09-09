@@ -90,6 +90,7 @@ const RULE_UI = {
   jacks_can_switch_then_seven_hop: {group: "special"},
   ace_values: {group: "special"},
   king_kicks_pieces_on_path: {group: "special"},
+  joker_kicks_pieces_on_path: {group: "special"},
   seven_can_split: {group: "seven"},
   seven_split_kicks_pieces_on_path: {group: "seven"},
   seven_hopping: {group: "seven"},

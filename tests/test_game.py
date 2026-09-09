@@ -1335,3 +1335,78 @@ def test_duel_two_first_deal_gives_ten_cards_to_each_player():
 	assert alice.hand.size == 10
 	assert bob.hand.size == 10
 	assert game.deck.size == 32
+
+def test_joker_does_not_use_king_path_kicking_rule():
+	rules = GameRules(king_kicks_pieces_on_path=True, joker_kicks_pieces_on_path=False)
+	game = Game(None, COLORS, rules)
+	board = game.board
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	origin = place_track_piece(board, alice, "red", 1)
+	passedPiece = place_track_piece(board, bob, "red", 5)
+	target = board.getSpotFromDistance(origin, 18)
+	move = Move("MOVE", origin, target, Card("red", "JOKER"), alice, alice, 18)
+
+	kickedPositions = game.applyMove(move)
+
+	assert passedPiece.occupant is bob
+	assert target.occupant is alice
+	assert bob.piecesOnTheBoard == 1
+	assert kickedPositions == []
+
+
+def test_joker_kicks_crossed_pieces_when_rule_is_enabled():
+	rules = GameRules(joker_kicks_pieces_on_path=True)
+	game = Game(None, COLORS, rules)
+	board = game.board
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	partner = make_player("Partner", "green", "0")
+	alice.setBoard(board)
+	bob.setBoard(board)
+	partner.setBoard(board)
+
+	origin = place_track_piece(board, alice, "red", 1)
+	ownedPiece = place_track_piece(board, alice, "red", 3)
+	opponentPiece = place_track_piece(board, bob, "red", 5)
+	partnerPiece = place_track_piece(board, partner, "red", 7)
+	target = board.getSpotFromDistance(origin, 18)
+	move = Move("MOVE", origin, target, Card("black", "JOKER"), alice, alice, 18)
+
+	kickedPositions = game.applyMove(move)
+
+	assert not ownedPiece.isOccupied
+	assert not opponentPiece.isOccupied
+	assert not partnerPiece.isOccupied
+	assert target.occupant is alice
+	assert alice.piecesOnTheBoard == 1
+	assert bob.piecesOnTheBoard == 0
+	assert partner.piecesOnTheBoard == 0
+	assert kickedPositions == [ownedPiece, opponentPiece, partnerPiece]
+
+def test_resolve_joker_move_broadcasts_crossed_positions():
+	session = FakeGameSession()
+	rules = GameRules(joker_kicks_pieces_on_path=True, seven_hopping=SevenHopping.DISABLED)
+	game = Game(session, COLORS, rules)
+	board = game.board
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	origin = place_track_piece(board, alice, "red", 1)
+	passedPiece = place_track_piece(board, bob, "red", 5)
+	target = board.getSpotFromDistance(origin, 18)
+	move = Move("MOVE", origin, target, Card("red", "JOKER"), alice, alice, 18)
+
+	asyncio.run(game.resolveMove(move))
+
+	pathKickMessages = [message for message in session.messages if message["type"] == "path-kicks"]
+
+	assert pathKickMessages == [{"type": "path-kicks", "positions": [str(passedPiece)]}]

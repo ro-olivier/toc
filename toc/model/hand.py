@@ -44,7 +44,7 @@ class Hand:
 			return None
 
 	def hasNoExitCard(self) -> bool:
-		if any([card.value in ['A', 'K'] for card in self._cards]):
+		if any([card.value in ['A', 'K', 'JOKER'] for card in self._cards]):
 			return False
 		else:
 			return True

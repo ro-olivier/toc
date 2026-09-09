@@ -90,3 +90,10 @@ def test_rule_schema_describes_every_rule_with_json_safe_options():
 	assert schema["deal_card_counts"]["options"] == [[5, 4, 4], [4, 5, 4], [4, 4, 5]]
 	assert schema["ace_values"]["options"] == [[1, 11], [1], [11]]
 	json.dumps(schema)
+
+def test_joker_path_kicking_is_disabled_by_default():
+	rules = GameRules()
+
+	assert rules.joker_kicks_pieces_on_path is False
+	assert rules.to_dict()["joker_kicks_pieces_on_path"] is False
+	assert get_rule_schema()["joker_kicks_pieces_on_path"] == {"type": "boolean"}

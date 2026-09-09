@@ -68,6 +68,7 @@ class GameRules:
 
 	ace_values: tuple[int, ...] = (1, 11)
 	king_kicks_pieces_on_path: bool = False
+	joker_kicks_pieces_on_path: bool = False
 
 	def __post_init__(self) -> None:
 		for fieldName, fieldType in get_type_hints(type(self)).items():

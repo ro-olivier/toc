@@ -324,7 +324,12 @@ class Game:
 		if move.ID in movementTypes and (origin is None or origin.occupant is not move.pieceOwner):
 			raise ValueError("Move origin is not occupied by the piece owner")
 
-		if self._rules.king_kicks_pieces_on_path and move.card is not None and move.card.value == "K" and move.ID in ["MOVE", "ENTER"]:
+		pathKickingEnabled = move.card is not None and (
+			(move.card.value == "K" and self._rules.king_kicks_pieces_on_path)
+			or (move.card.value == JOKER_VALUE and self._rules.joker_kicks_pieces_on_path)
+		)
+
+		if pathKickingEnabled and move.ID in ["MOVE", "ENTER"]:
 			for position in self._board.getPositionsCrossedByMove(move):
 				if position.isOccupied:
 					kickedPlayer = position.occupant

@@ -350,6 +350,15 @@ class Board:
 		pieceOwner = pieceOwner if pieceOwner is not None else player
 		options = []
 
+		if card.value == JOKER_VALUE:
+			exitSpot = self.getFirstSpot(pieceOwner.color)
+			exitMove = Move("OUT", exitSpot, exitSpot, card, player, pieceOwner)
+
+			if self.isMoveValid(exitMove):
+				options.append(exitMove)
+
+			options.extend(self.getForwardMoveOptions(player, card, [18], pieceOwner))
+
 		if card.value == "A":
 			exitSpot = self.getFirstSpot(pieceOwner.color)
 			exitMove = Move("OUT", exitSpot, exitSpot, card, player, pieceOwner)

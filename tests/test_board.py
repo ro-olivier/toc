@@ -6,6 +6,7 @@ from toc.model.params import COLORS
 from toc.model.player import Player
 from toc.model.move import Move
 from toc.model.rules import FiveBehaviour, GameRules
+from toc.model.game import Game
 
 DUEL_COLORS = ["red", "blue"]
 
@@ -30,6 +31,12 @@ def place_house_piece(board, player, house_number):
 	house.setOccupant(player)
 	player.addAPieceOnTheBoard()
 	return house
+
+def place_track_piece(board, player, color, number, blocking=False):
+	spot = board.getSpot(color, number)
+	spot.setOccupant(player, blocking)
+	player.addAPieceOnTheBoard()
+	return spot
 
 def test_new_board_contains_no_pieces():
 	board = Board(COLORS)
@@ -1023,3 +1030,108 @@ def test_duel_two_seven_hop_moves_between_both_regions(originColor, targetColor)
 	assert hop.originSpot is landingSpot
 	assert hop.targetSpot is board.getSpot(targetColor, 7)
 	assert hop.pieceOwner is alice
+
+def test_joker_can_take_piece_out():
+	board = Board(COLORS)
+	alice = make_player("Alice", "red", "0")
+	alice.setBoard(board)
+
+	options = board.getMoveOptions(alice, Card("red", "JOKER"))
+	exitSpot = board.getFirstSpot("red")
+
+	assert any(move.ID == "OUT" and move.targetSpot is exitSpot for move in options)
+
+
+def test_joker_can_move_piece_eighteen_positions():
+	board = Board(COLORS)
+	alice = make_player("Alice", "red", "0")
+	alice.setBoard(board)
+	origin = place_piece(board, alice, "red", 1)
+	target = board.getSpotFromDistance(origin, 18)
+
+	options = board.getMoveOptions(alice, Card("black", "JOKER"))
+
+	assert target is board.getSpot("blue", 1)
+	assert any(move.ID == "MOVE" and move.originSpot is origin and move.targetSpot is target and move.steps == 18 for move in options)
+
+
+def test_joker_can_enter_house_after_eighteen_positions():
+	colors = ["red", "blue", "green", "yellow", "purple", "orange"]
+	board = Board(colors)
+	alice = make_player("Alice", "red", "0")
+	alice.setBoard(board)
+	origin = place_piece(board, alice, "orange", 1)
+
+	options = board.getMoveOptions(alice, Card("red", "JOKER"))
+
+	assert any(move.ID == "ENTER" and move.originSpot is origin and move.targetSpot is board.getHouse("red", 0) for move in options)
+	assert any(move.ID == "MOVE" and move.originSpot is origin and move.targetSpot is board.getSpot("red", 1) for move in options)
+
+def test_joker_does_not_use_king_path_kicking_rule():
+	rules = GameRules(king_kicks_pieces_on_path=True, joker_kicks_pieces_on_path=False)
+	game = Game(None, COLORS, rules)
+	board = game.board
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	alice.setBoard(board)
+	bob.setBoard(board)
+
+	origin = place_track_piece(board, alice, "red", 1)
+	passedPiece = place_track_piece(board, bob, "red", 5)
+	target = board.getSpotFromDistance(origin, 18)
+	move = Move("MOVE", origin, target, Card("red", "JOKER"), alice, alice, 18)
+
+	kickedPositions = game.applyMove(move)
+
+	assert passedPiece.occupant is bob
+	assert target.occupant is alice
+	assert bob.piecesOnTheBoard == 1
+	assert kickedPositions == []
+
+
+def test_joker_kicks_crossed_pieces_when_rule_is_enabled():
+	rules = GameRules(joker_kicks_pieces_on_path=True)
+	game = Game(None, COLORS, rules)
+	board = game.board
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	partner = make_player("Partner", "green", "0")
+	alice.setBoard(board)
+	bob.setBoard(board)
+	partner.setBoard(board)
+
+	origin = place_track_piece(board, alice, "red", 1)
+	ownedPiece = place_track_piece(board, alice, "red", 3)
+	opponentPiece = place_track_piece(board, bob, "red", 5)
+	partnerPiece = place_track_piece(board, partner, "red", 7)
+	target = board.getSpotFromDistance(origin, 18)
+	move = Move("MOVE", origin, target, Card("black", "JOKER"), alice, alice, 18)
+
+	kickedPositions = game.applyMove(move)
+
+	assert not ownedPiece.isOccupied
+	assert not opponentPiece.isOccupied
+	assert not partnerPiece.isOccupied
+	assert target.occupant is alice
+	assert alice.piecesOnTheBoard == 1
+	assert bob.piecesOnTheBoard == 0
+	assert partner.piecesOnTheBoard == 0
+	assert kickedPositions == [ownedPiece, opponentPiece, partnerPiece]
+
+def test_joker_cannot_kick_through_protected_house_positions():
+	rules = GameRules(joker_kicks_pieces_on_path=True)
+	board = Board(COLORS, rules)
+	alice = make_player("Alice", "red", "0")
+	alice.setBoard(board)
+
+	entrySpot = board.getFirstSpot(alice.color)
+	originSpot = board.getSpotFromDistance(entrySpot, -15)
+	origin = place_piece(board, alice, originSpot.color, originSpot.number)
+	place_house_piece(board, alice, 0)
+	target = board.getHouse(alice.color, 2)
+
+	options = board.getMoveOptions(alice, Card("black", "JOKER"))
+
+	assert not any(move.ID == "ENTER" and move.originSpot is origin and move.targetSpot is target for move in options)
