@@ -9,6 +9,8 @@ from toc.model.game_phase import GamePhase
 import asyncio
 import pytest
 
+TEAM_SIX_COLORS = ["red", "blue", "green", "yellow", "purple", "orange"]
+
 
 class FakeGameSession:
 	def __init__(self):
@@ -1410,3 +1412,78 @@ def test_resolve_joker_move_broadcasts_crossed_positions():
 	pathKickMessages = [message for message in session.messages if message["type"] == "path-kicks"]
 
 	assert pathKickMessages == [{"type": "path-kicks", "positions": [str(passedPiece)]}]
+
+def test_team_six_first_deal_gives_three_cards_to_each_player():
+	session = FakeGameSession()
+	game = Game(session, TEAM_SIX_COLORS, dealCardCounts=(3, 3, 3), jokerCount=2)
+	players = [
+		QuietPlayer("TEST-Alice", "Alice", "0", "red"),
+		QuietPlayer("TEST-Bob", "Bob", "1", "blue"),
+		QuietPlayer("TEST-Carol", "Carol", "2", "green"),
+		QuietPlayer("TEST-Diana", "Diana", "0", "yellow"),
+		QuietPlayer("TEST-Erin", "Erin", "1", "purple"),
+		QuietPlayer("TEST-Frank", "Frank", "2", "orange"),
+	]
+	game.setPlayers(players)
+
+	asyncio.run(game.drawHands(3))
+
+	assert [player.hand.size for player in players] == [3, 3, 3, 3, 3, 3]
+	assert game.deck.expectedCardCount == 54
+	assert game.deck.size == 36
+
+def test_team_six_round_requests_card_exchange_for_three_teams():
+	game = ExchangeRecordingGame(GameRules(card_exchange=True))
+	players = [
+		make_player("Alice", "red", "0"),
+		make_player("Bob", "blue", "1"),
+		make_player("Carol", "green", "2"),
+		make_player("Diana", "yellow", "0"),
+		make_player("Erin", "purple", "1"),
+		make_player("Frank", "orange", "2"),
+	]
+	game.setPlayers(players)
+
+	asyncio.run(game.runRound(1, 3))
+
+	requestedTeams = [{player.name for player in team} for team in game.exchangeRequests]
+
+	assert requestedTeams == [
+		{"Alice", "Diana"},
+		{"Bob", "Erin"},
+		{"Carol", "Frank"},
+	]
+	assert game._gameSession.phaseChanges == [
+		(GamePhase.DEAL_START, 0),
+		(GamePhase.CARD_EXCHANGE, 0),
+		(GamePhase.TURN_START, 0),
+		(GamePhase.DEAL_END, 0),
+	]
+
+def test_third_team_can_win_team_six_game():
+	session = FakeGameSession()
+	game = Game(session, TEAM_SIX_COLORS, dealCardCounts=(3, 3, 3), jokerCount=2)
+
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	carol = make_player("Carol", "green", "2")
+	diana = make_player("Diana", "yellow", "0")
+	erin = make_player("Erin", "purple", "1")
+	frank = make_player("Frank", "orange", "2")
+
+	game.setPlayers([alice, bob, carol, diana, erin, frank])
+	fill_houses(game.board, carol)
+	fill_houses(game.board, frank)
+
+	result = asyncio.run(game.finishGameIfWon())
+
+	assert result is True
+	assert game.isFinished
+
+	message = session.messages[-1]
+
+	assert message["type"] == "game-over"
+	assert message["messageKey"] == "gameplay.team_won"
+	assert message["parameters"] == {"playerOne": "Carol", "playerTwo": "Frank"}
+	assert message["winners"] == ["Carol", "Frank"]
+	assert message["fallback"] == "Carol and Frank win!"

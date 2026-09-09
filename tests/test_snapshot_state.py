@@ -184,6 +184,49 @@ def makeDuelTwoSessionState():
 	session.game.setPlayers([session.players[runtimeId]["object"] for runtimeId in session.order])
 	return session
 
+def makeTeamSixSessionState():
+	router = PlayerInputRouter()
+	modeDefinition = getGameModeDefinition(GameMode.TEAM_SIX)
+	session = GameSession("TEST", router, modeDefinition=modeDefinition)
+
+	playerDefinitions = [
+		("Alice", "0", "red"),
+		("Bob", "1", "blue"),
+		("Carol", "2", "green"),
+		("Diana", "0", "yellow"),
+		("Erin", "1", "purple"),
+		("Frank", "2", "orange"),
+	]
+
+	for name, team, color in playerDefinitions:
+		playerId = createPlayerId()
+		token = createResumeToken()
+		player = Player(f"TEST-{name}", name, team, color)
+		seat = PlayerSeat(seatId=playerId, participantId=playerId, team=team, color=color, player=player)
+		participant = Participant(participantId=playerId, routerId=playerId, name=name, resumeTokenHash=hashResumeToken(token))
+
+		session.roster.addParticipant(participant)
+		session.roster.addSeat(seat)
+		session.players[player.identifier] = {
+			"playerId": playerId,
+			"resumeTokenHash": hashResumeToken(token),
+			"object": player,
+			"objects": [player],
+			"seats": [seat],
+			"colors": [color],
+			"team": team,
+			"color": color,
+			"configured": True,
+			"connected": False,
+			"websocket": None,
+		}
+		session.order.append(player.identifier)
+
+	colors = ["red", "blue", "green", "yellow", "purple", "orange"]
+	session.game = Game(session, colors, session.rules, session.dealCardCounts, session.modeDefinition.jokerCount)
+	session.game.setPlayers([session.players[runtimeId]["object"] for runtimeId in session.order])
+	return session
+
 def test_card_state_survives_json_round_trip():
 	originalState = CardState.fromCard(Card("♥️", "A"))
 	restoredState = CardState.from_dict(json.loads(json.dumps(originalState.to_dict())))
@@ -1653,3 +1696,57 @@ def test_duel_two_session_survives_snapshot_round_trip():
 	restoredPosition = restoredSession.game.board.getSpot("blue", 17)
 	assert restoredPosition.isOccupied
 	assert restoredPosition.occupant.name == "Alice"
+
+def test_team_six_session_survives_snapshot_round_trip():
+	originalSession = makeTeamSixSessionState()
+	markGameAsStarted(originalSession)
+
+	alice = next(player for player in originalSession.game.players if player.name == "Alice")
+	redJoker = next(card for card in originalSession.game.deck.cards if card.suit == "red" and card.value == "JOKER")
+	originalSession.game.deck.cards.remove(redJoker)
+	alice.hand.addToHand(redJoker)
+
+	position = originalSession.game.board.getSpot("blue", 7)
+	position.setOccupant(alice)
+	alice.addAPieceOnTheBoard()
+
+	payload = json.loads(json.dumps(originalSession.snapshotState().to_dict()))
+	snapshot = SessionSnapshotState.from_dict(payload)
+	restoredSession = GameSession.fromSnapshot(snapshot, PlayerInputRouter())
+
+	assert restoredSession.snapshotState() == snapshot
+	assert restoredSession.modeDefinition.mode is GameMode.TEAM_SIX
+	assert restoredSession.modeDefinition.participantCount == 6
+	assert restoredSession.modeDefinition.seatCount == 6
+	assert restoredSession.modeDefinition.teamCount == 3
+	assert restoredSession.roster.participantCount == 6
+	assert restoredSession.roster.seatCount == 6
+	assert len(restoredSession.players) == 6
+	assert len(restoredSession.game.players) == 6
+	assert restoredSession.game.board.colors == ("red", "blue", "green", "yellow", "purple", "orange")
+	assert restoredSession.game.board.boardSize == 108
+	assert restoredSession.game.deck.expectedCardCount == 54
+	assert restoredSession.game.dealCardCounts == (3, 3, 3)
+
+	restoredPosition = restoredSession.game.board.getSpot("blue", 7)
+
+	assert restoredPosition.isOccupied
+	assert restoredPosition.occupant.name == "Alice"
+
+	restoredAlice = next(player for player in restoredSession.game.players if player.name == "Alice")
+
+	assert restoredAlice.hand.size == 1
+	assert restoredAlice.hand.cards[0] == Card("red", "JOKER")
+
+	allCards = list(restoredSession.game.deck.cards) + list(restoredSession.game.deck.discardPile)
+
+	for player in restoredSession.game.players:
+		allCards.extend(player.hand.cards)
+
+	jokers = {(card.suit, card.value) for card in allCards if card.value == "JOKER"}
+
+	assert jokers == {
+		("red", "JOKER"),
+		("black", "JOKER"),
+	}
+	assert len(allCards) == 54
