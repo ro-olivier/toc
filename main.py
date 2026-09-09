@@ -21,7 +21,7 @@ from toc.model.game_phase import GamePhase
 from toc.model.audit import GameEvent, GameEventLog, GameEventType
 from toc.model.game_mode import DEFAULT_GAME_MODE, GameModeDefinition, getGameModeDefinition
 from toc.infrastructure.messages import MESSAGE_KEYS, build_message
-from toc.infrastructure.identity import createJoinCode, createPlayerId, createResumeToken, createSeatId, createSessionId, hashResumeToken, resumeTokenMatches
+from toc.infrastructure.identity import createJoinCode, createPlayerId, createResumeToken, createSeatId, createSessionId, hashResumeToken, resumeTokenMatches, normalizeJoinCode
 from toc.infrastructure.versions import WEBSOCKET_PROTOCOL_VERSION
 from toc.infrastructure.clock import Clock, SYSTEM_CLOCK
 from toc.infrastructure.app_logging import configureApplicationLogging
@@ -177,10 +177,13 @@ class ConnectionManager:
 		self._archiveStore = archiveStore
 
 	def _generate_game_id(self) -> str:
-		while True:
-			gameId = createJoinCode()
+		reservedJoinCodes = {normalizeJoinCode(joinCode) for joinCode in self.games}
+		reservedJoinCodes.update(self._get_suspended_join_codes())
 
-			if gameId not in self.games:
+		while True:
+			gameId = normalizeJoinCode(createJoinCode())
+
+			if gameId not in reservedJoinCodes:
 				return gameId
 
 	def create_game(self, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None, modeDefinition: GameModeDefinition = None) -> str:
@@ -189,7 +192,28 @@ class ConnectionManager:
 		return game_id
 
 	def get_game(self, game_id: str):
-		return self.games.get(game_id)
+		try:
+			normalizedGameId = normalizeJoinCode(game_id)
+		except ValueError:
+			return None
+
+		return self.games.get(normalizedGameId) or self.games.get(game_id)
+
+	def _get_suspended_join_codes(self) -> set[str]:
+		if self._archiveStore is None:
+			return set()
+
+		joinCodes = set()
+
+		for sessionId in self._archiveStore.listDocumentIds(ArchiveCategory.SUSPENDED):
+			try:
+				payload = self._archiveStore.read(ArchiveCategory.SUSPENDED, sessionId)
+				snapshot = SessionSnapshotState.from_dict(payload)
+				joinCodes.add(normalizeJoinCode(snapshot.metadata.joinCode))
+			except (ArchiveCorruptionError, ValueError):
+				logger.exception("Could not read suspended game join code", extra={"sessionId": sessionId})
+
+		return joinCodes
 
 	def load_suspended_game(self, game_id: str, msg_router) -> GameSession | None:
 		if self._archiveStore is None:
@@ -205,7 +229,8 @@ class ConnectionManager:
 				logger.exception("Could not load suspended game archive", extra={"sessionId": sessionId})
 				continue
 
-			if snapshot.metadata.joinCode == game_id:
+			normalizedGameId = normalizeJoinCode(game_id)
+			if normalizeJoinCode(snapshot.metadata.joinCode) == normalizedGameId:
 				matchingSnapshots.append(snapshot)
 
 		if not matchingSnapshots:
@@ -223,7 +248,7 @@ class ConnectionManager:
 			raise ValueError("Suspended archive contains a finished game")
 
 		session = GameSession.fromSnapshot(snapshot, msg_router, self._clock, self._archiveStore)
-		self.games[game_id] = session
+		self.games[normalizedGameId] = session
 		return session
 
 	def get_or_restore_game(self, game_id: str, msg_router) -> GameSession | None:
@@ -1311,13 +1336,20 @@ class GameSession:
 @app.websocket("/toc/ws/{game_id}/{player_name}")
 async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: str):
 	await websocket.accept()
+	
+	try:
+		game_id = normalizeJoinCode(game_id)
+	except ValueError:
+		await websocket.close(code=4001)
+		return
+
 	gameSession = manager.get_or_restore_game(game_id, router)
 
 	if gameSession is None:
 		await websocket.close(code=NO_GAME_FOUND_CODE)
 		return
 
-	player_id = gameSession.getFullPlayerId(game_id, player_name)
+	player_id = gameSession.getFullPlayerId(gameSession.joinCode, player_name)
 	existingPlayer = gameSession.players.get(player_id)
 
 	if existingPlayer is not None and existingPlayer["active"]:

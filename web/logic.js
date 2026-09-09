@@ -350,6 +350,7 @@ function clearError() {
 
 async function connectToGame(gameId, name, rejoin = false) {
   clearError();
+  gameId = gameId.trim().toLowerCase();
   const wsUrl = buildWebSocketUrl(gameId, name);
   try {
     ws = new WebSocket(wsUrl);

@@ -807,3 +807,25 @@ def test_team_six_ruleset_state_reports_effective_dealing_schedule():
 
 	assert state["values"]["card_exchange"] is True
 	assert state["values"]["deal_card_counts"] == [3, 3, 3]
+
+def test_connection_manager_retries_human_join_code_collision(monkeypatch):
+	generatedCodes = iter(["calm-otter", "calm-otter", "brave-fox"])
+	monkeypatch.setattr("main.createJoinCode", lambda: next(generatedCodes))
+
+	connectionManager = ConnectionManager()
+	firstGameId = connectionManager.create_game(PlayerInputRouter())
+	secondGameId = connectionManager.create_game(PlayerInputRouter())
+
+	assert firstGameId == "calm-otter"
+	assert secondGameId == "brave-fox"
+	assert set(connectionManager.games) == {"calm-otter", "brave-fox"}
+
+def test_connection_manager_finds_human_join_code_case_insensitively(monkeypatch):
+	monkeypatch.setattr("main.createJoinCode", lambda: "calm-otter")
+
+	connectionManager = ConnectionManager()
+	gameId = connectionManager.create_game(PlayerInputRouter())
+	session = connectionManager.get_game(gameId)
+
+	assert connectionManager.get_game("CALM-OTTER") is session
+	assert connectionManager.get_game("  Calm-Otter  ") is session

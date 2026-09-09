@@ -37,9 +37,9 @@ class FakeClock:
 		self._utcNow += timedelta(seconds=seconds)
 		self._monotonic += seconds
 
-def makeGameSessionState(archiveStore=None, clock=SYSTEM_CLOCK):
+def makeGameSessionState(archiveStore=None, clock=SYSTEM_CLOCK, joinCode="TEST"):
 	router = PlayerInputRouter()
-	session = GameSession("TEST", router, clock=clock, archiveStore=archiveStore)
+	session = GameSession(joinCode, router, clock=clock, archiveStore=archiveStore)
 	playerDefinitions = [
 		("Alice", "0", "red"),
 		("Bob", "1", "blue"),
@@ -1750,3 +1750,18 @@ def test_team_six_session_survives_snapshot_round_trip():
 		("black", "JOKER"),
 	}
 	assert len(allCards) == 54
+
+def test_new_game_cannot_reuse_suspended_game_join_code(tmp_path, monkeypatch):
+	store = CompressedJsonStore(tmp_path)
+	suspendedSession = makeGameSessionState(archiveStore=store, joinCode="calm-otter")
+	store.write(ArchiveCategory.SUSPENDED, suspendedSession.sessionId, suspendedSession.snapshotState().to_dict())
+
+	generatedCodes = iter(["calm-otter", "brave-fox"])
+	monkeypatch.setattr("main.createJoinCode", lambda: next(generatedCodes))
+
+	connectionManager = ConnectionManager(archiveStore=store)
+	newGameId = connectionManager.create_game(PlayerInputRouter())
+
+	assert newGameId == "brave-fox"
+	assert connectionManager.get_game("brave-fox") is not None
+	assert connectionManager.get_game("calm-otter") is None

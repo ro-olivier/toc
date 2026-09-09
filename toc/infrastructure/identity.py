@@ -3,13 +3,93 @@ import secrets
 import uuid
 
 
-JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-JOIN_CODE_LENGTH = 6
+JOIN_CODE_ADJECTIVES = (
+	"amber",
+	"brave",
+	"bright",
+	"calm",
+	"clever",
+	"cool",
+	"coral",
+	"cosy",
+	"crimson",
+	"daring",
+	"eager",
+	"gentle",
+	"golden",
+	"happy",
+	"jolly",
+	"kind",
+	"lively",
+	"lucky",
+	"merry",
+	"mighty",
+	"nimble",
+	"quiet",
+	"rapid",
+	"royal",
+	"silver",
+	"steady",
+	"sunny",
+	"swift",
+	"vivid",
+	"warm",
+	"wild",
+	"wise",
+)
+
+JOIN_CODE_NOUNS = (
+	"badger",
+	"bear",
+	"beaver",
+	"bison",
+	"cat",
+	"crane",
+	"deer",
+	"dog",
+	"dolphin",
+	"eagle",
+	"falcon",
+	"fox",
+	"frog",
+	"goat",
+	"hare",
+	"heron",
+	"horse",
+	"lynx",
+	"moose",
+	"otter",
+	"owl",
+	"panda",
+	"rabbit",
+	"raven",
+	"seal",
+	"shark",
+	"swan",
+	"tiger",
+	"turtle",
+	"whale",
+	"wolf",
+	"yak",
+)
 RESUME_TOKEN_BYTES = 32
 
 
 def createJoinCode() -> str:
-	return "".join(secrets.choice(JOIN_CODE_ALPHABET) for _ in range(JOIN_CODE_LENGTH))
+	adjective = secrets.choice(JOIN_CODE_ADJECTIVES)
+	noun = secrets.choice(JOIN_CODE_NOUNS)
+	return f"{adjective}-{noun}"
+
+def normalizeJoinCode(joinCode: str) -> str:
+	if type(joinCode) is not str:
+		raise ValueError("Join code must be a string")
+
+	normalizedCode = joinCode.strip().lower()
+
+	if not normalizedCode:
+		raise ValueError("Join code cannot be empty")
+
+	return normalizedCode
 
 
 def createSessionId() -> str:
