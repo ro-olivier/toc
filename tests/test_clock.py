@@ -1,4 +1,5 @@
 import json
+import asyncio
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -197,3 +198,17 @@ def test_already_suspended_session_is_not_selected_for_suspension_again():
 	clock.advance(3600)
 
 	assert session.getSuspensionReason() is None
+
+def test_active_checkpoint_records_game_progress_as_activity():
+	initialTime = datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc)
+	clock = FakeClock(initialTime)
+	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
+	session.markStarted()
+
+	clock.advance(600)
+
+	result = asyncio.run(session.checkpointActive())
+
+	assert result is None
+	assert session.lastActivityAt == initialTime + timedelta(seconds=600)
+	assert session.inactivitySeconds() == 0

@@ -663,6 +663,7 @@ class GameSession:
 			return await asyncio.to_thread(self._archiveStore.write, category, self._sessionId, payload)
 
 	async def checkpointActive(self):
+		self.recordActivity()
 		return await self.writeCheckpoint(ArchiveCategory.ACTIVE)
 
 	async def resumed_game_loop(self) -> None:

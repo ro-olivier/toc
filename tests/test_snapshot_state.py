@@ -933,7 +933,7 @@ def test_active_checkpoint_writes_complete_session_snapshot(tmp_path):
 	assert path == store.pathFor(ArchiveCategory.ACTIVE, session.sessionId)
 	assert restoredSnapshot == session.snapshotState()
 
-def test_checkpoint_is_noop_without_archive_store():
+def test_checkpoint_does_not_write_without_archive_store():
 	session = makeGameSessionState()
 	markGameAsStarted(session)
 
