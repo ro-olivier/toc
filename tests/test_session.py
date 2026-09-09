@@ -784,3 +784,26 @@ def test_duel_two_ruleset_state_reports_effective_mode_rules():
 	assert session.rules.deal_card_counts == (5, 4, 4)
 	assert state["values"]["card_exchange"] is False
 	assert state["values"]["deal_card_counts"] == [10, 8, 8]
+
+def test_create_game_endpoint_accepts_team_six_mode():
+	result = asyncio.run(create_game_endpoint({"mode": "team_six"}))
+	session = manager.get_game(result["game_id"])
+
+	try:
+		assert session.modeDefinition == getGameModeDefinition(GameMode.TEAM_SIX)
+		assert session.modeDefinition.participantCount == 6
+		assert session.modeDefinition.seatCount == 6
+		assert session.modeDefinition.teamCount == 3
+		assert session.dealCardCounts == (3, 3, 3)
+		assert result["gameMode"] == {"name": "team_six", "layout": None}
+	finally:
+		manager.games.pop(result["game_id"], None)
+
+def test_team_six_ruleset_state_reports_effective_dealing_schedule():
+	modeDefinition = getGameModeDefinition(GameMode.TEAM_SIX)
+	session = GameSession("TEST", PlayerInputRouter(), modeDefinition=modeDefinition)
+
+	state = session.ruleset_state()
+
+	assert state["values"]["card_exchange"] is True
+	assert state["values"]["deal_card_counts"] == [3, 3, 3]

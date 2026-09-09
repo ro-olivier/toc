@@ -1244,12 +1244,40 @@ const seatLayouts = {
     {position: 'bottom-right', regionIndex: 0},
     {position: 'bottom-left', regionIndex: 1},
   ],
+  6: [
+    {position: 'bottom-right', regionIndex: 0},
+    {position: 'bottom-center', regionIndex: 1},
+    {position: 'bottom-left', regionIndex: 2},
+    {position: 'top-left', regionIndex: 3},
+    {position: 'top-center', regionIndex: 4},
+    {position: 'top-right', regionIndex: 5},
+  ],
 };
 const positionMap = {
-  'top-left':    { index: 2, info_box: document.getElementById('player-info-top-left'), card_box: document.getElementById('card-box-top-left') },
-  'top-right':   { index: 3, info_box: document.getElementById('player-info-top-right'), card_box: document.getElementById('card-box-top-right') },
-  'bottom-left': { index: 1, info_box: document.getElementById('player-info-bottom-left'), card_box: document.getElementById('card-box-bottom-left') },
-  'bottom-right':{ index: 0, info_box: document.getElementById('player-info-bottom-right'), card_box: document.getElementById('card-box-bottom-right') },
+  'top-left': {
+    info_box: document.getElementById('player-info-top-left'),
+    card_box: document.getElementById('card-box-top-left'),
+  },
+  'top-center': {
+    info_box: document.getElementById('player-info-top-center'),
+    card_box: document.getElementById('card-box-top-center'),
+  },
+  'top-right': {
+    info_box: document.getElementById('player-info-top-right'),
+    card_box: document.getElementById('card-box-top-right'),
+  },
+  'bottom-left': {
+    info_box: document.getElementById('player-info-bottom-left'),
+    card_box: document.getElementById('card-box-bottom-left'),
+  },
+  'bottom-center': {
+    info_box: document.getElementById('player-info-bottom-center'),
+    card_box: document.getElementById('card-box-bottom-center'),
+  },
+  'bottom-right': {
+    info_box: document.getElementById('player-info-bottom-right'),
+    card_box: document.getElementById('card-box-bottom-right'),
+  },
 };
 
 const playerAssignments = []; // { seatId, name, team, color, position }

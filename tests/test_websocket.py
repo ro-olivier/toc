@@ -55,6 +55,23 @@ def duelTwoGameId():
 				router.recycleBin.pop(playerId, None)
 				router.pendingPrompts.pop(playerId, None)
 
+@pytest.fixture
+def teamSixGameId():
+	modeDefinition = getGameModeDefinition(GameMode.TEAM_SIX)
+	createdGameId = manager.create_game(router, modeDefinition=modeDefinition)
+
+	try:
+		yield createdGameId
+	finally:
+		session = manager.games.pop(createdGameId, None)
+
+		if session is not None:
+			for playerId in session.players:
+				router.input_queues.pop(playerId, None)
+				router.output_queues.pop(playerId, None)
+				router.recycleBin.pop(playerId, None)
+				router.pendingPrompts.pop(playerId, None)
+
 def receiveLobbyState(websocket):
 	state = websocket.receive_json()
 	assert state["type"] == "lobby-state"
@@ -920,3 +937,97 @@ def test_two_configured_players_start_duel_two_game(client, duelTwoGameId, monke
 		assert session.game.board.boardSize == 36
 		assert session.game.dealCardCounts == (10, 8, 8)
 		assert [player.name for player in session.game.players] == ["Alice", "Bob"]
+
+def test_six_configured_players_start_team_six_game(client, teamSixGameId, monkeypatch):
+	session = manager.games[teamSixGameId]
+	gameStartCalls = []
+	gameStarted = Event()
+
+	async def fakeGameStart(game):
+		gameStartCalls.append(game)
+		gameStarted.set()
+
+	async def fakeFinalizeFinishedGame():
+		return None
+
+	monkeypatch.setattr(Game, "start", fakeGameStart)
+	monkeypatch.setattr(session, "finalizeFinishedGame", fakeFinalizeFinishedGame)
+
+	playerConfigurations = {
+		"Alice": {"team": "0", "colors": ["red"]},
+		"Bob": {"team": "1", "colors": ["blue"]},
+		"Carol": {"team": "2", "colors": ["green"]},
+		"Diana": {"team": "0", "colors": ["yellow"]},
+		"Erin": {"team": "1", "colors": ["purple"]},
+		"Frank": {"team": "2", "colors": ["orange"]},
+	}
+
+	with ExitStack() as stack:
+		sockets = connectPlayers(stack, client, teamSixGameId, list(playerConfigurations))
+
+		initialState = session.lobby_state()
+
+		assert initialState["participantCapacity"] == 6
+		assert initialState["seatCapacity"] == 6
+		assert initialState["trackRegionCount"] == 6
+		assert initialState["teamCapacity"] == 2
+		assert initialState["teamCounts"] == {"0": 0, "1": 0, "2": 0}
+		assert initialState["gameMode"] == {"name": "team_six", "layout": None}
+		assert initialState["ruleset"]["values"]["card_exchange"] is True
+		assert initialState["ruleset"]["values"]["deal_card_counts"] == [3, 3, 3]
+
+		for playerName in ["Alice", "Bob", "Carol", "Diana", "Erin"]:
+			sockets[playerName].send_json({
+				"type": "configure-player",
+				**playerConfigurations[playerName],
+			})
+
+			for websocket in sockets.values():
+				state = receiveLobbyState(websocket)
+				assert state["started"] is False
+
+			assert session.started is False
+			assert gameStartCalls == []
+
+		sockets["Frank"].send_json({
+			"type": "configure-player",
+			**playerConfigurations["Frank"],
+		})
+
+		for websocket in sockets.values():
+			configuredState = receiveLobbyState(websocket)
+			startedState = receiveLobbyState(websocket)
+
+			assert configuredState["started"] is False
+			assert startedState["started"] is True
+			assert startedState["participantCapacity"] == 6
+			assert startedState["seatCapacity"] == 6
+			assert startedState["trackRegionCount"] == 6
+			assert startedState["teamCounts"] == {"0": 2, "1": 2, "2": 2}
+			assert all(player["configured"] for player in startedState["players"])
+
+		assert gameStarted.wait(timeout=1)
+		assert gameStartCalls == [session.game]
+		assert session.started is True
+		assert len(session.order) == 6
+		assert len(session.game.players) == 6
+		assert session.game.board.boardSize == 108
+		assert session.game.deck.expectedCardCount == 54
+		assert session.game.dealCardCounts == (3, 3, 3)
+		assert [player.name for player in session.game.players] == [
+			"Alice",
+			"Bob",
+			"Carol",
+			"Diana",
+			"Erin",
+			"Frank",
+		]
+
+		teams = session.game.getPlayersInTeams()
+
+		assert [[player.name for player in team] for team in teams] == [
+			["Alice", "Diana"],
+			["Bob", "Erin"],
+			["Carol", "Frank"],
+		]
+		assert session.game.canExchangeCards

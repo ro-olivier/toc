@@ -356,8 +356,10 @@ body {
 }
 
 #player-info-top-left { top: 10px; left: 0; }
+#player-info-top-center { top: 10px; left: 50%; transform: translateX(-50%); }
 #player-info-top-right { top: 10px; right: 0; }
 #player-info-bottom-left { bottom: 8px; left: 0; }
+#player-info-bottom-center { bottom: 8px; left: 50%; transform: translateX(-50%); }
 #player-info-bottom-right { right: 0; bottom: 8px; }
 
 .player-identity {
@@ -379,8 +381,10 @@ body {
 }
 
 #board-wrapper > #card-box-top-left { top: 76px; left: 0; }
+#board-wrapper > #card-box-top-center { top: 76px; left: 50%; transform: translateX(-50%); }
 #board-wrapper > #card-box-top-right { top: 76px; right: 0; }
 #board-wrapper > #card-box-bottom-left { bottom: 74px; left: 0; }
+#board-wrapper > #card-box-bottom-center { bottom: 74px; left: 50%; transform: translateX(-50%); }
 #board-wrapper > #card-box-bottom-right { right: 0; bottom: 74px; }
 
 .card-box:not(.local-hand) .card-container {

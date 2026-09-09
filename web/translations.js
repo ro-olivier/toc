@@ -23,7 +23,7 @@
         duel_four_cross: "Two players — four-seat cross",
         duel_four_adjacent: "Two players — four-seat adjacent",
         duel_two: "Two players — two-seat board",
-        team_six_soon: "Six players — 2v2v2 (coming soon)",
+        team_six: "Six players — 2v2v2",
       },
       gameplay: {
         game_starting: "Everyone has joined: the game is starting!",
@@ -301,7 +301,7 @@
         duel_four_cross: "Deux joueurs — quatre places croisées",
         duel_four_adjacent: "Deux joueurs — quatre places adjacentes",
         duel_two: "Deux joueurs — plateau à deux places",
-        team_six_soon: "Six joueurs — 2 contre 2 contre 2 (bientôt)",
+        team_six: "Six joueurs — 2 contre 2 contre 2",
       },
       gameplay: {
         game_starting: "Tout le monde a rejoint la partie : la partie commence !",
