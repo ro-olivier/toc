@@ -1392,9 +1392,46 @@ const radius = 250;
 const centerX = 300;
 const centerY = 300;
 
+const boardViewportElement = document.getElementById("board-viewport");
+const boardWrapperElement = document.getElementById("board-wrapper");
+const boardLayoutWidth = 720;
+const boardLayoutHeight = 700;
+const boardTopSpacing = 8;
+
+function fitBoardToViewport() {
+  if (!boardViewportElement || !boardWrapperElement) return;
+
+  const availableWidth = boardViewportElement.clientWidth;
+  if (availableWidth <= 0) return;
+
+  const boardScale = Math.min(1, availableWidth / boardLayoutWidth);
+
+  boardWrapperElement.style.transform = `scale(${boardScale})`;
+  boardViewportElement.style.height = `${boardTopSpacing + boardLayoutHeight * boardScale}px`;
+}
+
+if (typeof ResizeObserver === "function") {
+  const boardResizeObserver = new ResizeObserver(fitBoardToViewport);
+  boardResizeObserver.observe(boardViewportElement);
+} else {
+  window.addEventListener("resize", fitBoardToViewport);
+}
+
+requestAnimationFrame(fitBoardToViewport);
+
 const houseLabels = ['T', 'O', 'C', '!'];
 const spotsPerHouse = houseLabels.length;
 const houseDistance = 40;
+
+const starBoardConfigurations = {
+  4: {innerRadius: 150, armLength: 100, sharpness: 2.05},
+  6: {innerRadius: 185, armLength: 65, sharpness: 1.85},
+};
+
+const boardSurfaceMargin = 43;
+const boardShapeSamples = 180;
+const starCurveSamplesPerBranch = 360;
+const starStepAngleCache = new Map();
 
 const spotElements = [];
 const houseElements = [];
@@ -1477,6 +1514,103 @@ document.addEventListener('click', () => {
   }
 });
 
+function getTrackRadius(angle) {
+  const configuration = starBoardConfigurations[totalRegions];
+  if (!configuration) return radius;
+
+  const armProgress = (1 + Math.cos(totalRegions * angle)) / 2;
+
+  return configuration.innerRadius + configuration.armLength * Math.pow(armProgress, configuration.sharpness);
+}
+
+function getStarStepAngles() {
+  const cacheKey = `${totalRegions}:${spotsPerRegion}`;
+  const cachedAngles = starStepAngleCache.get(cacheKey);
+  if (cachedAngles) return cachedAngles;
+
+  const branchAngle = (2 * Math.PI) / totalRegions;
+  const samples = [{angle: 0, distance: 0}];
+  let previousX = getTrackRadius(0);
+  let previousY = 0;
+  let totalDistance = 0;
+
+  for (let sampleIndex = 1; sampleIndex <= starCurveSamplesPerBranch; sampleIndex++) {
+    const angle = (sampleIndex / starCurveSamplesPerBranch) * branchAngle;
+    const trackRadius = getTrackRadius(angle);
+    const x = trackRadius * Math.cos(angle);
+    const y = trackRadius * Math.sin(angle);
+
+    totalDistance += Math.hypot(x - previousX, y - previousY);
+    samples.push({angle, distance: totalDistance});
+    previousX = x;
+    previousY = y;
+  }
+
+  const stepAngles = [];
+
+  for (let stepIndex = 0; stepIndex <= spotsPerRegion; stepIndex++) {
+    const targetDistance = (stepIndex / spotsPerRegion) * totalDistance;
+    const upperSampleIndex = samples.findIndex(sample => sample.distance >= targetDistance);
+    const upperSample = samples[Math.max(upperSampleIndex, 1)];
+    const lowerSample = samples[Math.max(upperSampleIndex - 1, 0)];
+    const distanceDifference = upperSample.distance - lowerSample.distance;
+    const interpolation = distanceDifference === 0 ? 0 : (targetDistance - lowerSample.distance) / distanceDifference;
+
+    stepAngles.push(lowerSample.angle + (upperSample.angle - lowerSample.angle) * interpolation);
+  }
+
+  starStepAngleCache.set(cacheKey, stepAngles);
+  return stepAngles;
+}
+
+function getTrackAngle(regionIndex, spotIndex) {
+  if (!starBoardConfigurations[totalRegions]) {
+    return (regionIndex / totalRegions) * 2 * Math.PI + (spotIndex / totalSpots) * 2 * Math.PI;
+  }
+
+  const entryStepOffset = enterHouseAtSpot - spotsPerRegion;
+  const globalStep = regionIndex * spotsPerRegion + spotIndex;
+  const stepsAfterBranch = globalStep - entryStepOffset;
+  const branchIndex = Math.floor(stepsAfterBranch / spotsPerRegion);
+  const stepIndex = stepsAfterBranch - branchIndex * spotsPerRegion;
+
+  return branchIndex * ((2 * Math.PI) / totalRegions) + getStarStepAngles()[stepIndex];
+}
+
+function getHouseAngle(regionIndex) {
+  if (starBoardConfigurations[totalRegions]) {
+    return (regionIndex / totalRegions) * 2 * Math.PI;
+  }
+
+  const angleOffset = (regionIndex / totalRegions) * 2 * Math.PI;
+  const houseEntryOffset = enterHouseAtSpot - spotsPerRegion;
+
+  return angleOffset + (houseEntryOffset / totalSpots) * 2 * Math.PI;
+}
+
+function updateBoardSurface() {
+  const usesStarBoard = starBoardConfigurations[totalRegions] !== undefined;
+
+  board.classList.toggle("star-board", usesStarBoard);
+
+  if (!usesStarBoard) {
+    board.style.removeProperty("--board-shape");
+    return;
+  }
+
+  const polygonPoints = [];
+
+  for (let sampleIndex = 0; sampleIndex < boardShapeSamples; sampleIndex++) {
+    const angle = (sampleIndex / boardShapeSamples) * 2 * Math.PI;
+    const surfaceRadius = getTrackRadius(angle) + boardSurfaceMargin;
+    const x = ((centerX + surfaceRadius * Math.cos(angle)) / (centerX * 2)) * 100;
+    const y = ((centerY + surfaceRadius * Math.sin(angle)) / (centerY * 2)) * 100;
+
+    polygonPoints.push(`${x.toFixed(2)}% ${y.toFixed(2)}%`);
+  }
+
+  board.style.setProperty("--board-shape", `polygon(${polygonPoints.join(", ")})`);
+}
 
 function configureBoardGeometry(regionCount, regionLength, houseEntryPosition) {
   if (!Number.isInteger(regionCount) || regionCount < 2) return;
@@ -1484,6 +1618,7 @@ function configureBoardGeometry(regionCount, regionLength, houseEntryPosition) {
   if (!Number.isInteger(houseEntryPosition) || houseEntryPosition < 1 || houseEntryPosition > regionLength) return;
 
   if (regionCount === totalRegions && regionLength === spotsPerRegion && houseEntryPosition === enterHouseAtSpot) {
+    updateBoardSurface();
     return;
   }
 
@@ -1503,18 +1638,20 @@ function configureBoardGeometry(regionCount, regionLength, houseEntryPosition) {
   spotsPerRegion = regionLength;
   totalSpots = totalRegions * spotsPerRegion;
   enterHouseAtSpot = houseEntryPosition;
+
+  updateBoardSurface();
 }
 
 //// Board and pieces drawing and update functions ////
 function drawRegion(color, regionIndex) {
-  const angleOffset = (regionIndex / totalRegions) * 2 * Math.PI;
 
   const regionSpots = [];
 
   for (let spotIndex = 0; spotIndex < spotsPerRegion; spotIndex++) {
-    const angle = angleOffset + (spotIndex / totalSpots) * 2 * Math.PI;
-    const x = centerX + radius * Math.cos(angle) - 15;
-    const y = centerY + radius * Math.sin(angle) - 15;
+    const angle = getTrackAngle(regionIndex, spotIndex);
+    const trackRadius = getTrackRadius(angle);
+    const x = centerX + trackRadius * Math.cos(angle) - 15;
+    const y = centerY + trackRadius * Math.sin(angle) - 15;
 
     const spot = document.createElement('div');
     spot.className = `spot ${color}`;
@@ -1528,8 +1665,7 @@ function drawRegion(color, regionIndex) {
     if (spotIndex === 0) {
       spot.classList.add('out-spot');
 
-      const houseEntryOffset = enterHouseAtSpot - spotsPerRegion;
-      const houseAngle = angleOffset + (houseEntryOffset / totalSpots) * 2 * Math.PI;
+      const houseAngle = getHouseAngle(regionIndex);
 
       for (let houseIndex = 0; houseIndex < spotsPerHouse; houseIndex++) {
         const innerRadius = radius - houseDistance * (houseIndex + 1);

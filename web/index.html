@@ -164,32 +164,35 @@
             <button id="cancel-card-selection" type="button" class="cancel-selection-button hidden" data-i18n="game.cancel_selection">Cancel card selection</button>
           </div>
 
-          <div id="board-wrapper">
-            <div id="board">
-              <div class="board-center-mark"><span>TOC</span><small>Online</small></div>
+          <div id="board-viewport">
+            <div id="board-wrapper">
+              <div id="board">
+                <div id="board-surface" class="board-surface" aria-hidden="true"></div>
+                <div class="board-center-mark"><span>TOC</span><small>Online</small></div>
 
-              <div id="discard-pile" class="discard-pile" aria-live="polite">
-                <span class="discard-pile-label" data-i18n="game.discard_pile">Discard pile</span>
-                <div id="discard-pile-card" class="discard-pile-card"></div>
+                <div id="discard-pile" class="discard-pile" aria-live="polite">
+                  <span class="discard-pile-label" data-i18n="game.discard_pile">Discard pile</span>
+                  <div id="discard-pile-card" class="discard-pile-card"></div>
+                </div>
               </div>
+              <div id="player-info-top-left" class="player-info-block"></div>
+              <div id="card-box-top-left" class="card-box"></div>
+
+              <div id="player-info-top-right" class="player-info-block"></div>
+              <div id="card-box-top-right" class="card-box"></div>
+
+              <div id="player-info-bottom-left" class="player-info-block"></div>
+              <div id="card-box-bottom-left" class="card-box"></div>
+
+              <div id="player-info-bottom-right" class="player-info-block"></div>
+              <div id="card-box-bottom-right" class="card-box"></div>
+
+              <div id="player-info-top-center" class="player-info-block"></div>
+              <div id="card-box-top-center" class="card-box"></div>
+
+              <div id="player-info-bottom-center" class="player-info-block"></div>
+              <div id="card-box-bottom-center" class="card-box"></div>
             </div>
-            <div id="player-info-top-left" class="player-info-block"></div>
-            <div id="card-box-top-left" class="card-box"></div>
-
-            <div id="player-info-top-right" class="player-info-block"></div>
-            <div id="card-box-top-right" class="card-box"></div>
-
-            <div id="player-info-bottom-left" class="player-info-block"></div>
-            <div id="card-box-bottom-left" class="card-box"></div>
-
-            <div id="player-info-bottom-right" class="player-info-block"></div>
-            <div id="card-box-bottom-right" class="card-box"></div>
-
-            <div id="player-info-top-center" class="player-info-block"></div>
-            <div id="card-box-top-center" class="card-box"></div>
-
-            <div id="player-info-bottom-center" class="player-info-block"></div>
-            <div id="card-box-bottom-center" class="card-box"></div>
           </div>
         </main>
 
