@@ -16,6 +16,7 @@ from toc.model.game import Game
 from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
 from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken
 from toc.session.roster import Participant, PlayerSeat
+from toc.model.audit import GameEventType
 
 
 def add_player(session, router, name, team="", color="", configured=False, active=True):
@@ -929,3 +930,13 @@ def test_open_lobbies_endpoint_returns_manager_lobbies(monkeypatch):
 			},
 		}],
 	}
+
+def test_player_event_uses_persistent_seat_id():
+	router = PlayerInputRouter()
+	session = GameSession("TEST", router)
+	_, player = add_player(session, router, "Alice", "0", "red", configured=True)
+
+	event = session.recordPlayerEvent(GameEventType.TURN_STARTED, player, {"handSize": 5})
+
+	assert event.playerId == session.getPersistentPlayerId(player)
+	assert event.details == {"handSize": 5}

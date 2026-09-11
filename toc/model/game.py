@@ -13,9 +13,22 @@ from toc.model.move import Move
 from toc.model.rules import *
 from toc.model.game_phase import GamePhase
 from toc.infrastructure.messages import build_message
+from toc.model.audit import GameEventType
 import logging
 
 logger = logging.getLogger("toc.game")
+
+def _cardAuditData(card: Card) -> dict:
+	return {"suit": card.suit, "value": card.value}
+
+def _moveAuditData(move: Move) -> dict:
+	return {
+		"moveType": move.ID,
+		"pieceOwnerId": move.pieceOwner.identifier,
+		"originPositionId": str(move.originSpot) if move.originSpot is not None else None,
+		"targetPositionId": str(move.targetSpot) if move.targetSpot is not None else None,
+		"steps": move.steps,
+	}
 
 
 class Game:
@@ -221,6 +234,7 @@ class Game:
 
 		self._players[0].setDealer()
 		self._dealerRotationCount += 1
+		self._gameSession.recordPlayerEvent(GameEventType.DEALER_CHANGED, self.dealer, {"rotationCount": self._dealerRotationCount, "initial": False})
 		
 		await self.broadcast({"type": "dealer", **self._players[0].getMessageIdentity()})
 
@@ -271,6 +285,17 @@ class Game:
 				player2.switchCard(card2, card1),
 			)
 
+			self._gameSession.recordPlayerEvent(GameEventType.CARD_EXCHANGED, player1, {
+				"partnerId": player2.identifier,
+				"givenCard": _cardAuditData(card1),
+				"receivedCard": _cardAuditData(card2),
+			})
+			self._gameSession.recordPlayerEvent(GameEventType.CARD_EXCHANGED, player2, {
+				"partnerId": player1.identifier,
+				"givenCard": _cardAuditData(card2),
+				"receivedCard": _cardAuditData(card1),
+			})
+
 	async def runRound(self, dealNumber: int, cardsPerPlayer: int) -> None:
 		dealIndex = dealNumber - 1
 		self._gameSession.setGamePhase(GamePhase.DEAL_START, dealIndex)
@@ -281,6 +306,13 @@ class Game:
 
 		await self.drawHands(cardsPerPlayer)
 		self._handsFinished = 0
+
+		for player in self._players:
+			self._gameSession.recordPlayerEvent(GameEventType.CARDS_DEALT, player, {
+				"deckCycle": self._dealerRotationCount + 1,
+				"deal": dealNumber,
+				"cards": [_cardAuditData(card) for card in player.hand.cards],
+			})
 
 		if self.canExchangeCards:
 			self._gameSession.setGamePhase(GamePhase.CARD_EXCHANGE, dealIndex)
@@ -311,6 +343,7 @@ class Game:
 	async def start(self) -> None:
 		self._isStarted = True
 		self._players[0].setDealer()
+		self._gameSession.recordPlayerEvent(GameEventType.DEALER_CHANGED, self.dealer, {"rotationCount": 0, "initial": True})
 		await self.broadcast({"type": "dealer", **self._players[0].getMessageIdentity()})
 
 		while not self._isFinished:
@@ -377,6 +410,48 @@ class Game:
 
 		return pathKickPositions
 
+	def applyMoveAndRecordAudit(self, move: Move) -> list:
+		origin = move.originSpot
+		target = move.targetSpot
+		occupantsBeforeMove = {position: position.occupant for position in self._board.positions if position.isOccupied}
+		targetOccupant = occupantsBeforeMove.get(target)
+		pathKickPositions = self.applyMove(move)
+
+		for position in pathKickPositions:
+			kickedPlayer = occupantsBeforeMove[position]
+			self._gameSession.recordPlayerEvent(GameEventType.PIECE_KICKED, move.player, {
+				"pieceOwnerId": kickedPlayer.identifier,
+				"positionId": str(position),
+				"reason": "path",
+			})
+
+		landingMoveTypes = {"OUT", "MOVE", "BACK", "FIVE", "HOP", "ENTER"}
+
+		if move.ID in landingMoveTypes and targetOccupant is not None:
+			self._gameSession.recordPlayerEvent(GameEventType.PIECE_KICKED, move.player, {
+				"pieceOwnerId": targetOccupant.identifier,
+				"positionId": str(target),
+				"reason": "landing",
+			})
+
+		movementDetails = _moveAuditData(move)
+
+		if move.ID == "OUT":
+			movementDetails["originPositionId"] = None
+
+		self._gameSession.recordPlayerEvent(GameEventType.PIECE_MOVED, move.player, movementDetails)
+
+		if move.ID == "SWITCH":
+			self._gameSession.recordPlayerEvent(GameEventType.PIECE_MOVED, move.player, {
+				"moveType": "SWITCH",
+				"pieceOwnerId": targetOccupant.identifier,
+				"originPositionId": str(target),
+				"targetPositionId": str(origin),
+				"steps": None,
+			})
+
+		return pathKickPositions
+
 	async def playSeven(self, player: Player, pieceOwner: Player = None, card: Card = None, stepsRemaining: int = 7, movedPiecePositions: set[Spot] = None) -> None:
 		pieceOwner = pieceOwner if pieceOwner is not None else player
 
@@ -391,7 +466,7 @@ class Game:
 				raise RuntimeError("Seven split reached a state with no complete legal continuation")
 
 			move = await player.getSevenStepChoiceFromPlayer(options)
-			self.applyMove(move)
+			self.applyMoveAndRecordAudit(move)
 			nextStepsRemaining = currentStepsRemaining - 1
 
 			if nextStepsRemaining > 0:
@@ -423,7 +498,7 @@ class Game:
 				raise RuntimeError("Seven split reached a state with no complete legal continuation")
 
 			move = await player.getSevenStepChoiceFromPlayer(options)
-			self.applyMove(move)
+			self.applyMoveAndRecordAudit(move)
 			stepsRemaining -= move.steps
 			movedPiecePositions.add(move.targetSpot)
 			lastMove = move
@@ -467,7 +542,7 @@ class Game:
 			await self._gameSession.checkpointActive()
 			return await self.completeOptionalSevenHop(hopMove, decidingPlayer)
 
-		self.applyMove(hopMove)
+		self.applyMoveAndRecordAudit(hopMove)
 		self._gameSession.setGamePhase(GamePhase.TURN_END)
 		await self._gameSession.checkpointActive()
 
@@ -482,12 +557,21 @@ class Game:
 		return hopMove
 
 	async def completeOptionalSevenHop(self, hopMove: Move, decidingPlayer: Player) -> Optional[Move]:
-		if not await decidingPlayer.getSevenHopChoiceFromPlayer(hopMove.originSpot, hopMove.targetSpot):
+		accepted = await decidingPlayer.getSevenHopChoiceFromPlayer(hopMove.originSpot, hopMove.targetSpot)
+		self._gameSession.recordPlayerEvent(GameEventType.SEVEN_HOP_DECIDED, decidingPlayer, {
+			"actingPlayerId": hopMove.player.identifier,
+			"pieceOwnerId": hopMove.pieceOwner.identifier,
+			"originPositionId": str(hopMove.originSpot),
+			"targetPositionId": str(hopMove.targetSpot),
+			"accepted": accepted,
+		})
+
+		if not accepted:
 			self._gameSession.setGamePhase(GamePhase.TURN_END)
 			await self._gameSession.checkpointActive()
 			return None
 
-		self.applyMove(hopMove)
+		self.applyMoveAndRecordAudit(hopMove)
 		self._gameSession.setGamePhase(GamePhase.TURN_END)
 		await self._gameSession.checkpointActive()
 
@@ -503,6 +587,7 @@ class Game:
 
 	async def nextPlayer(self) -> None:
 		self.advanceActivePlayer()
+		self._gameSession.recordPlayerEvent(GameEventType.TURN_STARTED, self._activePlayer, {"handSize": self._activePlayer.hand.size})
 		self._gameSession.setGamePhase(GamePhase.TURN_DECISION)
 		await self._gameSession.checkpointActive()
 		await self.playCurrentTurn()
@@ -523,6 +608,8 @@ class Game:
 
 			if len(moveOptions) == 0:
 				if self._rules.cannot_play_folds_entire_hand:
+					foldedCards = [_cardAuditData(card) for card in self._activePlayer.hand.cards]
+
 					await self.broadcast(build_message(
 						"fold",
 						"gameplay.player_folded",
@@ -530,13 +617,19 @@ class Game:
 						{"player": self._activePlayer.name},
 						**self._activePlayer.getMessageIdentity(),
 					))
+
 					self._deck.discardCards(self._activePlayer.hand)
 					await self._activePlayer.foldHand()
+					self._gameSession.recordPlayerEvent(GameEventType.HAND_FOLDED, self._activePlayer, {"reason": "no-legal-move", "cards": foldedCards})
 				else:
 					cardChoice = await self._activePlayer.getCardChoiceFromPlayer("prompts.discard_card", "You cannot make a move. Choose one card to discard.")
 					self._activePlayer.discard(cardChoice)
 					self._deck.discardCard(cardChoice)
 					self.rememberPlayedCard(cardChoice)
+					self._gameSession.recordPlayerEvent(GameEventType.CARD_DISCARDED, self._activePlayer, {
+						"reason": "no-legal-move",
+						"card": _cardAuditData(cardChoice),
+					})
 					await self.broadcast(build_message(
 						"discard",
 						"gameplay.card_discarded",
@@ -572,6 +665,10 @@ class Game:
 				self._activePlayer.discard(cardChoice)
 				self._deck.discardCard(cardChoice)
 				self.rememberPlayedCard(cardChoice)
+				self._gameSession.recordPlayerEvent(GameEventType.CARD_PLAYED, self._activePlayer, {
+					"card": _cardAuditData(cardChoice),
+					**_moveAuditData(moveChoice),
+				})
 
 				if moveChoice.ID == "SEVEN":
 					cardLabel = f"{cardChoice.suit}{cardChoice.value}"
@@ -675,7 +772,7 @@ class Game:
 			await self._gameSession.checkpointActive()
 			await self.playSeven(move.player, move.pieceOwner, move.card)
 		else:
-			pathKickPositions = self.applyMove(move)
+			pathKickPositions = self.applyMoveAndRecordAudit(move)
 
 			if pathKickPositions:
 				await self.broadcast({"type": "path-kicks", "positions": [str(position) for position in pathKickPositions]})

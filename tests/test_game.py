@@ -5,6 +5,7 @@ from toc.model.params import COLORS
 from toc.model.player import Player
 from toc.model.rules import FiveHopDecider, GameRules, MONTSURVENT_RULES, Rotation, SevenHopping, ShuffleMode
 from toc.model.game_phase import GamePhase
+from toc.model.audit import GameEventType
 	
 import asyncio
 import pytest
@@ -19,6 +20,7 @@ class FakeGameSession:
 		self.progressChanges = []
 		self.dealIndex = 0
 		self.checkpointCount = 0
+		self.auditEvents = []
 
 	async def broadcast(self, message):
 		self.messages.append(message)
@@ -40,6 +42,9 @@ class FakeGameSession:
 
 	async def checkpointActive(self):
 		self.checkpointCount += 1
+
+	def recordPlayerEvent(self, eventType, player, details=None):
+		self.auditEvents.append((eventType, player, details))
 
 class ScheduleRecordingGame(Game):
 	def __init__(self, rules=MONTSURVENT_RULES):
@@ -103,7 +108,8 @@ class ExchangeRecordingGame(Game):
 		self.exchangeRequests = []
 
 	async def drawHands(self, cardsPerPlayer):
-		pass
+		for player in self.players:
+			player.restoreHand([Card("♥️", "2") for _ in range(cardsPerPlayer)])
 
 	async def exchangeCards(self):
 		self.exchangeRequests.extend(self.getPlayersInTeams())
@@ -162,6 +168,12 @@ def test_play_seven_moves_exactly_seven_steps():
 
 	assert all(message["seatId"] == "TEST-Alice" for message in stepMessages)
 	assert all(message["movedSeatId"] == "TEST-Alice" for message in stepMessages)
+
+	movementEvents = [event for event in session.auditEvents if event[0] is GameEventType.PIECE_MOVED]
+
+	assert len(movementEvents) == 7
+	assert [event[2]["originPositionId"] for event in movementEvents] == [f"spot-red-{number}" for number in range(5, 12)]
+	assert [event[2]["targetPositionId"] for event in movementEvents] == [f"spot-red-{number}" for number in range(6, 13)]
 
 def test_play_seven_without_path_kicks_only_kicks_at_final_position():
 	session = FakeGameSession()
@@ -239,6 +251,13 @@ def test_play_seven_kicks_after_each_step():
 
 	assert bob.piecesOnTheBoard == 0
 	assert game.board.getSpot("red", 12).occupant is alice
+
+	kickEvents = [event for event in session.auditEvents if event[0] is GameEventType.PIECE_KICKED]
+
+	assert [event[2] for event in kickEvents] == [
+		{"pieceOwnerId": bob.identifier, "positionId": "spot-red-6", "reason": "landing"},
+		{"pieceOwnerId": bob.identifier, "positionId": "spot-red-7", "reason": "landing"},
+	]
 
 
 def test_apply_move_can_move_piece_between_houses():
@@ -365,6 +384,16 @@ def test_player_can_decline_seven_hop():
 	assert alice.hopRequests == [(origin, target)]
 	assert not any(message["type"] == "seven-hop" for message in session.messages)
 
+	decisionEvents = [event for event in session.auditEvents if event[0] is GameEventType.SEVEN_HOP_DECIDED]
+
+	assert decisionEvents == [(GameEventType.SEVEN_HOP_DECIDED, alice, {
+		"actingPlayerId": alice.identifier,
+		"pieceOwnerId": alice.identifier,
+		"originPositionId": "spot-red-7",
+		"targetPositionId": "spot-blue-7",
+		"accepted": False,
+	})]
+
 def test_five_player_can_accept_hop_for_opponents_piece():
 	session = FakeGameSession()
 	game = Game(session, COLORS)
@@ -402,6 +431,16 @@ def test_five_player_can_accept_hop_for_opponents_piece():
 	assert hopMessages[0]["movedPlayerId"] == "Bob"
 	assert hopMessages[0]["seatId"] == "TEST-Alice"
 	assert hopMessages[0]["movedSeatId"] == "TEST-Bob"
+
+	decisionEvents = [event for event in session.auditEvents if event[0] is GameEventType.SEVEN_HOP_DECIDED]
+
+	assert decisionEvents == [(GameEventType.SEVEN_HOP_DECIDED, alice, {
+		"actingPlayerId": alice.identifier,
+		"pieceOwnerId": bob.identifier,
+		"originPositionId": "spot-red-7",
+		"targetPositionId": "spot-blue-7",
+		"accepted": True,
+	})]
 
 def test_seven_split_can_hop_after_final_step():
 	session = FakeGameSession()
@@ -510,6 +549,7 @@ def test_dealer_rotates_clockwise():
 		"playerColor": "blue",
 		"playerTeam": "1",
 	}
+	assert session.auditEvents[-1] == (GameEventType.DEALER_CHANGED, players[1], {"rotationCount": 1, "initial": False})
 
 @pytest.mark.parametrize("schedule", [(5, 4, 4), (4, 5, 4), (4, 4, 5)])
 def test_deck_cycle_uses_configured_deal_schedule(schedule):
@@ -675,6 +715,8 @@ def test_seven_hop_is_applied_without_prompt_when_forced():
 	assert alice.hopRequests == []
 	assert session.checkpointCount == 1
 
+	assert not any(event[0] is GameEventType.SEVEN_HOP_DECIDED for event in session.auditEvents)
+
 def test_piece_owner_decides_optional_five_hop_when_configured():
 	session = FakeGameSession()
 	rules = GameRules(five_hop_decider=FiveHopDecider.PIECE_OWNER)
@@ -697,6 +739,16 @@ def test_piece_owner_decides_optional_five_hop_when_configured():
 	assert alice.hopRequests == []
 	assert bob.hopRequests == [(origin, target)]
 	assert target.occupant is bob
+
+	decisionEvents = [event for event in session.auditEvents if event[0] is GameEventType.SEVEN_HOP_DECIDED]
+
+	assert decisionEvents == [(GameEventType.SEVEN_HOP_DECIDED, bob, {
+		"actingPlayerId": alice.identifier,
+		"pieceOwnerId": bob.identifier,
+		"originPositionId": "spot-red-7",
+		"targetPositionId": "spot-blue-7",
+		"accepted": True,
+	})]
 
 def test_round_requests_card_exchange_for_each_team_when_enabled():
 	game = ExchangeRecordingGame(GameRules(card_exchange=True))
@@ -1095,6 +1147,16 @@ def test_unplayable_hand_is_folded_when_rule_is_enabled():
 	assert game.deck.discardPile == [cardTwo, cardThree]
 	assert game._handsFinished == 1
 	assert any(message["type"] == "fold" for message in session.messages)
+	
+	foldEvents = [event for event in session.auditEvents if event[0] is GameEventType.HAND_FOLDED]
+
+	assert foldEvents == [(GameEventType.HAND_FOLDED, alice, {
+		"reason": "no-legal-move",
+		"cards": [
+			{"suit": "♥️", "value": "2"},
+			{"suit": "♠️", "value": "3"},
+		],
+	})]
 
 def test_unplayable_hand_discards_only_selected_card_when_rule_is_disabled():
 	session = FakeGameSession()
@@ -1134,6 +1196,17 @@ def test_player_can_play_on_later_turn_after_discarding_one_card():
 	assert alice.hand.size == 0
 	assert game._handsFinished == 1
 	assert game.deck.discardPile == [cardTwo, cardThree]
+
+	playedEvents = [event for event in session.auditEvents if event[0] is GameEventType.CARD_PLAYED]
+
+	assert playedEvents == [(GameEventType.CARD_PLAYED, alice, {
+		"card": {"suit": "♠️", "value": "3"},
+		"moveType": "MOVE",
+		"pieceOwnerId": alice.identifier,
+		"originPositionId": "spot-red-1",
+		"targetPositionId": "spot-red-4",
+		"steps": 3,
+	})]
 
 def test_finishing_turn_recalculates_finished_hand_count():
 	session = FakeGameSession()
@@ -1196,6 +1269,16 @@ def test_all_exchange_choices_are_collected_before_hands_are_modified(monkeypatc
 
 	assert set(choicesCollected) == {"Alice", "Bob", "Carol", "Diana"}
 	assert set(switchesApplied) == {"Alice", "Bob", "Carol", "Diana"}
+
+	exchangeEvents = [event for event in game._gameSession.auditEvents if event[0] is GameEventType.CARD_EXCHANGED]
+	aliceEvent = next(event for event in exchangeEvents if event[1] is players[0])
+
+	assert len(exchangeEvents) == 4
+	assert aliceEvent[2] == {
+		"partnerId": players[2].identifier,
+		"givenCard": {"suit": "♥️", "value": "2"},
+		"receivedCard": {"suit": "♥️", "value": "4"},
+	}
 
 def test_optional_seven_hop_checkpoints_prompt_and_result():
 	session = FakeGameSession()
@@ -1413,6 +1496,20 @@ def test_resolve_joker_move_broadcasts_crossed_positions():
 
 	assert pathKickMessages == [{"type": "path-kicks", "positions": [str(passedPiece)]}]
 
+	pathKickEvents = [event for event in session.auditEvents if event[0] is GameEventType.PIECE_KICKED]
+
+	assert pathKickEvents == [
+		(
+			GameEventType.PIECE_KICKED,
+			alice,
+			{
+				"pieceOwnerId": bob.identifier,
+				"positionId": str(passedPiece),
+				"reason": "path",
+			},
+		)
+	]
+
 def test_team_six_first_deal_gives_three_cards_to_each_player():
 	session = FakeGameSession()
 	game = Game(session, TEAM_SIX_COLORS, dealCardCounts=(3, 3, 3), jokerCount=2)
@@ -1487,3 +1584,129 @@ def test_third_team_can_win_team_six_game():
 	assert message["parameters"] == {"playerOne": "Carol", "playerTwo": "Frank"}
 	assert message["winners"] == ["Carol", "Frank"]
 	assert message["fallback"] == "Carol and Frank win!"
+
+def test_round_records_cards_dealt_to_every_seat(monkeypatch):
+	session = FakeGameSession()
+	game = Game(session, COLORS, GameRules(card_exchange=False))
+	players = [
+		QuietPlayer("TEST-Alice", "Alice", "0", "red"),
+		QuietPlayer("TEST-Bob", "Bob", "1", "blue"),
+		QuietPlayer("TEST-Charlie", "Charlie", "0", "green"),
+		QuietPlayer("TEST-Diana", "Diana", "1", "yellow"),
+	]
+	game.setPlayers(players)
+
+	async def finishRound():
+		game._handsFinished = game.numPlayers
+
+	monkeypatch.setattr(game, "nextPlayer", finishRound)
+	asyncio.run(game.runRound(1, 5))
+
+	dealtEvents = [event for event in session.auditEvents if event[0] is GameEventType.CARDS_DEALT]
+
+	assert len(dealtEvents) == 4
+	assert [event[1] for event in dealtEvents] == players
+	assert all(event[2]["deckCycle"] == 1 for event in dealtEvents)
+	assert all(event[2]["deal"] == 1 for event in dealtEvents)
+	assert all(len(event[2]["cards"]) == 5 for event in dealtEvents)
+	assert all(set(card) == {"suit", "value"} for event in dealtEvents for card in event[2]["cards"])
+
+def test_game_start_records_initial_dealer(monkeypatch):
+	session = FakeGameSession()
+	game = Game(session, COLORS)
+	players = [
+		make_player("Alice", "red", "0"),
+		make_player("Bob", "blue", "1"),
+		make_player("Charlie", "green", "0"),
+		make_player("Diana", "yellow", "1"),
+	]
+	game.setPlayers(players)
+
+	async def finishCycle():
+		game._isFinished = True
+
+	monkeypatch.setattr(game, "runDeckCycle", finishCycle)
+	asyncio.run(game.start())
+
+	assert session.auditEvents == [(GameEventType.DEALER_CHANGED, players[0], {"rotationCount": 0, "initial": True})]
+
+def test_next_player_records_turn_start(monkeypatch):
+	session = FakeGameSession()
+	game = Game(session, COLORS)
+	players = [
+		make_player("Alice", "red", "0"),
+		make_player("Bob", "blue", "1"),
+		make_player("Charlie", "green", "0"),
+		make_player("Diana", "yellow", "1"),
+	]
+	game.setPlayers(players)
+	game.resetActivePlayerIndex()
+
+	async def skipTurn():
+		pass
+
+	monkeypatch.setattr(game, "playCurrentTurn", skipTurn)
+	asyncio.run(game.nextPlayer())
+
+	assert session.auditEvents[-1] == (GameEventType.TURN_STARTED, players[1], {"handSize": 0})
+
+def test_audited_five_records_actor_piece_owner_and_landing_kick():
+	session = FakeGameSession()
+	game = Game(session, COLORS)
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	alice.setBoard(game.board)
+	bob.setBoard(game.board)
+	origin = place_track_piece(game.board, bob, "red", 5)
+	target = place_track_piece(game.board, alice, "red", 10)
+	move = Move("FIVE", origin, target, Card("♥️", "5"), alice, bob, 5)
+
+	game.applyMoveAndRecordAudit(move)
+
+	assert session.auditEvents == [
+		(GameEventType.PIECE_KICKED, alice, {
+			"pieceOwnerId": alice.identifier,
+			"positionId": "spot-red-10",
+			"reason": "landing",
+		}),
+		(GameEventType.PIECE_MOVED, alice, {
+			"moveType": "FIVE",
+			"pieceOwnerId": bob.identifier,
+			"originPositionId": "spot-red-5",
+			"targetPositionId": "spot-red-10",
+			"steps": 5,
+		}),
+	]
+
+def test_audited_switch_records_both_piece_movements():
+	session = FakeGameSession()
+	game = Game(session, COLORS)
+	alice = make_player("Alice", "red", "0")
+	bob = make_player("Bob", "blue", "1")
+	alice.setBoard(game.board)
+	bob.setBoard(game.board)
+	origin = place_track_piece(game.board, alice, "red", 3)
+	target = place_track_piece(game.board, bob, "blue", 6)
+	move = Move("SWITCH", origin, target, Card("♥️", "J"), alice)
+
+	game.applyMoveAndRecordAudit(move)
+
+	movementEvents = [event for event in session.auditEvents if event[0] is GameEventType.PIECE_MOVED]
+
+	assert [event[2] for event in movementEvents] == [
+		{
+			"moveType": "SWITCH",
+			"pieceOwnerId": alice.identifier,
+			"originPositionId": "spot-red-3",
+			"targetPositionId": "spot-blue-6",
+			"steps": None,
+		},
+		{
+			"moveType": "SWITCH",
+			"pieceOwnerId": bob.identifier,
+			"originPositionId": "spot-blue-6",
+			"targetPositionId": "spot-red-3",
+			"steps": None,
+		},
+	]
+	assert not any(event[0] is GameEventType.PIECE_KICKED for event in session.auditEvents)

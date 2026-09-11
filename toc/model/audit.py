@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Callable
 
+from toc.model.params import JOKER_COLORS, JOKER_VALUE, SUITS, VALUES
+
 
 class GameEventType(StrEnum):
 	GAME_STARTED = "game-started"
@@ -18,6 +20,74 @@ class GameEventType(StrEnum):
 	SEVEN_HOP_DECIDED = "seven-hop-decided"
 	DEALER_CHANGED = "dealer-changed"
 	GAME_FINISHED = "game-finished"
+
+EVENT_DETAIL_FIELDS = {
+	GameEventType.GAME_STARTED: set(),
+	GameEventType.CARDS_DEALT: {"deckCycle", "deal", "cards"},
+	GameEventType.CARD_EXCHANGED: {"partnerId", "givenCard", "receivedCard"},
+	GameEventType.TURN_STARTED: {"handSize"},
+	GameEventType.CARD_PLAYED: {"card", "moveType", "pieceOwnerId", "originPositionId", "targetPositionId", "steps"},
+	GameEventType.CARD_DISCARDED: {"reason", "card"},
+	GameEventType.HAND_FOLDED: {"reason", "cards"},
+	GameEventType.PIECE_MOVED: {"moveType", "pieceOwnerId", "originPositionId", "targetPositionId", "steps"},
+	GameEventType.PIECE_KICKED: {"pieceOwnerId", "positionId", "reason"},
+	GameEventType.SEVEN_HOP_DECIDED: {"actingPlayerId", "pieceOwnerId", "originPositionId", "targetPositionId", "accepted"},
+	GameEventType.DEALER_CHANGED: {"rotationCount", "initial"},
+	GameEventType.GAME_FINISHED: {"winningTeam", "winningSeatIds", "winningParticipantIds", "winnerNames"},
+}
+
+MOVE_TYPES = {"OUT", "MOVE", "BACK", "FIVE", "HOP", "SWITCH", "ENTER", "SEVEN"}
+
+def _validateString(value, fieldName: str, allowNone: bool = False) -> None:
+	if value is None and allowNone:
+		return
+
+	if type(value) is not str or not value:
+		raise ValueError(f"Invalid audit-event {fieldName}")
+
+
+def _validateInteger(value, fieldName: str, minimum: int = 0) -> None:
+	if type(value) is not int or value < minimum:
+		raise ValueError(f"Invalid audit-event {fieldName}")
+
+
+def _validateCardData(value, fieldName: str) -> None:
+	if type(value) is not dict or set(value) != {"suit", "value"}:
+		raise ValueError(f"Invalid audit-event {fieldName}")
+
+	_validateString(value["suit"], f"{fieldName} suit")
+	_validateString(value["value"], f"{fieldName} value")
+
+	standardCard = value["suit"] in SUITS and value["value"] in VALUES
+	jokerCard = value["suit"] in JOKER_COLORS and value["value"] == JOKER_VALUE
+
+	if not standardCard and not jokerCard:
+		raise ValueError(f"Invalid audit-event {fieldName}")
+
+
+def _validateCardList(value, fieldName: str) -> None:
+	if type(value) is not list or not value:
+		raise ValueError(f"Invalid audit-event {fieldName}")
+
+	for card in value:
+		_validateCardData(card, fieldName)
+
+
+def _validateStringList(value, fieldName: str) -> None:
+	if type(value) is not list or any(type(item) is not str or not item for item in value):
+		raise ValueError(f"Invalid audit-event {fieldName}")
+
+
+def _validateMovementData(details: dict, requireTarget: bool) -> None:
+	if details["moveType"] not in MOVE_TYPES:
+		raise ValueError("Invalid audit-event move type")
+
+	_validateString(details["pieceOwnerId"], "piece owner ID")
+	_validateString(details["originPositionId"], "origin position ID", allowNone=True)
+	_validateString(details["targetPositionId"], "target position ID", allowNone=not requireTarget)
+
+	if details["steps"] is not None:
+		_validateInteger(details["steps"], "step count", 1)
 
 
 def _validateJsonValue(value) -> None:
@@ -55,6 +125,97 @@ def _normaliseDetails(details: dict) -> dict:
 
 	return json.loads(encoded)
 
+def _validateEventDetails(eventType: GameEventType, details: dict) -> None:
+	if set(details) != EVENT_DETAIL_FIELDS[eventType]:
+		raise ValueError(f"Invalid details for audit event '{eventType.value}'")
+
+	if eventType is GameEventType.GAME_STARTED:
+		return
+
+	if eventType is GameEventType.CARDS_DEALT:
+		_validateInteger(details["deckCycle"], "deck cycle", 1)
+		_validateInteger(details["deal"], "deal number", 1)
+		_validateCardList(details["cards"], "dealt cards")
+
+	elif eventType is GameEventType.CARD_EXCHANGED:
+		_validateString(details["partnerId"], "exchange partner ID")
+		_validateCardData(details["givenCard"], "given card")
+		_validateCardData(details["receivedCard"], "received card")
+
+	elif eventType is GameEventType.TURN_STARTED:
+		_validateInteger(details["handSize"], "hand size")
+
+	elif eventType is GameEventType.CARD_PLAYED:
+		_validateCardData(details["card"], "played card")
+		_validateMovementData(details, requireTarget=False)
+
+		if details["moveType"] == "SEVEN":
+			if details["originPositionId"] is not None or details["targetPositionId"] is not None:
+				raise ValueError("Invalid audit-event seven positions")
+		elif details["originPositionId"] is None or details["targetPositionId"] is None:
+			raise ValueError("Invalid audit-event played-card positions")
+
+	elif eventType is GameEventType.CARD_DISCARDED:
+		if details["reason"] != "no-legal-move":
+			raise ValueError("Invalid audit-event discard reason")
+
+		_validateCardData(details["card"], "discarded card")
+
+	elif eventType is GameEventType.HAND_FOLDED:
+		if details["reason"] != "no-legal-move":
+			raise ValueError("Invalid audit-event fold reason")
+
+		_validateCardList(details["cards"], "folded cards")
+
+	elif eventType is GameEventType.PIECE_MOVED:
+		_validateMovementData(details, requireTarget=True)
+
+		if details["moveType"] == "OUT" and details["originPositionId"] is not None:
+			raise ValueError("Invalid audit-event deployment origin")
+
+		if details["moveType"] != "OUT" and details["originPositionId"] is None:
+			raise ValueError("Invalid audit-event movement origin")
+
+	elif eventType is GameEventType.PIECE_KICKED:
+		_validateString(details["pieceOwnerId"], "kicked piece owner ID")
+		_validateString(details["positionId"], "kick position ID")
+
+		if details["reason"] not in {"path", "landing"}:
+			raise ValueError("Invalid audit-event kick reason")
+
+	elif eventType is GameEventType.SEVEN_HOP_DECIDED:
+		_validateString(details["actingPlayerId"], "acting player ID")
+		_validateString(details["pieceOwnerId"], "piece owner ID")
+		_validateString(details["originPositionId"], "hop origin position ID")
+		_validateString(details["targetPositionId"], "hop target position ID")
+
+		if type(details["accepted"]) is not bool:
+			raise ValueError("Invalid audit-event seven-hop decision")
+
+	elif eventType is GameEventType.DEALER_CHANGED:
+		_validateInteger(details["rotationCount"], "dealer rotation count")
+
+		if type(details["initial"]) is not bool:
+			raise ValueError("Invalid audit-event initial-dealer flag")
+
+		if details["initial"] and details["rotationCount"] != 0:
+			raise ValueError("Initial dealer must have rotation count zero")
+
+	elif eventType is GameEventType.GAME_FINISHED:
+		_validateString(details["winningTeam"], "winning team", allowNone=True)
+		_validateStringList(details["winningSeatIds"], "winning seat IDs")
+		_validateStringList(details["winningParticipantIds"], "winning participant IDs")
+		_validateStringList(details["winnerNames"], "winner names")
+
+		if len(details["winningParticipantIds"]) != len(details["winnerNames"]):
+			raise ValueError("Winning participants and names do not match")
+
+		if details["winningTeam"] is None and any((details["winningSeatIds"], details["winningParticipantIds"], details["winnerNames"])):
+			raise ValueError("Finished event without a winning team cannot contain winners")
+
+		if details["winningTeam"] is not None and not all((details["winningSeatIds"], details["winningParticipantIds"], details["winnerNames"])):
+			raise ValueError("Finished event with a winning team must contain winners")
+
 
 @dataclass(frozen=True, slots=True)
 class GameEvent:
@@ -77,7 +238,15 @@ class GameEvent:
 		if self.playerId is not None and (type(self.playerId) is not str or not self.playerId):
 			raise ValueError("Invalid audit-event player ID")
 
-		object.__setattr__(self, "details", _normaliseDetails(self.details))
+		if self.eventType in {GameEventType.GAME_STARTED, GameEventType.GAME_FINISHED} and self.playerId is not None:
+			raise ValueError("System audit event cannot reference a player")
+
+		if self.eventType not in {GameEventType.GAME_STARTED, GameEventType.GAME_FINISHED} and self.playerId is None:
+			raise ValueError("Player audit event must reference a player")
+
+		normalisedDetails = _normaliseDetails(self.details)
+		_validateEventDetails(self.eventType, normalisedDetails)
+		object.__setattr__(self, "details", normalisedDetails)
 
 	def to_dict(self) -> dict:
 		return {

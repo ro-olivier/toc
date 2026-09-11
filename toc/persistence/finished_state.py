@@ -7,6 +7,7 @@ from toc.model.audit import GameEvent, GameEventType
 from toc.model.rules import GameRules
 from toc.persistence.snapshot_state import GameState
 from toc.model.game_mode import GameModeDefinition
+from toc.model.params import SPOTS_PER_HOUSE
 
 
 def _validateId(value: str, fieldName: str) -> None:
@@ -35,6 +36,36 @@ def _parseTimestamp(value, fieldName: str) -> datetime:
 		raise ValueError(f"{fieldName} must include a timezone")
 
 	return timestamp.astimezone(timezone.utc)
+
+def _getEventSeatReferences(event: GameEvent) -> list[str]:
+	details = event.details
+
+	if event.eventType is GameEventType.CARD_EXCHANGED:
+		return [details["partnerId"]]
+
+	if event.eventType in {GameEventType.CARD_PLAYED, GameEventType.PIECE_MOVED, GameEventType.PIECE_KICKED}:
+		return [details["pieceOwnerId"]]
+
+	if event.eventType is GameEventType.SEVEN_HOP_DECIDED:
+		return [details["actingPlayerId"], details["pieceOwnerId"]]
+
+	if event.eventType is GameEventType.GAME_FINISHED:
+		return details["winningSeatIds"]
+
+	return []
+
+
+def _getEventPositionReferences(event: GameEvent) -> list[str]:
+	details = event.details
+	positionIds = []
+
+	if event.eventType in {GameEventType.CARD_PLAYED, GameEventType.PIECE_MOVED, GameEventType.SEVEN_HOP_DECIDED}:
+		positionIds.extend([details["originPositionId"], details["targetPositionId"]])
+
+	elif event.eventType is GameEventType.PIECE_KICKED:
+		positionIds.append(details["positionId"])
+
+	return [positionId for positionId in positionIds if positionId is not None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,23 +207,6 @@ class FinishedArchiveState:
 		if len(self.seats) != self.modeDefinition.seatCount:
 			raise ValueError("Finished archive seat count does not match game mode")
 
-		previousElapsedSeconds = -1
-
-		for expectedSequence, event in enumerate(self.events, start=1):
-			if event.sequence != expectedSequence:
-				raise ValueError("Finished-game event sequence is not contiguous")
-
-			if event.elapsedSeconds < previousElapsedSeconds:
-				raise ValueError("Finished-game event elapsed times are not ordered")
-
-			if event.playerId is not None and event.playerId not in seatIds:
-				raise ValueError("Finished-game event references an unknown player")
-
-			previousElapsedSeconds = event.elapsedSeconds
-
-		if self.events[-1].eventType is not GameEventType.GAME_FINISHED:
-			raise ValueError("Finished archive must end with a game-finished event")
-
 		participantIds = [participant.participantId for participant in self.participants]
 		seatIds = [seat.seatId for seat in self.seats]
 
@@ -210,6 +224,77 @@ class FinishedArchiveState:
 
 		if set(seatIds) != set(self.game.playerOrder):
 			raise ValueError("Finished archive seats do not match game seats")
+
+		if self.events[0].eventType is not GameEventType.GAME_STARTED:
+			raise ValueError("Finished archive must begin with a game-started event")
+
+		if self.events[-1].eventType is not GameEventType.GAME_FINISHED:
+			raise ValueError("Finished archive must end with a game-finished event")
+
+		if sum(event.eventType is GameEventType.GAME_STARTED for event in self.events) != 1:
+			raise ValueError("Finished archive must contain exactly one game-started event")
+
+		if sum(event.eventType is GameEventType.GAME_FINISHED for event in self.events) != 1:
+			raise ValueError("Finished archive must contain exactly one game-finished event")
+
+		validSeatIds = set(seatIds)
+		validParticipantIds = set(participantIds)
+		validPositionIds = {
+			f"spot-{color}-{number}"
+			for color in self.game.boardColors
+			for number in range(self.rules.track_region_length)
+		}
+		validPositionIds.update(
+			f"house-{color}-{number}"
+			for color in self.game.boardColors
+			for number in range(SPOTS_PER_HOUSE)
+		)
+
+		previousElapsedSeconds = -1
+
+		for expectedSequence, event in enumerate(self.events, start=1):
+			if event.sequence != expectedSequence:
+				raise ValueError("Finished-game event sequence is not contiguous")
+
+			if event.elapsedSeconds < previousElapsedSeconds:
+				raise ValueError("Finished-game event elapsed times are not ordered")
+
+			if event.playerId is not None and event.playerId not in validSeatIds:
+				raise ValueError("Finished-game event references an unknown player")
+
+			if any(seatId not in validSeatIds for seatId in _getEventSeatReferences(event)):
+				raise ValueError("Finished-game event details reference an unknown seat")
+
+			if any(positionId not in validPositionIds for positionId in _getEventPositionReferences(event)):
+				raise ValueError("Finished-game event references an unknown board position")
+
+			previousElapsedSeconds = event.elapsedSeconds
+
+		finishedDetails = self.events[-1].details
+
+		if any(participantId not in validParticipantIds for participantId in finishedDetails["winningParticipantIds"]):
+			raise ValueError("Finished-game event references an unknown winning participant")
+
+		if finishedDetails["winningTeam"] is not None:
+			seatsById = {seat.seatId: seat for seat in self.seats}
+			participantsById = {participant.participantId: participant for participant in self.participants}
+			expectedWinningSeatIds = [seatId for seatId in self.game.playerOrder if seatsById[seatId].team == finishedDetails["winningTeam"]]
+			expectedWinningParticipantIds = list(dict.fromkeys(seatsById[seatId].participantId for seatId in expectedWinningSeatIds))
+			expectedWinnerNames = [participantsById[participantId].name for participantId in expectedWinningParticipantIds]
+
+			if finishedDetails["winningSeatIds"] != expectedWinningSeatIds:
+				raise ValueError("Finished-game winners do not match the winning team")
+
+			if finishedDetails["winningParticipantIds"] != expectedWinningParticipantIds or finishedDetails["winnerNames"] != expectedWinnerNames:
+				raise ValueError("Finished-game winning participants do not match winning seats")
+
+			positionsById = {position.positionId: position.playerId for position in self.game.positions}
+
+			for seatId in expectedWinningSeatIds:
+				color = seatsById[seatId].color
+
+				if any(positionsById.get(f"house-{color}-{houseNumber}") != seatId for houseNumber in range(SPOTS_PER_HOUSE)):
+					raise ValueError("Finished-game winning seats have not filled their houses")
 
 	def to_dict(self) -> dict:
 		return {

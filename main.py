@@ -767,12 +767,34 @@ class GameSession:
 
 			return await asyncio.to_thread(persistTransition)
 
+	def getGameFinishedAuditDetails(self) -> dict:
+		winningPlayers = self.game.getWinningTeam() if self.game is not None else None
+
+		if winningPlayers is None:
+			return {
+				"winningTeam": None,
+				"winningSeatIds": [],
+				"winningParticipantIds": [],
+				"winnerNames": [],
+			}
+
+		winningSeatIds = [self.getPersistentPlayerId(player) for player in winningPlayers]
+		winningParticipantIds = list(dict.fromkeys(self.roster.getParticipantForPlayer(player).participantId for player in winningPlayers))
+		winnerNames = [self.roster.getParticipantById(participantId).name for participantId in winningParticipantIds]
+
+		return {
+			"winningTeam": winningPlayers[0].team,
+			"winningSeatIds": winningSeatIds,
+			"winningParticipantIds": winningParticipantIds,
+			"winnerNames": winnerNames,
+		}
+
 	def completeGameLifecycle(self) -> None:
 		if self._endedAt is None:
 			self.markEnded()
 
 		if not any(event.eventType is GameEventType.GAME_FINISHED for event in self._eventLog.events):
-			self.recordEvent(GameEventType.GAME_FINISHED)
+			self.recordEvent(GameEventType.GAME_FINISHED, details=self.getGameFinishedAuditDetails())
 
 		self.setGamePhase(GamePhase.FINISHED)
 
@@ -928,6 +950,9 @@ class GameSession:
 		event = self._eventLog.record(eventType, playerId, details)
 		self.recordActivity()
 		return event
+
+	def recordPlayerEvent(self, eventType: GameEventType, player: Player, details: dict = None) -> GameEvent:
+		return self.recordEvent(eventType, self.getPersistentPlayerId(player), details)
 
 	def lobbyAgeSeconds(self) -> float:
 		return self._clock.monotonic() - self._createdMonotonic

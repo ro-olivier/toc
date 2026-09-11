@@ -36,7 +36,14 @@ def test_events_receive_sequence_and_elapsed_time():
 	secondEvent = session.recordEvent(
 		GameEventType.CARD_PLAYED,
 		"player-1",
-		{"card": {"suit": "hearts", "value": "7"}},
+		{
+			"card": {"suit": "♥️", "value": "7"},
+			"moveType": "MOVE",
+			"pieceOwnerId": "player-1",
+			"originPositionId": "spot-red-1",
+			"targetPositionId": "spot-red-8",
+			"steps": 7,
+		},
 	)
 
 	assert firstEvent.sequence == 1
@@ -49,26 +56,26 @@ def test_events_receive_sequence_and_elapsed_time():
 
 def test_event_details_are_detached_from_caller():
 	details = {
-		"moves": [
-			{"origin": "red-1", "target": "red-7"},
-		],
+		"deckCycle": 1,
+		"deal": 1,
+		"cards": [{"suit": "♥️", "value": "7"}],
 	}
 
 	event = GameEvent(
 		sequence=1,
 		elapsedSeconds=0,
-		eventType=GameEventType.CARD_PLAYED,
+		eventType=GameEventType.CARDS_DEALT,
 		playerId="player-1",
 		details=details,
 	)
 
-	details["moves"][0]["target"] = "yellow-18"
-	details["moves"].append({"origin": "blue-1", "target": "blue-2"})
+	details["cards"][0]["value"] = "K"
+	details["cards"].append({"suit": "♣️", "value": "A"})
 
 	assert event.details == {
-		"moves": [
-			{"origin": "red-1", "target": "red-7"},
-		],
+		"deckCycle": 1,
+		"deal": 1,
+		"cards": [{"suit": "♥️", "value": "7"}],
 	}
 
 
@@ -76,8 +83,15 @@ def test_event_log_survives_json_round_trip():
 	elapsedSeconds = 25
 	eventLog = GameEventLog(lambda: elapsedSeconds)
 
-	eventLog.record(GameEventType.TURN_STARTED, "player-1")
-	eventLog.record(GameEventType.CARD_PLAYED, "player-1", {"card": {"suit": "clubs", "value": "K"}})
+	eventLog.record(GameEventType.TURN_STARTED, "player-1", {"handSize": 5})
+	eventLog.record(GameEventType.CARD_PLAYED, "player-1", {
+		"card": {"suit": "♣️", "value": "K"},
+		"moveType": "MOVE",
+		"pieceOwnerId": "player-1",
+		"originPositionId": "spot-red-1",
+		"targetPositionId": "spot-red-14",
+		"steps": 13,
+	})
 
 	encoded = json.dumps(eventLog.to_list())
 	restoredLog = GameEventLog.from_list(json.loads(encoded), lambda: elapsedSeconds)
@@ -109,3 +123,18 @@ def test_event_rejects_non_json_details():
 			playerId="player-1",
 			details={"invalid": object()},
 		)
+
+@pytest.mark.parametrize(
+	("eventType", "playerId", "details"),
+	[
+		(GameEventType.TURN_STARTED, "player-1", {}),
+		(GameEventType.TURN_STARTED, "player-1", {"handSize": "5"}),
+		(GameEventType.PIECE_KICKED, "player-1", {"pieceOwnerId": "player-2", "positionId": "spot-red-7", "reason": "unknown"}),
+		(GameEventType.GAME_STARTED, "player-1", {}),
+		(GameEventType.TURN_STARTED, None, {"handSize": 5}),
+		(GameEventType.CARD_DISCARDED, "player-1", {"reason": "no-legal-move", "card": {"suit": "hearts", "value": "2"}}),
+	],
+)
+def test_event_rejects_invalid_event_specific_data(eventType, playerId, details):
+	with pytest.raises(ValueError):
+		GameEvent(sequence=1, elapsedSeconds=0, eventType=eventType, playerId=playerId, details=details)

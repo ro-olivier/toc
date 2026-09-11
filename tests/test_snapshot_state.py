@@ -151,6 +151,9 @@ def markGameAsStarted(session) -> None:
 	session.markStarted()
 	session.game._isStarted = True
 
+	if not any(event.eventType is GameEventType.GAME_STARTED for event in session.events):
+		session.recordEvent(GameEventType.GAME_STARTED)
+
 def makeDuelTwoSessionState():
 	router = PlayerInputRouter()
 	modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
@@ -389,7 +392,7 @@ def test_session_snapshot_survives_compressed_json_round_trip(tmp_path):
 	session.markStarted()
 	session.recordEvent(GameEventType.GAME_STARTED)
 	playerId = next(iter(session.players.values()))["playerId"]
-	session.recordEvent(GameEventType.TURN_STARTED, playerId, {"deal": 1})
+	session.recordEvent(GameEventType.TURN_STARTED, playerId, {"handSize": 5})
 
 	originalState = session.snapshotState()
 	store = CompressedJsonStore(tmp_path)
@@ -1277,14 +1280,17 @@ def test_finished_archive_survives_compressed_round_trip(tmp_path):
 
 	assert restoredState == originalState
 
-def test_finished_archive_rejects_empty_event_log():
+def test_finished_archive_rejects_event_log_not_ending_with_game_finished():
 	session = makeGameSessionState()
 	markGameAsStarted(session)
 	session.game._isFinished = True
 	session.completeGameLifecycle()
 	payload = FinishedArchiveState.fromGameSession(session).to_dict()
 
-	payload["events"][-1]["type"] = GameEventType.TURN_STARTED.value
+	lastEvent = payload["events"][-1]
+	lastEvent["type"] = GameEventType.TURN_STARTED.value
+	lastEvent["playerId"] = payload["seats"][0]["seatId"]
+	lastEvent["details"] = {"handSize": 0}
 
 	with pytest.raises(ValueError, match="game-finished event"):
 		FinishedArchiveState.from_dict(payload)
@@ -1808,3 +1814,133 @@ def test_snapshot_rejects_last_played_card_outside_discard_pile():
 
 	with pytest.raises(ValueError, match="Last played card is not in the discard pile"):
 		SessionSnapshotState.from_dict(payload)
+
+def test_finished_archive_accepts_event_for_known_seat():
+	session = makeGameSessionState()
+	markGameAsStarted(session)
+	player = session.game.players[0]
+	session.recordPlayerEvent(GameEventType.TURN_STARTED, player, {"handSize": 5})
+	session.game._isFinished = True
+	session.completeGameLifecycle()
+
+	archive = FinishedArchiveState.fromGameSession(session)
+	turnEvent = next(event for event in archive.events if event.eventType is GameEventType.TURN_STARTED)
+
+	assert turnEvent.playerId == session.getPersistentPlayerId(player)
+
+def test_finished_event_identifies_winning_seats_and_participants():
+	session = makeGameSessionState()
+	markGameAsStarted(session)
+	winningPlayers = tuple(player for player in session.game.players if player.team == "0")
+
+	for player in winningPlayers:
+		for houseNumber in range(4):
+			session.game.board.getHouse(player.color, houseNumber).setOccupant(player)
+			player.addAPieceOnTheBoard()
+
+	session.game._isFinished = True
+	session.completeGameLifecycle()
+	archive = FinishedArchiveState.fromGameSession(session)
+	restoredArchive = FinishedArchiveState.from_dict(json.loads(json.dumps(archive.to_dict())))
+	finishedEvent = restoredArchive.events[-1]
+	winningSeatIds = [session.getPersistentPlayerId(player) for player in winningPlayers]
+	winningParticipantIds = [session.roster.getParticipantForPlayer(player).participantId for player in winningPlayers]
+
+	assert finishedEvent.eventType is GameEventType.GAME_FINISHED
+	assert finishedEvent.playerId is None
+	assert finishedEvent.details == {
+		"winningTeam": "0",
+		"winningSeatIds": winningSeatIds,
+		"winningParticipantIds": winningParticipantIds,
+		"winnerNames": ["Alice", "Carol"],
+	}
+
+def test_finished_archive_rejects_event_detail_with_unknown_seat():
+	session = makeGameSessionState()
+	markGameAsStarted(session)
+	player = session.game.players[0]
+	session.recordPlayerEvent(GameEventType.CARD_PLAYED, player, {
+		"card": {"suit": "♥️", "value": "2"},
+		"moveType": "MOVE",
+		"pieceOwnerId": session.getPersistentPlayerId(player),
+		"originPositionId": "spot-red-1",
+		"targetPositionId": "spot-red-3",
+		"steps": 2,
+	})
+	session.game._isFinished = True
+	session.completeGameLifecycle()
+	payload = FinishedArchiveState.fromGameSession(session).to_dict()
+	payload["events"][1]["details"]["pieceOwnerId"] = createPlayerId()
+
+	with pytest.raises(ValueError, match="unknown seat"):
+		FinishedArchiveState.from_dict(payload)
+
+def test_finished_archive_rejects_event_with_unknown_position():
+	session = makeGameSessionState()
+	markGameAsStarted(session)
+	player = session.game.players[0]
+	session.recordPlayerEvent(GameEventType.PIECE_MOVED, player, {
+		"moveType": "MOVE",
+		"pieceOwnerId": session.getPersistentPlayerId(player),
+		"originPositionId": "spot-red-1",
+		"targetPositionId": "spot-red-3",
+		"steps": 2,
+	})
+	session.game._isFinished = True
+	session.completeGameLifecycle()
+	payload = FinishedArchiveState.fromGameSession(session).to_dict()
+	payload["events"][1]["details"]["targetPositionId"] = "spot-red-999"
+
+	with pytest.raises(ValueError, match="unknown board position"):
+		FinishedArchiveState.from_dict(payload)
+
+def test_finished_archive_rejects_event_log_not_beginning_with_game_started():
+	session = makeGameSessionState()
+	markGameAsStarted(session)
+	session.game._isFinished = True
+	session.completeGameLifecycle()
+	payload = FinishedArchiveState.fromGameSession(session).to_dict()
+	payload["events"].pop(0)
+
+	with pytest.raises(ValueError, match="game-started event"):
+		FinishedArchiveState.from_dict(payload)
+
+def test_representative_audit_transcript_survives_compressed_round_trip(tmp_path):
+	store = CompressedJsonStore(tmp_path / "game-data")
+	session = makeGameSessionState()
+	markGameAsStarted(session)
+	alice, bob = session.game.players[:2]
+	aliceId = session.getPersistentPlayerId(alice)
+	bobId = session.getPersistentPlayerId(bob)
+
+	session.recordPlayerEvent(GameEventType.DEALER_CHANGED, alice, {"rotationCount": 0, "initial": True})
+	session.recordPlayerEvent(GameEventType.CARDS_DEALT, alice, {"deckCycle": 1, "deal": 1, "cards": [{"suit": "♥️", "value": "2"}]})
+	session.recordPlayerEvent(GameEventType.CARD_EXCHANGED, alice, {"partnerId": bobId, "givenCard": {"suit": "♥️", "value": "2"}, "receivedCard": {"suit": "♠️", "value": "3"}})
+	session.recordPlayerEvent(GameEventType.TURN_STARTED, alice, {"handSize": 5})
+	session.recordPlayerEvent(GameEventType.CARD_PLAYED, alice, {"card": {"suit": "♠️", "value": "3"}, "moveType": "MOVE", "pieceOwnerId": aliceId, "originPositionId": "spot-red-1", "targetPositionId": "spot-red-4", "steps": 3})
+	session.recordPlayerEvent(GameEventType.PIECE_KICKED, alice, {"pieceOwnerId": bobId, "positionId": "spot-red-4", "reason": "landing"})
+	session.recordPlayerEvent(GameEventType.PIECE_MOVED, alice, {"moveType": "MOVE", "pieceOwnerId": aliceId, "originPositionId": "spot-red-1", "targetPositionId": "spot-red-4", "steps": 3})
+
+	for player in (alice, session.game.players[2]):
+		for houseNumber in range(4):
+			session.game.board.getHouse(player.color, houseNumber).setOccupant(player)
+			player.addAPieceOnTheBoard()
+
+	session.game._isFinished = True
+	session.completeGameLifecycle()
+	archive = FinishedArchiveState.fromGameSession(session)
+	store.write(ArchiveCategory.FINISHED, session.sessionId, archive.to_dict())
+	restoredArchive = FinishedArchiveState.from_dict(store.read(ArchiveCategory.FINISHED, session.sessionId))
+
+	assert restoredArchive == archive
+	assert [event.eventType for event in restoredArchive.events] == [
+		GameEventType.GAME_STARTED,
+		GameEventType.DEALER_CHANGED,
+		GameEventType.CARDS_DEALT,
+		GameEventType.CARD_EXCHANGED,
+		GameEventType.TURN_STARTED,
+		GameEventType.CARD_PLAYED,
+		GameEventType.PIECE_KICKED,
+		GameEventType.PIECE_MOVED,
+		GameEventType.GAME_FINISHED,
+	]
