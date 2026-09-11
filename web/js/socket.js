@@ -302,40 +302,52 @@ app.connectToGame = async function connectToGame(gameId, name, rejoin = false) {
     }
   };
   
-  state.ws.onclose = (event) => {
-	app.setCancelSelectionVisible(false);
-	app.clearSpotSelection();
-	dom.connectionStatus.classList.remove("connected");
-	app.setTranslatedText(dom.connectionStatusText, "connection.disconnected");
+state.ws.onclose = event => {
+  console.warn("[WebSocket] Connection closed", {
+    code: event.code,
+    reason: event.reason,
+    wasClean: event.wasClean,
+  });
+
+  app.setCancelSelectionVisible(false);
+  app.clearSpotSelection();
+  dom.connectionStatus.classList.remove("connected");
+  app.setTranslatedText(dom.connectionStatusText, "connection.disconnected");
   dom.createBtn.disabled = state.ruleConfiguration === null;
 
-    switch (event.code) {
-      case NO_GAME_FOUND_CODE:
-        app.showError(i18n.t("errors.invalid_game_id"));
-        break;
-      case NO_PLAYER_CONTEXT_FOUND_CODE:
-        app.showError(i18n.t("errors.player_name_taken"));
-        break;
-      case GAME_ALREADY_FULL_CODE:
-        app.showError(i18n.t("errors.game_full"));
-        break;
-      case CONNECTION_IDENTIFICATION_ERROR_CODE:
-        app.showError(i18n.t("errors.invalid_resume_token"));
-        break;
-      case SERVER_UNREACHABLE_CODE:
-        app.showError(i18n.t("errors.server_unreachable"));
-        break;
-      case LOBBY_EXPIRED_CLOSE_CODE:
-        app.returnToStartAfterServerClose("errors.lobby_expired", gameId, name, true);
-        return;
+  switch (event.code) {
+    case constants.NO_GAME_FOUND_CODE:
+      app.showError(i18n.t("errors.invalid_game_id"));
+      break;
 
-      case GAME_SUSPENDED_CLOSE_CODE:
-        app.returnToStartAfterServerClose("errors.game_suspended", gameId, name, false);
-        return;
-      default:
-        app.showError(i18n.t("errors.connection_closed", {code: event.code}));
-    }
-  };
+    case constants.NO_PLAYER_CONTEXT_FOUND_CODE:
+      app.showError(i18n.t("errors.player_name_taken"));
+      break;
+
+    case constants.GAME_ALREADY_FULL_CODE:
+      app.showError(i18n.t("errors.game_full"));
+      break;
+
+    case constants.CONNECTION_IDENTIFICATION_ERROR_CODE:
+      app.showError(i18n.t("errors.invalid_resume_token"));
+      break;
+
+    case constants.SERVER_UNREACHABLE_CODE:
+      app.showError(i18n.t("errors.server_unreachable"));
+      break;
+
+    case constants.LOBBY_EXPIRED_CLOSE_CODE:
+      app.returnToStartAfterServerClose("errors.lobby_expired", gameId, name, true);
+      return;
+
+    case constants.GAME_SUSPENDED_CLOSE_CODE:
+      app.returnToStartAfterServerClose("errors.game_suspended", gameId, name, false);
+      return;
+
+    default:
+      app.showError(i18n.t("errors.connection_closed", {code: event.code}));
+  }
+};
 
   state.ws.onerror = () => {
     app.showError(i18n.t("errors.websocket_error"));
