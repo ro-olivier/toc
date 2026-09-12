@@ -10,6 +10,7 @@ from toc.infrastructure.versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, 
 from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
 from toc.model.player import Player
 from toc.session.roster import Participant, PlayerSeat
+from toc.session.session_participant import SessionParticipant
 
 
 def makeSessionWithPlayer():
@@ -35,21 +36,9 @@ def makeSessionWithPlayer():
 	session.roster.addParticipant(participant)
 	session.roster.addSeat(seat)
 
-	session.players[routerId] = {
-		"name": "Alice",
-		"id": routerId,
-		"playerId": participantId,
-		"participantId": participantId,
-		"resumeTokenHash": resumeTokenHash,
-		"websocket": participant.websocket,
-		"team": "0",
-		"color": "red",
-		"object": player,
-		"participant": participant,
-		"seat": seat,
-		"active": True,
-		"configured": True,
-	}
+	playerData = SessionParticipant(participant, player)
+	playerData.configureSeats([seat])
+	session.players[routerId] = playerData
 
 	return session, resumeToken
 

@@ -22,6 +22,7 @@ from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
 from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken
 from toc.session.roster import Participant, PlayerSeat
 from toc.model.audit import GameEventType
+from toc.session.session_participant import SessionParticipant
 
 
 def add_player(session, router, name, team="", color="", configured=False, active=True):
@@ -49,24 +50,12 @@ def add_player(session, router, name, team="", color="", configured=False, activ
 		seat = PlayerSeat(seatId=participantId, participantId=participantId, team=team, color=color, player=player)
 		session.roster.addSeat(seat)
 
-	session.players[routerId] = {
-		"name": name,
-		"id": routerId,
-		"playerId": participantId,
-		"participantId": participantId,
-		"resumeTokenHash": resumeTokenHash,
-		"websocket": None,
-		"team": team,
-		"color": color,
-		"object": player,
-		"participant": participant,
-		"seat": seat,
-		"active": active,
-		"configured": configured,
-		"colors": [color] if configured else [],
-		"objects": [player] if configured else [],
-		"seats": [seat] if configured else [],
-	}
+	playerData = SessionParticipant(participant, player)
+
+	if seat is not None:
+		playerData.addSeat(seat)
+
+	session.players[routerId] = playerData
 
 	return routerId, player
 
@@ -126,7 +115,7 @@ def test_player_configuration_is_validated_and_broadcast():
 		assert await session.configure_player(aliceId, "0", "red")
 		assert alice.team == "0"
 		assert alice.color == "red"
-		assert session.players[aliceId]["configured"]
+		assert session.players[aliceId].configured
 		assert await router.get_output(aliceId) == session.lobby_state()
 
 	asyncio.run(scenario())
@@ -230,7 +219,7 @@ def test_game_session_starts_game_only_once():
 		add_player(session, router, "Bob", team="1", color="blue", configured=True)
 		add_player(session, router, "Carol", team="0", color="green", configured=True)
 		add_player(session, router, "Diana", team="1", color="yellow", configured=True)
-		session.order = [playerData["seat"].seatId for playerData in session.players.values()]
+		session.order = [playerData.primarySeat.seatId for playerData in session.players.values()]
 
 		results = await asyncio.gather(session.start_game_if_ready(), session.start_game_if_ready())
 		await session.gameTask
@@ -252,10 +241,10 @@ def test_player_order_alternates_teams():
 
 	assert session.set_player_order()
 	assert session.order == [
-		session.players[aliceId]["seat"].seatId,
-		session.players[carolId]["seat"].seatId,
-		session.players[bobId]["seat"].seatId,
-		session.players[dianaId]["seat"].seatId,
+		session.players[aliceId].primarySeat.seatId,
+		session.players[carolId].primarySeat.seatId,
+		session.players[bobId].primarySeat.seatId,
+		session.players[dianaId].primarySeat.seatId,
 	]
 
 
@@ -384,7 +373,7 @@ def test_player_configuration_accepts_an_extended_color():
 
 		assert await session.configure_player(aliceId, "0", "purple")
 		assert alice.color == "purple"
-		assert session.players[aliceId]["color"] == "purple"
+		assert session.players[aliceId].color == "purple"
 
 	asyncio.run(scenario())
 
@@ -504,15 +493,15 @@ def test_duel_four_participant_can_configure_two_seats():
 		playerData = session.players[aliceId]
 
 		assert session.roster.seatCount == 2
-		assert playerData["configured"]
-		assert playerData["colors"] == ["red", "blue"]
-		assert len(playerData["objects"]) == 2
-		assert len(playerData["seats"]) == 2
-		assert playerData["object"] is alice
-		assert playerData["seat"] is playerData["seats"][0]
-		assert [seat.color for seat in playerData["seats"]] == ["red", "blue"]
-		assert all(seat.team == "0" for seat in playerData["seats"])
-		assert all(player.routerId == aliceId for player in playerData["objects"])
+		assert playerData.configured
+		assert playerData.colors == ["red", "blue"]
+		assert len(playerData.controlledPlayers) == 2
+		assert len(playerData.controlledSeats) == 2
+		assert playerData.primaryPlayer is alice
+		assert playerData.primarySeat is playerData.controlledSeats[0]
+		assert [seat.color for seat in playerData.controlledSeats] == ["red", "blue"]
+		assert all(seat.team == "0" for seat in playerData.controlledSeats)
+		assert all(player.routerId == aliceId for player in playerData.controlledPlayers)
 
 	asyncio.run(scenario())
 
@@ -547,7 +536,7 @@ def test_multi_seat_configuration_rejects_duplicate_colours_atomically():
 
 		assert not await session.configure_player(aliceId, "0", ["red", "red"])
 		assert session.roster.seatCount == 0
-		assert session.players[aliceId]["seats"] == []
+		assert session.players[aliceId].controlledSeats == []
 		assert alice.team == ""
 		assert alice.color == ""
 
@@ -659,7 +648,7 @@ def test_full_ui_state_contains_one_entry_per_logical_seat():
 		assert [player["name"] for player in state["players"]] == ["Alice", "Alice"]
 		assert [player["color"] for player in state["players"]] == ["red", "green"]
 		assert len({player["seatId"] for player in state["players"]}) == 2
-		assert all(player["participantId"] == session.players[aliceId]["participantId"] for player in state["players"])
+		assert all(player["participantId"] == session.players[aliceId].participantId for player in state["players"])
 		assert state["active_player"] == ""
 		assert state["activeSeatId"] is None
 
@@ -676,7 +665,7 @@ def test_duel_four_reconnection_replays_both_controlled_hands():
 
 		await router.get_output(aliceId)
 
-		redPlayer, bluePlayer = session.players[aliceId]["objects"]
+		redPlayer, bluePlayer = session.players[aliceId].controlledPlayers
 		redPlayer.hand.addToHand(Card("♥️", "A"))
 		bluePlayer.hand.addToHand(Card("♠️", "K"))
 
@@ -723,7 +712,7 @@ def test_duel_two_rejects_two_participants_on_the_same_team():
 		bobId, bob = add_player(session, router, "Bob")
 
 		assert not await session.configure_player(bobId, "0", "blue")
-		assert not session.players[bobId]["configured"]
+		assert not session.players[bobId].configured
 		assert bob.team == ""
 		assert bob.color == ""
 

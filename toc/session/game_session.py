@@ -22,6 +22,7 @@ from toc.persistence.finished_state import FinishedArchiveState
 from toc.persistence.persistent_state import SessionMetadataState
 from toc.persistence.snapshot_state import CardState, GameProgressState, SessionSnapshotState, SevenHopProgressState, SevenSplitProgressState
 from toc.session.roster import Participant, PlayerSeat, SessionRoster
+from toc.session.session_participant import SessionParticipant
 
 
 logger = logging.getLogger("toc.main")
@@ -33,7 +34,7 @@ class GameSession:
 		self._sessionId = createSessionId()
 		self._rules = rules
 		self._rulesetName = rulesetName if rulesetName is not None else get_matching_preset_name(rules)
-		self.players: Dict = {}
+		self.players: dict[str, SessionParticipant] = {}
 		self._roster = SessionRoster()
 		self.started = False
 		self.lock = asyncio.Lock()
@@ -137,7 +138,7 @@ class GameSession:
 		if not self.started:
 			return
 
-		if any(playerData.get("active", False) for playerData in self.players.values()):
+		if any(playerData.active for playerData in self.players.values()):
 			return
 
 		if self._allPlayersDisconnectedMonotonic is None:
@@ -183,8 +184,8 @@ class GameSession:
 			pass
 
 		for playerData in self.players.values():
-			if playerData.get("object") is player:
-				return playerData["playerId"]
+			if playerData.primaryPlayer is player:
+				return playerData.participantId
 
 		raise ValueError("Player has no persistent ID in this session")
 
@@ -195,16 +196,16 @@ class GameSession:
 			pass
 
 		for playerData in self.players.values():
-			if playerData["playerId"] == playerId:
-				return playerData["object"]
+			if playerData.participantId == playerId:
+				return playerData.primaryPlayer
 
 		raise ValueError(f"Unknown persistent player ID: {playerId}")
 
-	async def sendHandsAgain(self, playerData: dict) -> None:
-		players = playerData.get("objects", [])
+	async def sendHandsAgain(self, playerData: SessionParticipant) -> None:
+		players = playerData.controlledPlayers
 
-		if not players and playerData.get("object") is not None:
-			players = [playerData["object"]]
+		if not players and playerData.primaryPlayer is not None:
+			players = [playerData.primaryPlayer]
 
 		for player in players:
 			await player.sendHandAgain()
@@ -252,24 +253,7 @@ class GameSession:
 			participantsById[participant.participantId] = participant
 			msg_router.prepareDisconnectedPlayer(runtimeId)
 
-			session.players[runtimeId] = {
-				"name": participant.name,
-				"id": runtimeId,
-				"playerId": participant.participantId,
-				"participantId": participant.participantId,
-				"resumeTokenHash": participant.resumeTokenHash,
-				"websocket": None,
-				"team": "",
-				"color": "",
-				"colors": [],
-				"object": None,
-				"objects": [],
-				"participant": participant,
-				"seat": None,
-				"seats": [],
-				"active": False,
-				"configured": participant.configured,
-			}
+			session.players[runtimeId] = SessionParticipant(participant)
 
 		for seatState in metadata.seats:
 			try:
@@ -301,18 +285,7 @@ class GameSession:
 
 			playerData = session.players[runtimeId]
 
-			if playerData["team"] and playerData["team"] != seat.team:
-				raise ValueError("Restored participant controls seats from different teams")
-
-			playerData["objects"].append(player)
-			playerData["seats"].append(seat)
-			playerData["colors"].append(seat.color)
-
-			if playerData["object"] is None:
-				playerData["team"] = seat.team
-				playerData["color"] = seat.color
-				playerData["object"] = player
-				playerData["seat"] = seat
+			playerData.addSeat(seat)
 
 		session.order = list(snapshot.game.playerOrder)
 		snapshot.game.restoreGame(session)
@@ -370,7 +343,7 @@ class GameSession:
 			if len(self.players) != self._modeDefinition.participantCount:
 				return False
 
-			if not all(playerData.get("configured", False) and playerData.get("active", False) for playerData in self.players.values()):
+			if not all(playerData.configured and playerData.active for playerData in self.players.values()):
 				return False
 
 			self.recordActivity()
@@ -680,16 +653,16 @@ class GameSession:
 		websockets = []
 
 		for playerData in self.players.values():
-			websocket = playerData.get("websocket")
+			websocket = playerData.websocket
 
-			if playerData.get("active", False) and websocket is not None:
+			if playerData.active and websocket is not None:
 				websockets.append(websocket)
 
 		if websockets:
 			await asyncio.gather(*(websocket.close(code=code, reason=reason) for websocket in websockets), return_exceptions=True)
 
 		for runtimeId, playerData in self.players.items():
-			playerData["active"] = False
+			playerData.active = False
 
 			if preserveRouterState:
 				self.router.unregister(runtimeId)
@@ -796,7 +769,7 @@ class GameSession:
 		}
 
 	def team_is_full(self, team: str) -> bool:
-		return sum(playerData["team"] == team for playerData in self.players.values()) >= self._modeDefinition.participantsPerTeam
+		return sum(playerData.team == team for playerData in self.players.values()) >= self._modeDefinition.participantsPerTeam
 
 	def is_full(self) -> bool:
 		return len(self.players) >= self._modeDefinition.participantCount
@@ -809,30 +782,30 @@ class GameSession:
 		players = []
 
 		for playerData in self.players.values():
-			seats = playerData.get("seats", [])
-			colors = [seat.color for seat in seats]
+			seats = playerData.controlledSeats
+			colors = playerData.colors
 
 			players.append({
-				"name": playerData["name"],
-				"team": playerData.get("team", ""),
+				"name": playerData.name,
+				"team": playerData.team,
 				"color": colors[0] if colors else "",
 				"colors": colors,
 				"seats": [{"seatId": seat.seatId, "color": seat.color} for seat in seats],
-				"connected": playerData.get("active", False),
-				"configured": playerData.get("configured", False),
+				"connected": playerData.active,
+				"configured": playerData.configured,
 			})
 
 		teamCounts = {
-			team: sum(playerData.get("team") == team for playerData in self.players.values()) for team in self._modeDefinition.teamIds
-			}
-		
+			team: sum(playerData.team == team for playerData in self.players.values()) for team in self._modeDefinition.teamIds
+		}
+
 		return {
-			"type": "lobby-state", 
-			"gameId": self.id, 
-			"started": self.started, 
-			"players": players, 
-			"availableColors": self.available_colors(), 
-			"teamCounts": teamCounts, 
+			"type": "lobby-state",
+			"gameId": self.id,
+			"started": self.started,
+			"players": players,
+			"availableColors": self.available_colors(),
+			"teamCounts": teamCounts,
 			"teamCapacity": self._modeDefinition.participantsPerTeam,
 			"participantCapacity": self._modeDefinition.participantCount,
 			"seatCapacity": self._modeDefinition.seatCount,
@@ -847,7 +820,7 @@ class GameSession:
 			"ruleset": self.ruleset_state(),
 			"seatsPerParticipant": self._modeDefinition.seatsPerParticipant,
 			"creatorName": self._creatorName,
-			}
+		}
 
 	async def broadcast_lobby_state(self) -> None:
 		await self.broadcast(self.lobby_state())
@@ -864,11 +837,10 @@ class GameSession:
 
 		return True
 
-	async def broadcast(self, message: Dict, excluded_player : str = None):
-		for player_id in self.players.keys():
-			if player_id != excluded_player:
-				player = self.players[player_id]['object']
-				await player.send_message_to_user(message)
+	async def broadcast(self, message: Dict, excluded_player: str = None):
+		for routerId, playerData in self.players.items():
+			if routerId != excluded_player and playerData.primaryPlayer is not None:
+				await playerData.primaryPlayer.send_message_to_user(message)
 
 	async def game_loop(self):
 		try:
@@ -887,7 +859,7 @@ class GameSession:
 			if self.started or len(self.players) != self._modeDefinition.participantCount or len(self.order) != self._modeDefinition.seatCount:
 				return False
 
-			if not all(player.get("configured", False) for player in self.players.values()):
+			if not all(playerData.configured for playerData in self.players.values()):
 				return False
 
 			self.markStarted()
@@ -904,8 +876,8 @@ class GameSession:
 			if playerData is None or self.started:
 				return False
 
-			if playerData.get("configured", False):
-				await playerData["object"].send_message_to_user(build_message(
+			if playerData.configured:
+				await playerData.primaryPlayer.send_message_to_user(build_message(
 					"lobby-error",
 					"lobby.errors.already_confirmed",
 					"Your lobby choices have already been confirmed.",
@@ -913,7 +885,7 @@ class GameSession:
 				return False
 
 			if team not in self._modeDefinition.teamIds:
-				await playerData["object"].send_message_to_user(build_message(
+				await playerData.primaryPlayer.send_message_to_user(build_message(
 					"lobby-error",
 					"lobby.errors.invalid_team",
 					"Please choose a valid team.",
@@ -928,7 +900,7 @@ class GameSession:
 			expectedColorCount = self._modeDefinition.seatsPerParticipant
 
 			if type(colors) is not list or len(colors) != expectedColorCount:
-				await playerData["object"].send_message_to_user(build_message(
+				await playerData.primaryPlayer.send_message_to_user(build_message(
 					"lobby-error",
 					"lobby.errors.invalid_color_count",
 					f"Please select {expectedColorCount} colours.",
@@ -937,7 +909,7 @@ class GameSession:
 				return False
 
 			if len(set(colors)) != len(colors) or any(color not in AVAILABLE_COLORS for color in colors):
-				await playerData["object"].send_message_to_user(build_message(
+				await playerData.primaryPlayer.send_message_to_user(build_message(
 					"lobby-error",
 					"lobby.errors.invalid_color",
 					"Please choose valid and distinct colours.",
@@ -945,7 +917,7 @@ class GameSession:
 				return False
 
 			if self.team_is_full(team):
-				await playerData["object"].send_message_to_user(build_message(
+				await playerData.primaryPlayer.send_message_to_user(build_message(
 					"lobby-error",
 					"lobby.errors.team_full",
 					f"Team {team} is already full.",
@@ -957,7 +929,7 @@ class GameSession:
 			takenColor = next((color for color in colors if color not in availableColors), None)
 
 			if takenColor is not None:
-				await playerData["object"].send_message_to_user(build_message(
+				await playerData.primaryPlayer.send_message_to_user(build_message(
 					"lobby-error",
 					"lobby.errors.color_taken",
 					f"The colour {takenColor} has already been selected.",
@@ -965,10 +937,7 @@ class GameSession:
 				))
 				return False
 
-			participant = playerData.get("participant")
-
-			if participant is None:
-				raise RuntimeError("Configured player has no registered participant")
+			participant = playerData.participant
 
 			players = []
 			seats = []
@@ -976,7 +945,7 @@ class GameSession:
 			for colorIndex, color in enumerate(colors):
 				if colorIndex == 0:
 					seatId = participant.participantId
-					player = playerData["object"]
+					player = playerData.primaryPlayer
 					player.setTeam(team)
 					player.setColor(color)
 				else:
@@ -1005,17 +974,9 @@ class GameSession:
 			for seat in seats:
 				self.roster.addSeat(seat)
 
-			playerData["team"] = team
-			playerData["color"] = colors[0]
-			playerData["colors"] = colors
-			playerData["object"] = players[0]
-			playerData["objects"] = players
-			playerData["seat"] = seats[0]
-			playerData["seats"] = seats
-			playerData["configured"] = True
-			participant.configured = True
+			playerData.configureSeats(seats)
 
-			if len(self.players) == self._modeDefinition.participantCount and all(data.get("configured", False) for data in self.players.values()):
+			if len(self.players) == self._modeDefinition.participantCount and all(data.configured for data in self.players.values()):
 				if not self.set_player_order():
 					raise RuntimeError("Could not determine a valid player order")
 

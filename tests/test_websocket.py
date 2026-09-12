@@ -134,12 +134,12 @@ def test_valid_websocket_connection_receives_ready_and_lobby_state(client, gameI
 
 		playerData = manager.games[gameId].players[f"{gameId}-Alice"]
 
-		assert playerData["object"].identifier == ready["playerId"]
-		assert playerData["object"].routerId == f"{gameId}-Alice"
+		assert playerData.primaryPlayer.identifier == ready["playerId"]
+		assert playerData.primaryPlayer.routerId == f"{gameId}-Alice"
 
 		participant = manager.games[gameId].roster.getParticipantByRouterId(f"{gameId}-Alice")
 
-		assert participant is playerData["participant"]
+		assert participant is playerData.participant
 		assert participant.participantId == ready["playerId"]
 		assert participant.name == "Alice"
 		assert participant.active is True
@@ -387,9 +387,9 @@ def test_configured_lobby_player_can_reconnect(client, gameId):
 
 		assert alice["configured"] is True
 
-		originalPlayer = session.players[playerId]["object"]
+		originalPlayer = session.players[playerId].primaryPlayer
 
-	assert session.players[playerId]["active"] is False
+	assert session.players[playerId].active is False
 
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
 		identifyWebSocket(websocket, resumeToken)
@@ -404,7 +404,7 @@ def test_configured_lobby_player_can_reconnect(client, gameId):
 
 		assert len(state["players"]) == 1
 		assert len(session.players) == 1
-		assert session.players[playerId]["object"] is originalPlayer
+		assert session.players[playerId].primaryPlayer is originalPlayer
 
 def test_started_game_reconnection_restores_ui_hand_and_prompt(client, gameId):
 	playerId = f"{gameId}-Alice"
@@ -419,7 +419,7 @@ def test_started_game_reconnection_restores_ui_hand_and_prompt(client, gameId):
 		websocket.send_json({"type": "configure-player", "team": "0", "color": "red"})
 		receiveLobbyState(websocket)
 
-	assert session.players[playerId]["active"] is False
+	assert session.players[playerId].active is False
 
 	session.started = True
 
@@ -534,10 +534,10 @@ def test_four_configured_players_start_game_once(client, gameId, monkeypatch):
 		assert gameLoopCalls == [True]
 		assert session.started is True
 		assert session.order == [
-			session.players[f"{gameId}-Alice"]["seat"].seatId,
-			session.players[f"{gameId}-Bob"]["seat"].seatId,
-			session.players[f"{gameId}-Carol"]["seat"].seatId,
-			session.players[f"{gameId}-Diana"]["seat"].seatId,
+			session.players[f"{gameId}-Alice"].primarySeat.seatId,
+			session.players[f"{gameId}-Bob"].primarySeat.seatId,
+			session.players[f"{gameId}-Carol"].primarySeat.seatId,
+			session.players[f"{gameId}-Diana"].primarySeat.seatId,
 		]
 		assert len(session.events) == 1
 		assert session.events[0].eventType is GameEventType.GAME_STARTED
@@ -633,8 +633,8 @@ def test_player_cannot_configure_lobby_twice(client, gameId):
 
 		playerData = manager.games[gameId].players[f"{gameId}-Alice"]
 
-		assert playerData["team"] == "0"
-		assert playerData["color"] == "red"
+		assert playerData.team == "0"
+		assert playerData.color == "red"
 
 def test_disconnect_moves_player_queues_to_recycle_bin(client, gameId):
 	playerId = f"{gameId}-Alice"
@@ -647,9 +647,9 @@ def test_disconnect_moves_player_queues_to_recycle_bin(client, gameId):
 		assert playerId in router.input_queues
 		assert playerId in router.output_queues
 		assert playerId not in router.recycleBin
-		assert session.players[playerId]["active"] is True
+		assert session.players[playerId].active is True
 
-	assert session.players[playerId]["active"] is False
+	assert session.players[playerId].active is False
 	assert playerId not in router.input_queues
 	assert playerId not in router.output_queues
 	assert playerId in router.recycleBin
@@ -761,9 +761,9 @@ def test_new_websocket_identity_is_stored_as_hash(client, gameId):
 		playerData = manager.games[gameId].players[f"{gameId}-Alice"]
 
 		assert ready["sessionId"] == manager.games[gameId].sessionId
-		assert ready["playerId"] == playerData["playerId"]
-		assert ready["resumeToken"] != playerData["resumeTokenHash"]
-		assert resumeTokenMatches(ready["resumeToken"], playerData["resumeTokenHash"])
+		assert ready["playerId"] == playerData.participantId
+		assert ready["resumeToken"] != playerData.resumeTokenHash
+		assert resumeTokenMatches(ready["resumeToken"], playerData.resumeTokenHash)
 
 def test_reconnection_requires_valid_resume_token(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
@@ -834,8 +834,8 @@ def test_disconnection_updates_participant_state(client, gameId):
 	playerData = session.players[f"{gameId}-Alice"]
 	participant = session.roster.getParticipantByRouterId(f"{gameId}-Alice")
 
-	assert playerData["active"] is False
-	assert playerData["websocket"] is None
+	assert playerData.active is False
+	assert playerData.websocket is None
 	assert participant.active is False
 	assert participant.websocket is None
 
@@ -856,8 +856,8 @@ def test_player_configuration_creates_logical_seat(client, gameId):
 
 		assert session.roster.participantCount == 1
 		assert session.roster.seatCount == 1
-		assert seat is playerData["seat"]
-		assert seat.player is playerData["object"]
+		assert seat is playerData.primarySeat
+		assert seat.player is playerData.primaryPlayer
 		assert seat.participantId == participant.participantId
 		assert seat.team == "0"
 		assert seat.color == "red"

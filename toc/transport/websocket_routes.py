@@ -15,6 +15,7 @@ from toc.model.player import Player
 from toc.runtime import manager, router
 from toc.session.input_router import DuplicateNameError
 from toc.session.roster import Participant
+from toc.session.session_participant import SessionParticipant
 
 
 logger = logging.getLogger("toc.main")
@@ -46,7 +47,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 	player_id = gameSession.getFullPlayerId(gameSession.joinCode, player_name)
 	existingPlayer = gameSession.players.get(player_id)
 
-	if existingPlayer is not None and existingPlayer["active"]:
+	if existingPlayer is not None and existingPlayer.active:
 		await websocket.close(code=NO_PLAYER_CONTEXT_FOUND_CODE)
 		return
 
@@ -78,7 +79,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 		await websocket.close(code=CONNECTION_IDENTIFICATION_ERROR_CODE, reason="Invalid connection identity")
 		return
 
-	if existingPlayer is not None and not resumeTokenMatches(resumeToken, existingPlayer["resumeTokenHash"]):
+	if existingPlayer is not None and not resumeTokenMatches(resumeToken, existingPlayer.resumeTokenHash):
 		await websocket.close(code=CONNECTION_IDENTIFICATION_ERROR_CODE, reason="Invalid resume token")
 		return
 
@@ -104,31 +105,14 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
 			gameSession.roster.addParticipant(participant)
 
-			gameSession.players[player_id] = {
-				"name": player_name,
-				"id": player_id,
-				"playerId": persistentPlayerId,
-				"resumeTokenHash": resumeTokenHash,
-				"websocket": websocket,
-				"team": "",
-				"color": "",
-				"object": newPlayer,
-				"participant": participant,
-				"participantId": persistentPlayerId,
-				"active": True,
-				"configured": False,
-				"seat": None,
-				"colors": [],
-				"objects": [],
-				"seats": [],
-			}
+			gameSession.players[player_id] = SessionParticipant(participant, newPlayer)
 		else:
-			persistentPlayerId = existingPlayer["playerId"]
+			persistentPlayerId = existingPlayer.participantId
 
 			router.registerAgain(player_id)
-			existingPlayer["websocket"] = websocket
-			existingPlayer["active"] = True
-			participant = existingPlayer["participant"]
+			existingPlayer.websocket = websocket
+			existingPlayer.active = True
+			participant = existingPlayer.participant
 			participant.websocket = websocket
 			participant.active = True
 
@@ -180,13 +164,13 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
 		else:
 			if gameSession.started:
-				await existingPlayer["object"].send_message_to_user(gameSession.lobby_state())
-				await existingPlayer["object"].send_message_to_user(gameSession.fullUI())
-				await existingPlayer["object"].send_message_to_user(build_message(
+				await existingPlayer.primaryPlayer.send_message_to_user(gameSession.lobby_state())
+				await existingPlayer.primaryPlayer.send_message_to_user(gameSession.fullUI())
+				await existingPlayer.primaryPlayer.send_message_to_user(build_message(
 					"log",
 					"connection.rejoined_self",
-					f"You successfully rejoined the game in team {existingPlayer['team']} with colour {existingPlayer['color']}!",
-					{"team": existingPlayer["team"], "color": existingPlayer["color"]},
+					f"You successfully rejoined the game in team {existingPlayer.team} with colour {existingPlayer.color}!",
+					{"team": existingPlayer.team, "color": existingPlayer.color},
 				))
 				await gameSession.sendHandsAgain(existingPlayer)
 				await router.resend_pending_prompt(player_id)
@@ -231,15 +215,9 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 	finally:
 		playerData = gameSession.players.get(player_id)
 
-		if playerData is not None and playerData.get("websocket") is websocket:
-			playerData["websocket"] = None
-			playerData["active"] = False
-
-			participant = playerData.get("participant")
-
-			if participant is not None:
-				participant.websocket = None
-				participant.active = False
+		if playerData is not None and playerData.websocket is websocket:
+			playerData.websocket = None
+			playerData.active = False
 
 			gameSession.notePlayerDisconnected()
 			router.unregister(player_id)

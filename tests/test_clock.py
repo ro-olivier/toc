@@ -8,6 +8,9 @@ from toc.session.connection_manager import ConnectionManager
 from toc.session.game_session import GameSession
 from toc.session.input_router import PlayerInputRouter
 from toc.persistence.persistent_state import SessionMetadataState
+from toc.infrastructure.identity import createPlayerId
+from toc.session.roster import Participant
+from toc.session.session_participant import SessionParticipant
 
 
 class FakeClock:
@@ -24,6 +27,10 @@ class FakeClock:
 	def advance(self, seconds):
 		self._utcNow += timedelta(seconds=seconds)
 		self._monotonic += seconds
+
+def makeSessionParticipant(routerId: str) -> SessionParticipant:
+	participant = Participant(createPlayerId(), routerId, routerId, "0" * 64)
+	return SessionParticipant(participant)
 
 
 def test_game_session_uses_injected_clock():
@@ -144,8 +151,8 @@ def test_started_game_becomes_suspendable_after_all_players_disconnect():
 	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
 	session.game = SimpleNamespace(isFinished=False)
 	session.players = {
-		"TEST-Alice": {"active": False},
-		"TEST-Bob": {"active": False},
+		"TEST-Alice": makeSessionParticipant("TEST-Alice"),
+		"TEST-Bob": makeSessionParticipant("TEST-Bob"),
 	}
 	session.markStarted()
 	session.notePlayerDisconnected()
@@ -163,14 +170,14 @@ def test_player_reconnection_cancels_disconnection_grace_period():
 	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
 	session.game = SimpleNamespace(isFinished=False)
 	session.players = {
-		"TEST-Alice": {"active": False},
-		"TEST-Bob": {"active": False},
+		"TEST-Alice": makeSessionParticipant("TEST-Alice"),
+		"TEST-Bob": makeSessionParticipant("TEST-Bob"),
 	}
 	session.markStarted()
 	session.notePlayerDisconnected()
 
 	clock.advance(20)
-	session.players["TEST-Alice"]["active"] = True
+	session.players["TEST-Alice"].active = True
 	session.notePlayerConnected()
 	clock.advance(20)
 
@@ -180,7 +187,7 @@ def test_repeated_disconnection_notifications_do_not_reset_grace_period():
 	clock = FakeClock(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc))
 	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
 	session.game = SimpleNamespace(isFinished=False)
-	session.players = {"TEST-Alice": {"active": False}}
+	session.players = {"TEST-Alice": makeSessionParticipant("TEST-Alice")}
 	session.markStarted()
 	session.notePlayerDisconnected()
 
