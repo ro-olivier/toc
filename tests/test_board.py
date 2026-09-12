@@ -1054,7 +1054,9 @@ def test_joker_can_move_piece_eighteen_positions():
 	assert target is board.getSpot("blue", 1)
 	assert any(move.ID == "MOVE" and move.originSpot is origin and move.targetSpot is target and move.steps == 18 for move in options)
 
+	assert len([move for move in options if move.ID == "MOVE" and move.originSpot is origin and move.targetSpot is target and move.steps == 18]) == 1
 
+	
 def test_joker_can_enter_house_after_eighteen_positions():
 	colors = ["red", "blue", "green", "yellow", "purple", "orange"]
 	board = Board(colors)

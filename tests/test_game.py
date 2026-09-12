@@ -202,6 +202,12 @@ def test_play_seven_without_path_kicks_only_kicks_at_final_position():
 	assert stepMessages[0]["stepsUsed"] == 7
 	assert stepMessages[0]["stepsRemaining"] == 0
 
+	assert len(stepMessages) == 1
+	assert stepMessages[0]["seatId"] == "TEST-Alice"
+	assert stepMessages[0]["movedSeatId"] == "TEST-Alice"
+	assert stepMessages[0]["stepsUsed"] == 7
+	assert stepMessages[0]["stepsRemaining"] == 0
+
 
 def test_play_seven_without_path_kicks_resolves_each_pawns_final_position():
 	session = FakeGameSession()

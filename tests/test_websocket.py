@@ -12,6 +12,7 @@ from toc.model.audit import GameEventType
 from toc.infrastructure.identity import resumeTokenMatches
 from toc.model.game_mode import GameMode, getGameModeDefinition
 from toc.model.game import Game
+from settings import INVALID_PLAYER_NAME_CODE, MAX_PLAYER_NAME_LENGTH
 
 
 PLAYER_NAMES = ["Alice", "Bob", "Carol", "Diana"]
@@ -1077,3 +1078,8 @@ def test_created_lobby_is_listed_and_can_be_joined_case_insensitively(client):
 			if session is not None:
 				for playerId in session.players:
 					router.forget(playerId)
+
+@pytest.mark.parametrize("playerName", ["%20%20%20", "A" * (MAX_PLAYER_NAME_LENGTH + 1)])
+def test_invalid_player_name_closes_websocket_with_4008(client, gameId, playerName):
+	with client.websocket_connect(f"/toc/ws/{gameId}/{playerName}") as websocket:
+		assertWebSocketClosesWith(websocket, INVALID_PLAYER_NAME_CODE)

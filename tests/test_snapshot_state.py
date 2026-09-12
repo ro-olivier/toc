@@ -3,6 +3,7 @@ import json
 import pytest
 import asyncio
 from datetime import timedelta, datetime, timezone
+from threading import Event
 
 from settings import *
 from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken, createSessionId
@@ -1946,3 +1947,54 @@ def test_representative_audit_transcript_survives_compressed_round_trip(tmp_path
 		GameEventType.PIECE_MOVED,
 		GameEventType.GAME_FINISHED,
 	]
+
+def test_game_loop_failure_suspends_the_game(tmp_path):
+	async def scenario():
+		store = CompressedJsonStore(tmp_path / "game-data")
+		session = makeGameSessionState(store)
+		markGameAsStarted(session)
+		session.gameTask = asyncio.current_task()
+
+		await session._handleGameLoopFailure()
+
+		assert session.gameTask is None
+		assert session.awaitingResume is True
+		assert store.pathFor(ArchiveCategory.SUSPENDED, session.sessionId).exists()
+
+	asyncio.run(scenario())
+
+
+def test_checkpoint_cancellation_waits_for_persistence_thread(tmp_path, monkeypatch):
+	async def scenario():
+		store = CompressedJsonStore(tmp_path / "game-data")
+		session = makeGameSessionState(store)
+		markGameAsStarted(session)
+		writeStarted = Event()
+		allowWriteToFinish = Event()
+		originalWrite = store.write
+
+		def delayedWrite(*args):
+			writeStarted.set()
+			allowWriteToFinish.wait(timeout=2)
+			return originalWrite(*args)
+
+		monkeypatch.setattr(store, "write", delayedWrite)
+		checkpointTask = asyncio.create_task(session.checkpointActive())
+
+		while not writeStarted.is_set():
+			await asyncio.sleep(0)
+
+		checkpointTask.cancel()
+		await asyncio.sleep(0)
+
+		assert not checkpointTask.done()
+
+		allowWriteToFinish.set()
+
+		with pytest.raises(asyncio.CancelledError):
+			await checkpointTask
+
+		assert store.pathFor(ArchiveCategory.ACTIVE, session.sessionId).exists()
+		assert not session._checkpointLock.locked()
+
+	asyncio.run(scenario())

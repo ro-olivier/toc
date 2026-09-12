@@ -194,7 +194,16 @@ def test_router_preserves_queues_across_reconnection():
 		inputQueue = router.input_queues[playerId]
 		outputQueue = router.output_queues[playerId]
 
-		await router.add_input(playerId, {"type": "input"})
+		await router.send_output(playerId, {"type": "query-card"})
+		prompt = await router.get_output(playerId)
+
+		playerInput = {
+			"type": "card_selection",
+			"requestId": prompt["requestId"],
+		}
+
+		assert await router.add_input(playerId, playerInput) is True
+
 		await router.send_output(playerId, {"type": "output"})
 
 		router.unregister(playerId)
@@ -202,12 +211,11 @@ def test_router_preserves_queues_across_reconnection():
 
 		assert router.input_queues[playerId] is inputQueue
 		assert router.output_queues[playerId] is outputQueue
-		assert await router.wait_for_input(playerId) == {"type": "input"}
+		assert await router.wait_for_input(playerId) == playerInput
 		assert await router.get_output(playerId) == {"type": "output"}
 		assert playerId not in router.recycleBin
 
 	asyncio.run(scenario())
-
 def test_game_session_starts_game_only_once():
 	async def scenario():
 		router = PlayerInputRouter()
@@ -945,3 +953,47 @@ def test_player_event_uses_persistent_seat_id():
 
 	assert event.playerId == session.getPersistentPlayerId(player)
 	assert event.details == {"handSize": 5}
+
+def test_router_ignores_unsolicited_and_duplicate_input():
+	async def scenario():
+		router = PlayerInputRouter()
+		playerId = "TEST-Alice"
+		router.register(playerId)
+
+		unsolicitedInput = {"type": "card_selection", "requestId": "unsolicited"}
+		assert await router.add_input(playerId, unsolicitedInput) is False
+		assert router.input_queues[playerId].empty()
+
+		await router.send_output(playerId, {"type": "query-card"})
+		prompt = await router.get_output(playerId)
+		currentInput = {"type": "card_selection", "requestId": prompt["requestId"]}
+
+		assert await router.add_input(playerId, currentInput) is True
+		assert await router.add_input(playerId, currentInput) is False
+		assert router.input_queues[playerId].qsize() == 1
+
+	asyncio.run(scenario())
+
+
+def test_router_replaces_queued_input_from_an_obsolete_prompt():
+	async def scenario():
+		router = PlayerInputRouter()
+		playerId = "TEST-Alice"
+		router.register(playerId)
+
+		await router.send_output(playerId, {"type": "query-card"})
+		firstPrompt = await router.get_output(playerId)
+		firstInput = {"type": "card_selection", "requestId": firstPrompt["requestId"]}
+		await router.add_input(playerId, firstInput)
+		assert await router.wait_for_input(playerId) == firstInput
+
+		await router.add_input(playerId, firstInput)
+		router.clear_pending_prompt(playerId)
+		await router.send_output(playerId, {"type": "query-card"})
+		secondPrompt = await router.get_output(playerId)
+		secondInput = {"type": "card_selection", "requestId": secondPrompt["requestId"]}
+
+		assert await router.add_input(playerId, secondInput) is True
+		assert await router.wait_for_input(playerId) == secondInput
+
+	asyncio.run(scenario())
