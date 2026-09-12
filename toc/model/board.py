@@ -359,7 +359,7 @@ class Board:
 
 			options.extend(self.getForwardMoveOptions(player, card, [18], pieceOwner))
 
-		if card.value == "A":
+		elif card.value == "A":
 			exitSpot = self.getFirstSpot(pieceOwner.color)
 			exitMove = Move("OUT", exitSpot, exitSpot, card, player, pieceOwner)
 
