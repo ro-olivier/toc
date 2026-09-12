@@ -4,8 +4,6 @@ JOKER_VALUE = "JOKER"
 JOKER_COLORS = ("red", "black")
 COLORS = ['red', 'blue', 'green', 'yellow']
 AVAILABLE_COLORS = COLORS + ['orange', 'purple', 'pink', 'cyan', 'lime', 'brown', 'black', 'white']
-NUMBER_OF_PLAYERS = 4
-NUMBER_OF_TEAMS = 2
 SPOTS_PER_HOUSE = 4
 MOVE_DESCRIPTION = {
 	'OUT' : 'Take a piece out.', 

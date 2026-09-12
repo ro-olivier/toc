@@ -62,9 +62,6 @@ class Game:
 	async def broadcast(self, msg: str):
 		await self._gameSession.broadcast(msg)
 
-	def printNumPlayers(self) -> None:
-		self.broadcast(f'This game has {self._numPlayers} players.')
-
 	@property
 	def numPlayers(self) -> int:
 		return self._numPlayers

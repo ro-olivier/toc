@@ -16,16 +16,6 @@ class Hand:
 			s += str(self._cards[-1])
 			return s
 
-	def allCardsString(self) -> str:
-		if len(self._cards) == 0:
-			return ''
-		else:
-			s = ''
-		for card in self._cards[:-1]:
-			s += str(card) + ', '
-		s += str(self._cards[-1])
-		return s
-
 	@property
 	def size(self) -> int:
 		if self._cards:
@@ -36,18 +26,6 @@ class Hand:
 	@property
 	def cards(self) -> list[Card]:
 		return self._cards
-
-	def getCard(self, index : str) -> Card:
-		try:
-			return self._cards[int(index)]
-		except:
-			return None
-
-	def hasNoExitCard(self) -> bool:
-		if any([card.value in ['A', 'K', 'JOKER'] for card in self._cards]):
-			return False
-		else:
-			return True
 
 	def fold(self) -> None:
 		self._cards = []
