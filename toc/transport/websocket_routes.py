@@ -44,14 +44,14 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 		await websocket.close(code=NO_GAME_FOUND_CODE)
 		return
 
-	player_id = gameSession.getFullPlayerId(gameSession.joinCode, player_name)
-	existingPlayer = gameSession.players.get(player_id)
+	routerId = gameSession.getFullPlayerId(gameSession.joinCode, player_name)
+	existingParticipant = gameSession.participants.get(routerId)
 
-	if existingPlayer is not None and existingPlayer.active:
+	if existingParticipant is not None and existingParticipant.active:
 		await websocket.close(code=NO_PLAYER_CONTEXT_FOUND_CODE)
 		return
 
-	if existingPlayer is None and gameSession.is_full():
+	if existingParticipant is None and gameSession.is_full():
 		await websocket.close(code=GAME_ALREADY_FULL_CODE)
 		return
 
@@ -79,23 +79,23 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 		await websocket.close(code=CONNECTION_IDENTIFICATION_ERROR_CODE, reason="Invalid connection identity")
 		return
 
-	if existingPlayer is not None and not resumeTokenMatches(resumeToken, existingPlayer.resumeTokenHash):
+	if existingParticipant is not None and not resumeTokenMatches(resumeToken, existingParticipant.resumeTokenHash):
 		await websocket.close(code=CONNECTION_IDENTIFICATION_ERROR_CODE, reason="Invalid resume token")
 		return
 
 	try:
-		if existingPlayer is None:
-			persistentPlayerId = createPlayerId()
+		if existingParticipant is None:
+			participantId = createPlayerId()
 			resumeToken = createResumeToken()
 			resumeTokenHash = hashResumeToken(resumeToken)
 
-			router.register(player_id)
+			router.register(routerId)
 
-			newPlayer = Player(identifier=persistentPlayerId, name=player_name, team="", color="", position="", gameSession=gameSession, router=router, routerId=player_id)
+			newPlayer = Player(identifier=participantId, name=player_name, team="", color="", position="", gameSession=gameSession, router=router, routerId=routerId)
 
 			participant = Participant(
-				participantId=persistentPlayerId,
-				routerId=player_id,
+				participantId=participantId,
+				routerId=routerId,
 				name=player_name,
 				resumeTokenHash=resumeTokenHash,
 				websocket=websocket,
@@ -105,16 +105,13 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 
 			gameSession.roster.addParticipant(participant)
 
-			gameSession.players[player_id] = SessionParticipant(participant, newPlayer)
+			gameSession.participants[routerId] = SessionParticipant(participant, newPlayer)
 		else:
-			persistentPlayerId = existingPlayer.participantId
+			participantId = existingParticipant.participantId
 
-			router.registerAgain(player_id)
-			existingPlayer.websocket = websocket
-			existingPlayer.active = True
-			participant = existingPlayer.participant
-			participant.websocket = websocket
-			participant.active = True
+			router.registerAgain(routerId)
+			existingParticipant.websocket = websocket
+			existingParticipant.active = True
 
 		gameSession.notePlayerConnected()
 
@@ -129,21 +126,21 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 			try:
 				message = json.loads(data)
 			except json.JSONDecodeError:
-				await router.send_output(player_id, build_message("error", "errors.invalid_json_message", "The server received an invalid JSON message."))
+				await router.send_output(routerId, build_message("error", "errors.invalid_json_message", "The server received an invalid JSON message."))
 				continue
 
 			if not isinstance(message, dict):
-				await router.send_output(player_id, build_message("error", "errors.invalid_message_format", "The server received an invalid message format."))
+				await router.send_output(routerId, build_message("error", "errors.invalid_message_format", "The server received an invalid message format."))
 				continue
 
 			messageType = message.get("type")
 
 			if not isinstance(messageType, str):
-				await router.send_output(player_id, build_message("error", "errors.invalid_message_format", "Invalid message format."))
+				await router.send_output(routerId, build_message("error", "errors.invalid_message_format", "Invalid message format."))
 				continue
 
 			if messageType not in CLIENT_MESSAGE_TYPES:
-				await router.send_output(player_id, build_message(
+				await router.send_output(routerId, build_message(
 					"error",
 					"errors.unknown_message_type",
 					f"Unknown message type: {messageType}.",
@@ -151,30 +148,30 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 				))
 				continue
 
-			await gameSession.handle_player_message(player_id, message)
+			await gameSession.handle_player_message(routerId, message)
 
 	async def output_loop() -> None:
 		while True:
-			message = await router.get_output(player_id)
+			message = await router.get_output(routerId)
 			await websocket.send_json(message)
 
 	async def setup_connection() -> None:
-		if existingPlayer is None:
+		if existingParticipant is None:
 			await gameSession.broadcast_lobby_state()
 
 		else:
 			if gameSession.started:
-				await existingPlayer.primaryPlayer.send_message_to_user(gameSession.lobby_state())
-				await existingPlayer.primaryPlayer.send_message_to_user(gameSession.fullUI())
-				await existingPlayer.primaryPlayer.send_message_to_user(build_message(
+				await existingParticipant.primaryPlayer.send_message_to_user(gameSession.lobby_state())
+				await existingParticipant.primaryPlayer.send_message_to_user(gameSession.fullUI())
+				await existingParticipant.primaryPlayer.send_message_to_user(build_message(
 					"log",
 					"connection.rejoined_self",
-					f"You successfully rejoined the game in team {existingPlayer.team} with colour {existingPlayer.color}!",
-					{"team": existingPlayer.team, "color": existingPlayer.color},
+					f"You successfully rejoined the game in team {existingParticipant.team} with colour {existingParticipant.color}!",
+					{"team": existingParticipant.team, "color": existingParticipant.color},
 				))
-				await gameSession.sendHandsAgain(existingPlayer)
-				await router.resend_pending_prompt(player_id)
-				await gameSession.broadcast(build_message("log", "connection.player_rejoined", f"{player_name} rejoined the game.", {"player": player_name}), excluded_player=player_id)
+				await gameSession.sendHandsAgain(existingParticipant)
+				await router.resend_pending_prompt(routerId)
+				await gameSession.broadcast(build_message("log", "connection.player_rejoined", f"{player_name} rejoined the game.", {"player": player_name}), excludedRouterId=routerId)
 			else:
 				await gameSession.broadcast_lobby_state()
 
@@ -187,7 +184,7 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 			"type": "ready",
 			"protocolVersion": WEBSOCKET_PROTOCOL_VERSION,
 			"sessionId": gameSession.sessionId,
-			"playerId": persistentPlayerId,
+			"playerId": participantId,
 			"resumeToken": resumeToken,
 		})
 
@@ -207,22 +204,22 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_name: st
 				extra={
 					"sessionId": gameSession.sessionId,
 					"joinCode": gameSession.joinCode,
-					"routerId": player_id,
+					"routerId": routerId,
 					"playerName": player_name,
 				},
 			)
 
 	finally:
-		playerData = gameSession.players.get(player_id)
+		sessionParticipant = gameSession.participants.get(routerId)
 
-		if playerData is not None and playerData.websocket is websocket:
-			playerData.websocket = None
-			playerData.active = False
+		if sessionParticipant is not None and sessionParticipant.websocket is websocket:
+			sessionParticipant.websocket = None
+			sessionParticipant.active = False
 
 			gameSession.notePlayerDisconnected()
-			router.unregister(player_id)
+			router.unregister(routerId)
 
 			if gameSession.started:
-				await gameSession.broadcast(build_message("log", "connection.player_disconnected", f"{player_name} disconnected.", {"player": player_name}), excluded_player=player_id)
+				await gameSession.broadcast(build_message("log", "connection.player_disconnected", f"{player_name} disconnected.", {"player": player_name}), excludedRouterId=routerId)
 			else:
 				await gameSession.broadcast_lobby_state()

@@ -150,7 +150,7 @@ def test_started_game_becomes_suspendable_after_all_players_disconnect():
 	clock = FakeClock(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc))
 	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
 	session.game = SimpleNamespace(isFinished=False)
-	session.players = {
+	session.participants = {
 		"TEST-Alice": makeSessionParticipant("TEST-Alice"),
 		"TEST-Bob": makeSessionParticipant("TEST-Bob"),
 	}
@@ -169,7 +169,7 @@ def test_player_reconnection_cancels_disconnection_grace_period():
 	clock = FakeClock(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc))
 	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
 	session.game = SimpleNamespace(isFinished=False)
-	session.players = {
+	session.participants = {
 		"TEST-Alice": makeSessionParticipant("TEST-Alice"),
 		"TEST-Bob": makeSessionParticipant("TEST-Bob"),
 	}
@@ -177,7 +177,7 @@ def test_player_reconnection_cancels_disconnection_grace_period():
 	session.notePlayerDisconnected()
 
 	clock.advance(20)
-	session.players["TEST-Alice"].active = True
+	session.participants["TEST-Alice"].active = True
 	session.notePlayerConnected()
 	clock.advance(20)
 
@@ -187,7 +187,7 @@ def test_repeated_disconnection_notifications_do_not_reset_grace_period():
 	clock = FakeClock(datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc))
 	session = GameSession("TEST", PlayerInputRouter(), clock=clock)
 	session.game = SimpleNamespace(isFinished=False)
-	session.players = {"TEST-Alice": makeSessionParticipant("TEST-Alice")}
+	session.participants = {"TEST-Alice": makeSessionParticipant("TEST-Alice")}
 	session.markStarted()
 	session.notePlayerDisconnected()
 

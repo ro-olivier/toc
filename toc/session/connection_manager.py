@@ -76,7 +76,7 @@ class ConnectionManager:
 			lobbies.append({
 				"gameName": session.joinCode,
 				"creatorName": session.creatorName,
-				"playerCount": len(session.players),
+				"playerCount": len(session.participants),
 				"playerCapacity": session.modeDefinition.participantCount,
 				"mode": session.modeDefinition.to_dict(),
 			})

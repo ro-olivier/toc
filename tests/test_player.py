@@ -15,15 +15,15 @@ class FakeRouter:
 		self.inputRouterIds = []
 		self.clearedRouterIds = []
 
-	async def send_output(self, player_id, message):
-		self.outputs.append((player_id, message))
+	async def send_output(self, routerId, message):
+		self.outputs.append((routerId, message))
 
-	async def wait_for_input(self, player_id):
-		self.inputRouterIds.append(player_id)
+	async def wait_for_input(self, routerId):
+		self.inputRouterIds.append(routerId)
 		return next(self.inputs)
 
-	def clear_pending_prompt(self, player_id) -> None:
-		self.clearedRouterIds.append(player_id)
+	def clear_pending_prompt(self, routerId) -> None:
+		self.clearedRouterIds.append(routerId)
 		self.pendingPrompts = []
 
 

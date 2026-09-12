@@ -72,9 +72,9 @@ def makeGameSessionState(archiveStore=None, clock=SYSTEM_CLOCK, joinCode="TEST")
 		session.roster.addParticipant(participant)
 		session.roster.addSeat(seat)
 
-		playerData = SessionParticipant(participant, player)
-		playerData.configureSeats([seat])
-		session.players[routerId] = playerData
+		sessionParticipant = SessionParticipant(participant, player)
+		sessionParticipant.configureSeats([seat])
+		session.participants[routerId] = sessionParticipant
 
 		session.order.append(seat.seatId)
 		players.append(player)
@@ -87,17 +87,17 @@ def makeRestorationSession(sourceSession):
 	router = PlayerInputRouter()
 	session = GameSession(sourceSession.id, router, sourceSession.rules, sourceSession.rulesetName, modeDefinition=sourceSession.modeDefinition)
 
-	for sourcePlayerData in sourceSession.players.values():
-		name = sourcePlayerData.name
+	for sourceSessionParticipant in sourceSession.participants.values():
+		name = sourceSessionParticipant.name
 		routerId = session.getFullPlayerId(session.id, name)
-		participantId = sourcePlayerData.participantId
-		seatId = sourcePlayerData.primarySeat.seatId
+		participantId = sourceSessionParticipant.participantId
+		seatId = sourceSessionParticipant.primarySeat.seatId
 
 		participant = Participant(
 			participantId=participantId,
 			routerId=routerId,
 			name=name,
-			resumeTokenHash=sourcePlayerData.resumeTokenHash,
+			resumeTokenHash=sourceSessionParticipant.resumeTokenHash,
 			active=False,
 			configured=True,
 		)
@@ -105,8 +105,8 @@ def makeRestorationSession(sourceSession):
 		player = Player(
 			identifier=seatId,
 			name=name,
-			team=sourcePlayerData.team,
-			color=sourcePlayerData.color,
+			team=sourceSessionParticipant.team,
+			color=sourceSessionParticipant.color,
 			gameSession=session,
 			router=router,
 			routerId=routerId,
@@ -115,17 +115,17 @@ def makeRestorationSession(sourceSession):
 		seat = PlayerSeat(
 			seatId=seatId,
 			participantId=participantId,
-			team=sourcePlayerData.team,
-			color=sourcePlayerData.color,
+			team=sourceSessionParticipant.team,
+			color=sourceSessionParticipant.color,
 			player=player,
 		)
 
 		session.roster.addParticipant(participant)
 		session.roster.addSeat(seat)
 
-		playerData = SessionParticipant(participant, player)
-		playerData.configureSeats([seat])
-		session.players[routerId] = playerData
+		sessionParticipant = SessionParticipant(participant, player)
+		sessionParticipant.configureSeats([seat])
+		session.participants[routerId] = sessionParticipant
 
 	return session
 
@@ -150,13 +150,13 @@ def makeDuelTwoSessionState():
 
 		session.roster.addParticipant(participant)
 		session.roster.addSeat(seat)
-		playerData = SessionParticipant(participant, player)
-		playerData.configureSeats([seat])
-		session.players[player.identifier] = playerData
+		sessionParticipant = SessionParticipant(participant, player)
+		sessionParticipant.configureSeats([seat])
+		session.participants[player.identifier] = sessionParticipant
 		session.order.append(player.identifier)
 
 	session.game = Game(session, ["red", "blue"], session.rules, session.dealCardCounts, session.modeDefinition.jokerCount)
-	session.game.setPlayers([session.players[runtimeId].primaryPlayer for runtimeId in session.order])
+	session.game.setPlayers([session.participants[runtimeId].primaryPlayer for runtimeId in session.order])
 	return session
 
 def makeTeamSixSessionState():
@@ -182,14 +182,14 @@ def makeTeamSixSessionState():
 
 		session.roster.addParticipant(participant)
 		session.roster.addSeat(seat)
-		playerData = SessionParticipant(participant, player)
-		playerData.configureSeats([seat])
-		session.players[player.identifier] = playerData
+		sessionParticipant = SessionParticipant(participant, player)
+		sessionParticipant.configureSeats([seat])
+		session.participants[player.identifier] = sessionParticipant
 		session.order.append(player.identifier)
 
 	colors = ["red", "blue", "green", "yellow", "purple", "orange"]
 	session.game = Game(session, colors, session.rules, session.dealCardCounts, session.modeDefinition.jokerCount)
-	session.game.setPlayers([session.players[runtimeId].primaryPlayer for runtimeId in session.order])
+	session.game.setPlayers([session.participants[runtimeId].primaryPlayer for runtimeId in session.order])
 	return session
 
 def test_card_state_survives_json_round_trip():
@@ -353,7 +353,7 @@ def test_session_snapshot_survives_compressed_json_round_trip(tmp_path):
 	session = makeGameSessionState()
 	session.markStarted()
 	session.recordEvent(GameEventType.GAME_STARTED)
-	playerId = next(iter(session.players.values())).participantId
+	playerId = next(iter(session.participants.values())).participantId
 	session.recordEvent(GameEventType.TURN_STARTED, playerId, {"handSize": 5})
 
 	originalState = session.snapshotState()
@@ -436,7 +436,7 @@ def test_session_snapshot_rejects_progress_for_unknown_player():
 		dealIndex=0,
 		sevenSplit=SevenSplitProgressState(
 			actingPlayerId=createPlayerId(),
-			pieceOwnerId=next(iter(session.players.values())).participantId,
+			pieceOwnerId=next(iter(session.participants.values())).participantId,
 			card=CardState("♠️", "7"),
 			stepsRemaining=7,
 		),
@@ -511,45 +511,45 @@ def test_restored_players_start_disconnected_with_fresh_router_queues():
 
 	restoredSession = GameSession.fromSnapshot(snapshot, router)
 
-	for runtimeId, playerData in restoredSession.players.items():
-		assert playerData.active is False
-		assert playerData.websocket is None
+	for runtimeId, sessionParticipant in restoredSession.participants.items():
+		assert sessionParticipant.active is False
+		assert sessionParticipant.websocket is None
 		assert runtimeId not in router.input_queues
 		assert runtimeId not in router.output_queues
 		assert runtimeId in router.recycleBin
 		assert runtimeId not in router.pendingPrompts
-		assert playerData.primaryPlayer.identifier == playerData.participantId
-		assert playerData.primaryPlayer.routerId == runtimeId
+		assert sessionParticipant.primaryPlayer.identifier == sessionParticipant.participantId
+		assert sessionParticipant.primaryPlayer.routerId == runtimeId
 
 		participant = restoredSession.roster.getParticipantByRouterId(runtimeId)
 
-		assert participant is playerData.participant
-		assert participant.participantId == playerData.participantId
-		assert participant.resumeTokenHash == playerData.resumeTokenHash
-		assert participant.configured == playerData.configured
+		assert participant is sessionParticipant.participant
+		assert participant.participantId == sessionParticipant.participantId
+		assert participant.resumeTokenHash == sessionParticipant.resumeTokenHash
+		assert participant.configured == sessionParticipant.configured
 		assert participant.active is False
 		assert participant.websocket is None
 
-		seat = restoredSession.roster.getSeatById(playerData.participantId)
+		seat = restoredSession.roster.getSeatById(sessionParticipant.participantId)
 
-		assert seat is playerData.primarySeat
-		assert seat.player is playerData.primaryPlayer
+		assert seat is sessionParticipant.primarySeat
+		assert seat.player is sessionParticipant.primaryPlayer
 		assert seat.participantId == participant.participantId
-		assert seat.team == playerData.team
-		assert seat.color == playerData.color
+		assert seat.team == sessionParticipant.team
+		assert seat.color == sessionParticipant.color
 		assert participant.seatIds == [seat.seatId]
 
-		assert playerData.controlledPlayers == [playerData.primaryPlayer]
-		assert playerData.controlledSeats == [playerData.primarySeat]
-		assert playerData.colors == [playerData.color]
+		assert sessionParticipant.controlledPlayers == [sessionParticipant.primaryPlayer]
+		assert sessionParticipant.controlledSeats == [sessionParticipant.primarySeat]
+		assert sessionParticipant.colors == [sessionParticipant.color]
 
 def test_session_restoration_preserves_resume_token_hashes():
 	originalSession = makeGameSessionState()
 	snapshot = originalSession.snapshotState()
 	restoredSession = GameSession.fromSnapshot(snapshot, PlayerInputRouter())
 
-	originalHashes = {playerData.participantId: playerData.resumeTokenHash for playerData in originalSession.players.values()}
-	restoredHashes = {playerData.participantId: playerData.resumeTokenHash for playerData in restoredSession.players.values()}
+	originalHashes = {sessionParticipant.participantId: sessionParticipant.resumeTokenHash for sessionParticipant in originalSession.participants.values()}
+	restoredHashes = {sessionParticipant.participantId: sessionParticipant.resumeTokenHash for sessionParticipant in restoredSession.participants.values()}
 
 	assert restoredHashes == originalHashes
 
@@ -821,7 +821,7 @@ def test_restored_unfinished_session_waits_for_players_before_resuming():
 
 	assert restoredSession.awaitingResume is True
 	assert restoredSession.gameTask is None
-	assert all(playerData.active is False for playerData in restoredSession.players.values())
+	assert all(sessionParticipant.active is False for sessionParticipant in restoredSession.participants.values())
 
 def test_restored_session_does_not_resume_until_every_player_is_connected():
 	async def scenario():
@@ -829,8 +829,8 @@ def test_restored_session_does_not_resume_until_every_player_is_connected():
 		markGameAsStarted(session)
 		restoredSession = GameSession.fromSnapshot(session.snapshotState(), PlayerInputRouter())
 
-		for playerData in list(restoredSession.players.values())[:-1]:
-			playerData.active = True
+		for sessionParticipant in list(restoredSession.participants.values())[:-1]:
+			sessionParticipant.active = True
 
 		result = await restoredSession.start_resume_if_ready()
 
@@ -852,8 +852,8 @@ def test_fourth_reconnected_player_starts_resumed_game(monkeypatch):
 
 		monkeypatch.setattr(restoredSession, "resumed_game_loop", fakeResumedGameLoop)
 
-		for playerData in restoredSession.players.values():
-			playerData.active = True
+		for sessionParticipant in restoredSession.participants.values():
+			sessionParticipant.active = True
 
 		result = await restoredSession.start_resume_if_ready()
 
@@ -874,8 +874,8 @@ def test_simultaneous_resume_checks_start_only_one_task(monkeypatch):
 		restoredSession = GameSession.fromSnapshot(session.snapshotState(), PlayerInputRouter())
 		resumeCalls = []
 
-		for playerData in restoredSession.players.values():
-			playerData.active = True
+		for sessionParticipant in restoredSession.participants.values():
+			sessionParticipant.active = True
 
 		async def fakeResumedGameLoop():
 			resumeCalls.append("resume")
@@ -923,7 +923,7 @@ def test_connection_manager_restores_suspended_game_by_join_code(tmp_path):
 	assert restoredSession.joinCode == session.joinCode
 	assert restoredSession.awaitingResume is True
 	assert manager.get_game(session.joinCode) is restoredSession
-	assert all(playerData.active is False for playerData in restoredSession.players.values())
+	assert all(sessionParticipant.active is False for sessionParticipant in restoredSession.participants.values())
 
 def test_connection_manager_returns_none_for_unknown_suspended_game(tmp_path):
 	store = CompressedJsonStore(tmp_path / "game-data")
@@ -1137,8 +1137,8 @@ def test_resumed_session_promotes_suspended_archive_to_active(tmp_path, monkeypa
 		restoredSession = GameSession.fromSnapshot(snapshot, PlayerInputRouter(), archiveStore=store)
 		resumeCalls = []
 
-		for playerData in restoredSession.players.values():
-			playerData.active = True
+		for sessionParticipant in restoredSession.participants.values():
+			sessionParticipant.active = True
 
 		async def fakeResumedGameLoop():
 			resumeCalls.append("resume")
@@ -1167,8 +1167,8 @@ def test_failed_active_promotion_does_not_start_resumed_game(tmp_path, monkeypat
 		snapshot = SessionSnapshotState.from_dict(store.read(ArchiveCategory.SUSPENDED, session.sessionId))
 		restoredSession = GameSession.fromSnapshot(snapshot, PlayerInputRouter(), archiveStore=store)
 
-		for playerData in restoredSession.players.values():
-			playerData.active = True
+		for sessionParticipant in restoredSession.participants.values():
+			sessionParticipant.active = True
 
 		originalWrite = store.write
 
@@ -1475,8 +1475,8 @@ def test_monitor_suspends_game_after_disconnection_grace(tmp_path):
 		session = makeGameSessionState(store, clock)
 		markGameAsStarted(session)
 
-		for playerData in session.players.values():
-			playerData.active = False
+		for sessionParticipant in session.participants.values():
+			sessionParticipant.active = False
 
 		session.notePlayerDisconnected()
 		manager = ConnectionManager(clock, store)
@@ -1555,7 +1555,7 @@ def test_failed_suspension_restarts_cancelled_game_task(tmp_path, monkeypatch):
 def test_game_state_snapshot_uses_roster_instead_of_compatibility_dictionary():
 	session = makeGameSessionState()
 	expectedPlayerOrder = tuple(seat.seatId for seat in session.roster.seats)
-	session.players.clear()
+	session.participants.clear()
 
 	state = GameState.fromGameSession(session)
 
@@ -1618,10 +1618,10 @@ def test_duel_four_session_restores_two_seats_per_participant():
 	assert restoredSession.modeDefinition == getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
 	assert restoredSession.roster.participantCount == 2
 	assert restoredSession.roster.seatCount == 4
-	assert len(restoredSession.players) == 2
+	assert len(restoredSession.participants) == 2
 
-	aliceData = restoredSession.players["TEST-Alice"]
-	bobData = restoredSession.players["TEST-Bob"]
+	aliceData = restoredSession.participants["TEST-Alice"]
+	bobData = restoredSession.participants["TEST-Bob"]
 
 	assert len(aliceData.controlledPlayers) == 2
 	assert len(aliceData.controlledSeats) == 2
@@ -1689,7 +1689,7 @@ def test_team_six_session_survives_snapshot_round_trip():
 	assert restoredSession.modeDefinition.teamCount == 3
 	assert restoredSession.roster.participantCount == 6
 	assert restoredSession.roster.seatCount == 6
-	assert len(restoredSession.players) == 6
+	assert len(restoredSession.participants) == 6
 	assert len(restoredSession.game.players) == 6
 	assert restoredSession.game.board.colors == ("red", "blue", "green", "yellow", "purple", "orange")
 	assert restoredSession.game.board.boardSize == 108

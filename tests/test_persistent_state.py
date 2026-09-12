@@ -36,9 +36,9 @@ def makeSessionWithPlayer():
 	session.roster.addParticipant(participant)
 	session.roster.addSeat(seat)
 
-	playerData = SessionParticipant(participant, player)
-	playerData.configureSeats([seat])
-	session.players[routerId] = playerData
+	sessionParticipant = SessionParticipant(participant, player)
+	sessionParticipant.configureSeats([seat])
+	session.participants[routerId] = sessionParticipant
 
 	return session, resumeToken
 
