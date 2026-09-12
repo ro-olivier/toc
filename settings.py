@@ -5,7 +5,6 @@ BASE_DIR = Path(__file__).resolve().parent
 GAME_DATA_DIRECTORY = Path(os.environ.get("TOC_DATA_DIRECTORY", BASE_DIR / "game-data"))
 CLIENT_MESSAGE_TYPES = frozenset({
 	"configure-player",
-	"debug",
 	"text_input",
 	"card_selection",
 	"spot_selection",

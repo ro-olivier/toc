@@ -994,18 +994,4 @@ class GameSession:
 			await self.configure_player(player_id, message.get("team", ""), colors)
 			return
 
-		if messageType == "debug":
-			if message.get("msg") == "simulate_card_exchange_players3and4":
-				playerIds = list(self.players.keys())
-				player3 = self.players[playerIds[2]]["object"]
-				player4 = self.players[playerIds[3]]["object"]
-
-				await self.router.add_input(playerIds[2], {"type": "card_selection", "name": playerIds[2], "value": player3.hand.cards[0].value, "suit": player3.hand.cards[0].suit})
-				await self.router.add_input(playerIds[3], {"type": "card_selection", "name": playerIds[3], "value": player4.hand.cards[0].value, "suit": player4.hand.cards[0].suit})
-
-			elif message.get("msg") == "force-play" and self.game is not None and self.game.activePlayer is not None:
-				await self.game.activePlayer.forceRandomMove()
-
-			return
-
 		await self.router.add_input(player_id, message)
