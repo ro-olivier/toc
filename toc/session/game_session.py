@@ -330,7 +330,26 @@ class GameSession:
 
 		async with self._checkpointLock:
 			payload = self.snapshotState().to_dict()
-			return await asyncio.to_thread(self._archiveStore.write, category, self._sessionId, payload)
+			return await self._runPersistenceOperation(self._archiveStore.write, category, self._sessionId, payload)
+
+	async def _runPersistenceOperation(self, operation, *args):
+		persistenceTask = asyncio.create_task(asyncio.to_thread(operation, *args))
+
+		try:
+			return await asyncio.shield(persistenceTask)
+		except asyncio.CancelledError:
+			while not persistenceTask.done():
+				try:
+					await asyncio.shield(persistenceTask)
+				except asyncio.CancelledError:
+					continue
+
+			try:
+				persistenceTask.result()
+			except Exception:
+				logger.exception("Persistence operation failed while cancellation was pending", extra={"sessionId": self._sessionId})
+
+			raise
 
 	async def checkpointActive(self):
 		self.recordActivity()
@@ -380,7 +399,7 @@ class GameSession:
 
 				return path
 
-			return await asyncio.to_thread(persistTransition)
+			return await self._runPersistenceOperation(persistTransition)
 
 	def getGameFinishedAuditDetails(self) -> dict:
 		winningPlayers = self.game.getWinningTeam() if self.game is not None else None
@@ -648,7 +667,7 @@ class GameSession:
 				self._archiveStore.delete(ArchiveCategory.SUSPENDED, self._sessionId)
 				return path
 
-			path = await asyncio.to_thread(persistFinishedArchive)
+			path = await self._runPersistenceOperation(persistFinishedArchive)
 
 		self._awaitingResume = False
 		return path
