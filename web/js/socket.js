@@ -289,7 +289,7 @@ app.connectToGame = async function connectToGame(gameId, name, rejoin = false) {
         app.clearSpotSelection();
         app.displayNoActivePlayers();
         app.setTranslatedText(dom.currentPlayerName, "game.game_over");
-        app.setRawText(dom.turnInstruction, data.msg);
+        app.setMessageText(dom.turnInstruction, data);
         app.log(data);
         break;
 
