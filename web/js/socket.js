@@ -344,6 +344,10 @@ state.ws.onclose = event => {
       app.returnToStartAfterServerClose("errors.game_suspended", gameId, name, false);
       return;
 
+    case constants.INVALID_PLAYER_NAME_CODE:
+      app.showError(i18n.t("errors.invalid_creator_name"));
+      break;
+
     default:
       app.showError(i18n.t("errors.connection_closed", {code: event.code}));
   }

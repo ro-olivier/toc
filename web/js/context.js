@@ -100,6 +100,7 @@ export const constants = Object.freeze({
   CONNECTION_IDENTIFICATION_ERROR_CODE: 4005,
   LOBBY_EXPIRED_CLOSE_CODE: 4006,
   GAME_SUSPENDED_CLOSE_CODE: 4007,
+  INVALID_PLAYER_NAME_CODE: 4008,
   START_NOTICE_STORAGE_KEY: "toc.startNotice",
   RULE_GROUPS: Object.freeze({
     round: "rules.groups.round",
