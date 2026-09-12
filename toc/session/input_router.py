@@ -7,6 +7,8 @@ import uuid
 
 logger = logging.getLogger("toc.main")
 
+INPUT_QUEUE_MAX_SIZE = 1
+
 
 class DuplicateNameError(Exception):
 	pass
@@ -26,7 +28,7 @@ class PlayerInputRouter:
 			raise DuplicateNameError
 		else:
 			logger.info("Player registered with router", extra={"routerId": player_name})
-			self.input_queues[player_name] = asyncio.Queue()
+			self.input_queues[player_name] = asyncio.Queue(maxsize=INPUT_QUEUE_MAX_SIZE)
 			self.output_queues[player_name] = asyncio.Queue()
 
 	def registerAgain(self, player_name: str):
@@ -52,33 +54,56 @@ class PlayerInputRouter:
 		self.pendingPrompts.pop(player_name, None)
 
 		self.recycleBin[player_name] = {
-			"in": asyncio.Queue(),
+			"in": asyncio.Queue(maxsize=INPUT_QUEUE_MAX_SIZE),
 			"out": asyncio.Queue(),
 		}
 
-	async def add_input(self, player_name: str, message: str):
+	async def add_input(self, player_name: str, message: dict) -> bool:
 		messageType = message.get("type") if isinstance(message, dict) else type(message).__name__
-		logger.debug("Player input queued", extra={"routerId": player_name, "messageType": messageType})
 		queue = self.input_queues.get(player_name)
-		if queue:
-			await queue.put(message)
-		else:
+
+		if queue is None:
 			logger.warning("No input queue found", extra={"routerId": player_name})
+			return False
+
+		pendingPrompt = self.pendingPrompts.get(player_name)
+
+		if pendingPrompt is None:
+			logger.info("Ignored unsolicited player input", extra={"routerId": player_name, "messageType": messageType})
+			return False
+
+		requestId = message.get("requestId") if isinstance(message, dict) else None
+
+		if requestId != pendingPrompt.get("requestId"):
+			logger.info("Ignored stale player input", extra={"routerId": player_name, "messageType": messageType})
+			return False
+
+		if queue.full():
+			queuedMessage = queue.get_nowait()
+			queuedRequestId = queuedMessage.get("requestId") if isinstance(queuedMessage, dict) else None
+
+			if queuedRequestId == requestId:
+				queue.put_nowait(queuedMessage)
+				logger.info("Ignored duplicate player input", extra={"routerId": player_name, "messageType": messageType})
+				return False
+
+			logger.info("Discarded queued input for an obsolete prompt", extra={"routerId": player_name, "messageType": messageType})
+
+		queue.put_nowait(message)
+		logger.debug("Player input queued", extra={"routerId": player_name, "messageType": messageType})
+		return True
 
 	async def wait_for_input(self, player_name: str):
 		while True:
-			msg = await self.input_queues[player_name].get()
+			message = await self.input_queues[player_name].get()
 			pendingPrompt = self.pendingPrompts.get(player_name)
+			requestId = message.get("requestId") if isinstance(message, dict) else None
 
-			if pendingPrompt is None:
-				return msg
+			if pendingPrompt is not None and requestId == pendingPrompt.get("requestId"):
+				return message
 
-			requestId = msg.get("requestId") if isinstance(msg, dict) else None
-
-			if requestId is None or requestId == pendingPrompt.get("requestId"):
-				return msg
-
-			logger.info("Ignored stale player input", extra={"routerId": player_name, "messageType": msg.get("type")})
+			messageType = message.get("type") if isinstance(message, dict) else type(message).__name__
+			logger.info("Ignored stale queued player input", extra={"routerId": player_name, "messageType": messageType})
 
 	async def send_output(self, player_name: str, message: dict):
 		if isinstance(message, dict) and message.get("type") in self.interactiveMessageTypes:
