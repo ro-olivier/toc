@@ -5,7 +5,7 @@ import logging
 from contextlib import suppress
 from typing import Dict, List
 
-from settings import ALL_PLAYERS_DISCONNECTED_GRACE_SECONDS, GAME_INACTIVITY_SECONDS, LOBBY_LIFETIME_SECONDS
+from settings import ALL_PLAYERS_DISCONNECTED_GRACE_SECONDS, GAME_INACTIVITY_SECONDS, GAME_SUSPENDED_CLOSE_CODE, LOBBY_LIFETIME_SECONDS
 from toc.infrastructure.clock import Clock, SYSTEM_CLOCK
 from toc.infrastructure.identity import createSeatId, createSessionId
 from toc.infrastructure.messages import build_message
@@ -341,12 +341,7 @@ class GameSession:
 			await self.resumeGame()
 		except Exception:
 			logger.exception("Resumed game loop failed", extra={"gameId": self.id, "sessionId": self._sessionId})
-
-			await self.broadcast(build_message(
-				"error",
-				"errors.internal_game_error",
-				"The game stopped because of an internal server error.",
-			))
+			await self._handleGameLoopFailure()
 
 	async def start_resume_if_ready(self) -> bool:
 		async with self.lock:
@@ -662,7 +657,7 @@ class GameSession:
 		self.completeGameLifecycle()
 		return await self.archiveFinished()
 
-	async def closeConnections(self, code: int, reason: str) -> None:
+	async def closeConnections(self, code: int, reason: str, preserveRouterState: bool = False) -> None:
 		websockets = []
 
 		for playerData in self.players.values():
@@ -676,9 +671,36 @@ class GameSession:
 
 		for runtimeId, playerData in self.players.items():
 			playerData["active"] = False
-			self.router.forget(runtimeId)
+
+			if preserveRouterState:
+				self.router.unregister(runtimeId)
+			else:
+				self.router.forget(runtimeId)
 
 		self._allPlayersDisconnectedMonotonic = None
+
+	async def _handleGameLoopFailure(self) -> None:
+		self.gameTask = None
+
+		try:
+			await self.broadcast(build_message("error", "errors.internal_game_error", "The game stopped because of an internal server error."))
+		except Exception:
+			logger.exception("Could not notify players of game-loop failure", extra={"gameId": self.id, "sessionId": self._sessionId})
+
+		if self.game is None or self.game.isFinished:
+			return
+
+		try:
+			path = await self.archiveSuspended()
+
+			if path is None:
+				raise RuntimeError("Cannot suspend a failed game without persistent storage")
+
+		except Exception:
+			logger.exception("Could not suspend game after game-loop failure", extra={"gameId": self.id, "sessionId": self._sessionId})
+			return
+
+		await self.closeConnections(GAME_SUSPENDED_CLOSE_CODE, "Game suspended after internal error", preserveRouterState=True)
 
 	async def cancelGameTask(self) -> bool:
 		task = self.gameTask
@@ -838,8 +860,8 @@ class GameSession:
 			await self.game.start()
 			await self.finalizeFinishedGame()
 		except Exception:
-			logging.exception("Game loop failed for game %s", self.id)
-			await self.broadcast(build_message("error", "errors.internal_game_error", "The game stopped because of an internal server error."))
+			logger.exception("Game loop failed", extra={"gameId": self.id, "sessionId": self._sessionId})
+			await self._handleGameLoopFailure()
 
 	async def start_game_if_ready(self) -> bool:
 		async with self.lock:
