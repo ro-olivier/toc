@@ -5,7 +5,8 @@ import pytest
 from datetime import datetime, timedelta, timezone
 
 from toc.model.audit import GameEvent, GameEventLog, GameEventType
-from main import GameSession, PlayerInputRouter
+from toc.session.game_session import GameSession
+from toc.session.input_router import PlayerInputRouter
 
 
 class FakeClock:

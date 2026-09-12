@@ -4,7 +4,9 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from main import ConnectionManager, GameSession, PlayerInputRouter
+from toc.session.connection_manager import ConnectionManager
+from toc.session.game_session import GameSession
+from toc.session.input_router import PlayerInputRouter
 from toc.persistence.persistent_state import SessionMetadataState
 
 

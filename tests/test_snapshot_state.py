@@ -18,7 +18,9 @@ from toc.model.game_phase import GamePhase
 from toc.persistence.archive_store import ArchiveCategory, CompressedJsonStore
 from toc.persistence.snapshot_state import CardState, DeckState, GameProgressState, GameState, PlayerGameState, PositionState, SessionSnapshotState, SevenHopProgressState, SevenSplitProgressState
 from toc.persistence.finished_state import FinishedArchiveState
-from main import GameSession, ConnectionManager, PlayerInputRouter
+from toc.session.connection_manager import ConnectionManager
+from toc.session.game_session import GameSession
+from toc.session.input_router import PlayerInputRouter
 from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
 from toc.session.roster import Participant, PlayerSeat
 
@@ -1763,7 +1765,7 @@ def test_new_game_cannot_reuse_suspended_game_join_code(tmp_path, monkeypatch):
 	store.write(ArchiveCategory.SUSPENDED, suspendedSession.sessionId, suspendedSession.snapshotState().to_dict())
 
 	generatedCodes = iter(["calm-otter", "brave-fox"])
-	monkeypatch.setattr("main.createJoinCode", lambda: next(generatedCodes))
+	monkeypatch.setattr("toc.session.connection_manager.createJoinCode", lambda: next(generatedCodes))
 
 	connectionManager = ConnectionManager(archiveStore=store)
 	newGameId = connectionManager.create_game(PlayerInputRouter())

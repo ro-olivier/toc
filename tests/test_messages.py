@@ -38,7 +38,7 @@ def test_every_backend_message_key_is_registered():
 	messageKeyPrefixes = ("connection.", "errors.", "gameplay.", "lobby.errors.", "prompts.")
 	sourceKeys = set()
 
-	for sourcePath in ["main.py", "toc/model/game.py", "toc/model/player.py"]:
+	for sourcePath in ["toc/session/game_session.py", "toc/transport/http_routes.py", "toc/transport/websocket_routes.py", "toc/model/game.py", "toc/model/player.py"]:
 		tree = ast.parse((projectRoot / sourcePath).read_text(encoding="utf-8"))
 
 		for node in ast.walk(tree):

@@ -3,7 +3,8 @@ import json
 import pytest
 
 from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken
-from main import GameSession, PlayerInputRouter
+from toc.session.game_session import GameSession
+from toc.session.input_router import PlayerInputRouter
 from toc.persistence.persistent_state import ParticipantMetadataState, SeatMetadataState, SessionMetadataState
 from toc.infrastructure.versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, RULES_FORMAT_VERSION
 from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition

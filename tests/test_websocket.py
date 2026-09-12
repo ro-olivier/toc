@@ -6,7 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from main import app, manager, router
+from toc.application import app
+from toc.runtime import manager, router
 from toc.model.audit import GameEventType
 from toc.infrastructure.identity import resumeTokenMatches
 from toc.model.game_mode import GameMode, getGameModeDefinition
@@ -706,7 +707,7 @@ def test_game_loop_failure_is_broadcast_to_every_player(client, gameId, monkeypa
 		async def start(self):
 			raise RuntimeError("Deliberate test failure")
 
-	monkeypatch.setattr("main.Game", FailingGame)
+	monkeypatch.setattr("toc.session.game_session.Game", FailingGame)
 
 	playerConfigurations = {
 		"Alice": {"team": "0", "color": "red"},

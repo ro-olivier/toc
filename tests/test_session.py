@@ -5,7 +5,12 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from settings import *
-from main import app, ConnectionManager, GameSession, PlayerInputRouter, create_game as create_game_endpoint, get_open_lobbies, get_rule_presets, manager
+from toc.application import app
+from toc.runtime import manager
+from toc.session.connection_manager import ConnectionManager
+from toc.session.game_session import GameSession
+from toc.session.input_router import PlayerInputRouter
+from toc.transport.http_routes import create_game as create_game_endpoint, get_open_lobbies, get_rule_presets
 from toc.model.rules import GameRules, MONTSURVENT_RULES
 from toc.model.player import Player
 from toc.model.cards import Card
@@ -812,7 +817,7 @@ def test_team_six_ruleset_state_reports_effective_dealing_schedule():
 
 def test_connection_manager_retries_human_join_code_collision(monkeypatch):
 	generatedCodes = iter(["calm-otter", "calm-otter", "brave-fox"])
-	monkeypatch.setattr("main.createJoinCode", lambda: next(generatedCodes))
+	monkeypatch.setattr("toc.session.connection_manager.createJoinCode", lambda: next(generatedCodes))
 
 	connectionManager = ConnectionManager()
 	firstGameId = connectionManager.create_game(PlayerInputRouter())
@@ -823,7 +828,7 @@ def test_connection_manager_retries_human_join_code_collision(monkeypatch):
 	assert set(connectionManager.games) == {"calm-otter", "brave-fox"}
 
 def test_connection_manager_finds_human_join_code_case_insensitively(monkeypatch):
-	monkeypatch.setattr("main.createJoinCode", lambda: "calm-otter")
+	monkeypatch.setattr("toc.session.connection_manager.createJoinCode", lambda: "calm-otter")
 
 	connectionManager = ConnectionManager()
 	gameId = connectionManager.create_game(PlayerInputRouter())
