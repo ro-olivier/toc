@@ -858,7 +858,6 @@ body {
 }
 
 .sidebar-card,
-.debug-panel,
 .local-hand-panel {
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -901,42 +900,6 @@ body {
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
-}
-
-.debug-panel {
-  padding: 12px 14px;
-}
-
-.debug-panel summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.debug-controls {
-  display: flex;
-  gap: 7px;
-  margin-top: 11px;
-}
-
-.debug-controls input {
-  min-width: 0;
-  flex: 1;
-  padding: 8px;
-  border: 1px solid var(--border-light);
-  border-radius: 6px;
-  background: #0f172a;
-  color: var(--text);
-}
-
-.debug-controls button {
-  padding: 8px 12px;
-  border: 0;
-  border-radius: 6px;
-  background: #374151;
-  color: var(--text);
-  cursor: pointer;
 }
 
 .local-hand-panel {

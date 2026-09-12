@@ -9,7 +9,6 @@ export const dom = {
   resumeGamePanel: document.getElementById("resume-game-panel"),
   resumeGameDescription: document.getElementById("resume-game-description"),
   resumeGameBtn: document.getElementById("resume-game-btn"),
-  sendBtn: document.getElementById("send-btn"),
   commandInput: document.getElementById("command-input"),
   terminal: document.getElementById("terminal"),
   startScreen: document.getElementById("start-screen"),

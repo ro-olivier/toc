@@ -78,29 +78,6 @@ if (dom.cancelCardSelection) {
   });
 }
 
-dom.sendBtn.addEventListener("click", () => {
-  const command = dom.commandInput.value.trim();
-  if (!command || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-
-  let message;
-  if (command === "simulate2") {
-    message = {id: crypto.randomUUID(), type: "debug", msg: "simulate_card_exchange_players3and4"};
-  } else if (command === "force") {
-    message = {id: crypto.randomUUID(), type: "debug", msg: "force-play"};
-  } else {
-    message = {id: crypto.randomUUID(), type: "text_input", msg: command};
-  }
-
-  const serializedMessage = JSON.stringify(message);
-  console.log("[debug command] Sending content to back-end:", serializedMessage);
-  state.ws.send(serializedMessage);
-  dom.commandInput.value = "";
-});
-
-dom.commandInput.addEventListener("keydown", event => {
-  if (event.key === "Enter") dom.sendBtn.click();
-});
-
 dom.lobbyChoiceForm.addEventListener("submit", event => {
   event.preventDefault();
 
