@@ -512,8 +512,8 @@ class Game:
 
 			await self.broadcast({
 				"type": "seven-step",
-				"playerId": player.name,
-				"movedPlayerId": move.pieceOwner.name,
+				**player.getMessageIdentity(),
+				**move.pieceOwner.getMessageIdentity("moved"),
 				"origin": str(move.originSpot),
 				"target": str(move.targetSpot),
 				"stepsUsed": move.steps,
