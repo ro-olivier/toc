@@ -1957,3 +1957,12 @@ def test_checkpoint_cancellation_waits_for_persistence_thread(tmp_path, monkeypa
 		assert not session._checkpointLock.locked()
 
 	asyncio.run(scenario())
+
+def test_game_state_rejects_active_index_without_active_player():
+	session = makeGameSessionState()
+	payload = session.snapshotState().to_dict()["game"]
+	payload["activePlayerIndex"] = 0
+	payload["activePlayerId"] = None
+
+	with pytest.raises(ValueError, match="without an active player"):
+		GameState.from_dict(payload)

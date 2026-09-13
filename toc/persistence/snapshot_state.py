@@ -429,7 +429,10 @@ class GameState:
 		if type(self.activePlayerIndex) is not int or not -1 <= self.activePlayerIndex < len(self.players):
 			raise ValueError("Invalid active-player index")
 
-		if self.activePlayerId is not None:
+		if self.activePlayerId is None:
+			if self.activePlayerIndex != -1:
+				raise ValueError("Active-player index is set without an active player")
+		else:
 			_validatePlayerId(self.activePlayerId)
 
 			if self.activePlayerIndex < 0 or self.playerOrder[self.activePlayerIndex] != self.activePlayerId:
