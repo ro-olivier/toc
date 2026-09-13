@@ -22,6 +22,36 @@ logger = logging.getLogger("toc.main")
 websocketRouter = APIRouter()
 
 
+def isValidClientMessage(message: dict[str, object]) -> bool:
+	messageType = message.get("type")
+	stringFields = ("id", "requestId", "name", "seatId")
+
+	if any(field in message and type(message[field]) is not str for field in stringFields):
+		return False
+
+	if messageType == "configure-player":
+		colors = message.get("colors")
+
+		if colors is None:
+			colors = message.get("color")
+
+		return type(message.get("team")) is str and (type(colors) is str or type(colors) is list and all(type(color) is str for color in colors))
+
+	if messageType == "card_selection":
+		return type(message.get("suit")) is str and type(message.get("value")) is str
+
+	if messageType == "spot_selection":
+		return type(message.get("result")) is str
+
+	if messageType == "seven_hop_choice":
+		return type(message.get("result")) is bool
+
+	if messageType == "text_input":
+		return type(message.get("msg")) is str
+
+	return messageType == "cancel_move_selection"
+
+
 @websocketRouter.websocket("/toc/ws/{gameId}/{playerName}")
 async def websocket_endpoint(websocket: WebSocket, gameId: str, playerName: str) -> None:
 	await websocket.accept()
@@ -146,6 +176,10 @@ async def websocket_endpoint(websocket: WebSocket, gameId: str, playerName: str)
 					f"Unknown message type: {messageType}.",
 					{"messageType": messageType},
 				))
+				continue
+
+			if not isValidClientMessage(message):
+				await router.sendOutput(routerId, buildMessage("error", "errors.invalid_message_format", "The server received an invalid message format."))
 				continue
 
 			await gameSession.handlePlayerMessage(routerId, message)
