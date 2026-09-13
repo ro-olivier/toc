@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, HTTPException
 
+from toc.infrastructure.identity import normalizePlayerName
 from toc.infrastructure.messages import MESSAGE_KEYS, buildMessage
 from toc.model.game_mode import DEFAULT_GAME_MODE, getGameModeDefinition
 from toc.model.rules import DEFAULT_RULE_PRESET, RULE_PRESETS, getRuleSchema, resolveRuleset
 from toc.runtime import manager, router
-from settings import MAX_PLAYER_NAME_LENGTH
 
 
 httpRouter = APIRouter()
@@ -55,13 +55,11 @@ async def createGame(payload: object = Body(default=None)) -> dict[str, object]:
 	creatorName = ""
 
 	if "creatorName" in payload:
-		rawCreatorName = payload["creatorName"]
-
-		if type(rawCreatorName) is not str or not rawCreatorName.strip() or len(rawCreatorName.strip()) > MAX_PLAYER_NAME_LENGTH:
-			detail = buildMessage("http-error", "errors.invalid_creator_name", f"Creator name must contain between 1 and {MAX_PLAYER_NAME_LENGTH} characters.")
+		try:
+			creatorName = normalizePlayerName(payload["creatorName"])
+		except ValueError as error:
+			detail = buildMessage("http-error", "errors.invalid_creator_name", str(error))
 			raise HTTPException(status_code=422, detail=detail)
-
-		creatorName = rawCreatorName.strip()
 
 	try:
 		rules = resolveRuleset(presetName, payload.get("rules"))

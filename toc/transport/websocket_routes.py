@@ -6,8 +6,8 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from settings import CLIENT_MESSAGE_TYPES, CONNECTION_IDENTIFICATION_ERROR_CODE, GAME_ALREADY_FULL_CODE, NO_GAME_FOUND_CODE, NO_PLAYER_CONTEXT_FOUND_CODE, MAX_PLAYER_NAME_LENGTH, INVALID_PLAYER_NAME_CODE
-from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken, normalizeJoinCode, resumeTokenMatches
+from settings import CLIENT_MESSAGE_TYPES, CONNECTION_IDENTIFICATION_ERROR_CODE, GAME_ALREADY_FULL_CODE, NO_GAME_FOUND_CODE, NO_PLAYER_CONTEXT_FOUND_CODE, INVALID_PLAYER_NAME_CODE
+from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken, normalizeJoinCode, normalizePlayerName, resumeTokenMatches
 from toc.infrastructure.messages import buildMessage
 from toc.infrastructure.versions import WEBSOCKET_PROTOCOL_VERSION
 from toc.model.params import IDENTIFY_TIMEOUT_SECONDS
@@ -56,9 +56,9 @@ def isValidClientMessage(message: dict[str, object]) -> bool:
 async def websocket_endpoint(websocket: WebSocket, gameId: str, playerName: str) -> None:
 	await websocket.accept()
 
-	playerName = playerName.strip()
-
-	if not playerName or len(playerName) > MAX_PLAYER_NAME_LENGTH:
+	try:
+		playerName = normalizePlayerName(playerName)
+	except ValueError:
 		await websocket.close(code=INVALID_PLAYER_NAME_CODE, reason="Invalid player name")
 		return
 	

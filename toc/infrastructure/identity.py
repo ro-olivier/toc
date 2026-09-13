@@ -2,6 +2,8 @@ import hashlib
 import secrets
 import uuid
 
+from settings import MAX_PLAYER_NAME_LENGTH, RESUME_TOKEN_BYTES, PLAYER_NAME_PATTERN
+
 
 JOIN_CODE_ADJECTIVES = (
 	"amber",
@@ -72,7 +74,6 @@ JOIN_CODE_NOUNS = (
 	"wolf",
 	"yak",
 )
-RESUME_TOKEN_BYTES = 32
 
 
 def createJoinCode() -> str:
@@ -90,6 +91,21 @@ def normalizeJoinCode(joinCode: str) -> str:
 		raise ValueError("Join code cannot be empty")
 
 	return normalizedCode
+
+
+def normalizePlayerName(playerName: object) -> str:
+	if type(playerName) is not str:
+		raise ValueError("Player name must be a string")
+
+	normalizedName = playerName.strip()
+
+	if not normalizedName or len(normalizedName) > MAX_PLAYER_NAME_LENGTH:
+		raise ValueError(f"Player name must contain between 1 and {MAX_PLAYER_NAME_LENGTH} characters")
+
+	if PLAYER_NAME_PATTERN.fullmatch(normalizedName) is None:
+		raise ValueError("Player name contains characters that are not URL-safe")
+
+	return normalizedName
 
 
 def createSessionId() -> str:

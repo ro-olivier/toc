@@ -849,7 +849,7 @@ def test_create_game_endpoint_stores_creator_name():
 	finally:
 		manager.games.pop(result["gameId"], None)
 
-@pytest.mark.parametrize("creatorName", ["", "   ", 42, [], "A" * 41])
+@pytest.mark.parametrize("creatorName", ["", "   ", 42, [], "A" * 41, "Alice Smith", "Alice/Smith", "élise"])
 def test_create_game_endpoint_rejects_invalid_creator_name(creatorName):
 	existingGameIds = set(manager.games)
 

@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import re
 
 BASE_DIR = Path(__file__).resolve().parent
 GAME_DATA_DIRECTORY = Path(os.environ.get("TOC_DATA_DIRECTORY", BASE_DIR / "game-data"))
@@ -16,6 +17,8 @@ ALL_PLAYERS_DISCONNECTED_GRACE_SECONDS = 30
 SESSION_MONITOR_INTERVAL_SECONDS = 5
 
 MAX_PLAYER_NAME_LENGTH = 40
+RESUME_TOKEN_BYTES = 32
+PLAYER_NAME_PATTERN = re.compile(r"[A-Za-z0-9._~-]+")
 
 NO_GAME_FOUND_CODE = 4001
 NO_PLAYER_CONTEXT_FOUND_CODE = 4002

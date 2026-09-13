@@ -2,7 +2,7 @@ import pytest
 
 from uuid import UUID
 
-from toc.infrastructure.identity import JOIN_CODE_ADJECTIVES, JOIN_CODE_NOUNS, createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches, createSeatId, normalizeJoinCode
+from toc.infrastructure.identity import JOIN_CODE_ADJECTIVES, JOIN_CODE_NOUNS, createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches, createSeatId, normalizeJoinCode, normalizePlayerName
 
 
 def test_join_code_uses_adjective_and_noun():
@@ -60,3 +60,12 @@ def test_join_code_normalization_is_case_insensitive():
 def test_invalid_join_code_cannot_be_normalized(joinCode):
 	with pytest.raises(ValueError):
 		normalizeJoinCode(joinCode)
+
+def test_player_name_normalization_accepts_url_safe_characters():
+	assert normalizePlayerName("  Alice-2_test~name.example  ") == "Alice-2_test~name.example"
+
+
+@pytest.mark.parametrize("playerName", ["Alice Smith", "Alice/Smith", "élise", "", "   ", None, 123])
+def test_player_name_normalization_rejects_non_url_safe_names(playerName):
+	with pytest.raises(ValueError):
+		normalizePlayerName(playerName)

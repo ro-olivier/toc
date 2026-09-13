@@ -1080,7 +1080,7 @@ def test_created_lobby_is_listed_and_can_be_joined_case_insensitively(client):
 				for playerId in session.participants:
 					router.forget(playerId)
 
-@pytest.mark.parametrize("playerName", ["%20%20%20", "A" * (MAX_PLAYER_NAME_LENGTH + 1)])
+@pytest.mark.parametrize("playerName", ["%20%20%20", "Alice%20Smith", "%C3%A9lise", "A" * (MAX_PLAYER_NAME_LENGTH + 1)])
 def test_invalid_player_name_closes_websocket_with_4008(client, gameId, playerName):
 	with client.websocket_connect(f"/toc/ws/{gameId}/{playerName}") as websocket:
 		assertWebSocketClosesWith(websocket, INVALID_PLAYER_NAME_CODE)
