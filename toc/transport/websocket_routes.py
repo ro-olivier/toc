@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import json
 import logging
 
@@ -45,9 +46,6 @@ def isValidClientMessage(message: dict[str, object]) -> bool:
 
 	if messageType == "seven_hop_choice":
 		return type(message.get("result")) is bool
-
-	if messageType == "text_input":
-		return type(message.get("msg")) is str
 
 	return messageType == "cancel_move_selection"
 
@@ -242,6 +240,9 @@ async def websocket_endpoint(websocket: WebSocket, gameId: str, playerName: str)
 					"playerName": playerName,
 				},
 			)
+
+		with suppress(RuntimeError):
+			await websocket.close(code=1011, reason="Internal server error")
 
 	finally:
 		sessionParticipant = gameSession.participants.get(routerId)

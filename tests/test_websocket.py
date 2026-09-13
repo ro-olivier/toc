@@ -1084,3 +1084,39 @@ def test_created_lobby_is_listed_and_can_be_joined_case_insensitively(client):
 def test_invalid_player_name_closes_websocket_with_4008(client, gameId, playerName):
 	with client.websocket_connect(f"/toc/ws/{gameId}/{playerName}") as websocket:
 		assertWebSocketClosesWith(websocket, INVALID_PLAYER_NAME_CODE)
+
+
+@pytest.mark.parametrize("message", [
+	{"type": "configure-player", "team": "0", "colors": [{}]},
+	{"type": "card_selection", "value": "A"},
+	{"type": "spot_selection", "result": []},
+	{"type": "seven_hop_choice", "result": "yes"},
+])
+def test_malformed_known_message_is_rejected_without_closing_connection(client, gameId, message):
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
+		identifyWebSocket(websocket)
+		receiveLobbyState(websocket)
+
+		websocket.send_json(message)
+		error = websocket.receive_json()
+
+		assert error["type"] == "error"
+		assert error["messageKey"] == "errors.invalid_message_format"
+
+		websocket.send_json({"type": "explode-server"})
+		assert websocket.receive_json()["messageKey"] == "errors.unknown_message_type"
+
+
+def test_unexpected_websocket_failure_closes_connection_with_1011(client, gameId, monkeypatch):
+	session = manager.getGame(gameId)
+
+	async def failToHandleMessage(routerId, message):
+		raise RuntimeError("Simulated connection failure")
+
+	monkeypatch.setattr(session, "handlePlayerMessage", failToHandleMessage)
+
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
+		identifyWebSocket(websocket)
+		receiveLobbyState(websocket)
+		websocket.send_json({"type": "configure-player", "team": "0", "color": "red"})
+		assertWebSocketClosesWith(websocket, 1011)
