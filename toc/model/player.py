@@ -157,7 +157,6 @@ class Player:
 		cardChoice = await self.getCardChoiceFromPlayer()
 		logger.debug('selected card', extra={"chosenCard": str(cardChoice)})
 		moveChoice = None
-		## TODO: investigate infinite loop when a player played a not-speacil card with only a 7 remaining, which seem to have triggered an infinite loop (which I didn't screenshot unfortunately...)
 		while not moveChoice:
 			possibleMoves = [move for move in options if move.card == cardChoice]
 			logger.debug('Possible moves with this card:', extra={"possibleMoves": [f'{str(m)} ---- origin: {m.originSpot} {id(m.originSpot)}' for m in possibleMoves]})
