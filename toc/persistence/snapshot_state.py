@@ -716,11 +716,11 @@ class SessionSnapshotState:
 
 	@classmethod
 	def from_dict(cls, values: dict) -> "SessionSnapshotState":
-		if type(values["events"]) is not list:
-			raise ValueError("Invalid snapshot event log")
-
 		if type(values) is not dict or set(values) != {"metadata", "game", "progress", "events"}:
 			raise ValueError("Invalid session snapshot")
+
+		if type(values["events"]) is not list:
+			raise ValueError("Invalid snapshot event log")
 
 		return cls(
 			metadata=SessionMetadataState.from_dict(values["metadata"]),
