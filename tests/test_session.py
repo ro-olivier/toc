@@ -10,11 +10,11 @@ from toc.runtime import manager
 from toc.session.connection_manager import ConnectionManager
 from toc.session.game_session import GameSession
 from toc.session.input_router import PlayerInputRouter
-from toc.transport.http_routes import create_game as create_game_endpoint, get_open_lobbies, get_rule_presets
-from toc.model.rules import GameRules, MONTSURVENT_RULES
+from toc.transport.http_routes import createGame as createGameEndpoint, getRulePresets, getOpenLobbies
+from toc.model.rules import GameRules, MONTSURVENT_RULES, resolveRuleset
 from toc.model.player import Player
 from toc.model.cards import Card
-from toc.model.rules import GameRules
+from toc.model.rules import GameRules, resolveRuleset
 from toc.model.game_phase import GamePhase
 from toc.model.params import AVAILABLE_COLORS
 from toc.model.game import Game
@@ -25,8 +25,8 @@ from toc.model.audit import GameEventType
 from toc.session.session_participant import SessionParticipant
 
 
-def add_player(session, router, name, team="", color="", configured=False, active=True):
-	routerId = session.getFullPlayerId(session.id, name)
+def addPlayer(session, router, name, team="", color="", configured=False, active=True):
+	routerId = session.buildRouterId(session.id, name)
 	participantId = createPlayerId()
 	resumeTokenHash = hashResumeToken(createResumeToken())
 
@@ -65,13 +65,13 @@ def test_connection_manager_passes_rules_to_session():
 	manager = ConnectionManager()
 	rules = GameRules(card_exchange=False)
 
-	gameId = manager.create_game(router, rules)
+	gameId = manager.createGame(router, rules)
 
-	assert manager.get_game(gameId).rules is rules
-	assert manager.get_game(gameId).rulesetName == "custom"
+	assert manager.getGame(gameId).rules is rules
+	assert manager.getGame(gameId).rulesetName == "custom"
 
 def test_rule_presets_endpoint_returns_serialized_presets():
-	result = asyncio.run(get_rule_presets())
+	result = asyncio.run(getRulePresets())
 
 	assert result["default"] == "montsurvent"
 	assert result["presets"]["montsurvent"]["rotation"] == "clockwise"
@@ -83,8 +83,8 @@ def test_rule_presets_endpoint_returns_serialized_presets():
 
 
 def test_create_game_endpoint_accepts_custom_rules():
-	result = asyncio.run(create_game_endpoint({"preset": "custom", "rules": {"card_exchange": False}}))
-	session = manager.get_game(result["game_id"])
+	result = asyncio.run(createGameEndpoint({"preset": "custom", "rules": {"card_exchange": False}}))
+	session = manager.getGame(result["gameId"])
 
 	try:
 		assert result["preset"] == "custom"
@@ -92,31 +92,31 @@ def test_create_game_endpoint_accepts_custom_rules():
 		assert session.rules.card_exchange is False
 		assert session.rulesetName == "custom"
 	finally:
-		manager.games.pop(result["game_id"], None)
+		manager.games.pop(result["gameId"], None)
 
 def test_create_game_endpoint_remains_backward_compatible():
-	result = asyncio.run(create_game_endpoint(None))
-	session = manager.get_game(result["game_id"])
+	result = asyncio.run(createGameEndpoint(None))
+	session = manager.getGame(result["gameId"])
 
 	try:
 		assert result["preset"] == "montsurvent"
 		assert session.rules is MONTSURVENT_RULES
 		assert result["gameMode"] == {"name": "team_four", "layout": None}
 	finally:
-		manager.games.pop(result["game_id"], None)
+		manager.games.pop(result["gameId"], None)
 
 
 def test_player_configuration_is_validated_and_broadcast():
 	async def scenario():
 		router = PlayerInputRouter()
 		session = GameSession("TEST", router)
-		aliceId, alice = add_player(session, router, "Alice")
+		aliceId, alice = addPlayer(session, router, "Alice")
 
-		assert await session.configure_player(aliceId, "0", "red")
+		assert await session.configurePlayer(aliceId, "0", "red")
 		assert alice.team == "0"
 		assert alice.color == "red"
 		assert session.participants[aliceId].configured
-		assert await router.get_output(aliceId) == session.lobby_state()
+		assert await router.getOutput(aliceId) == session.lobbyState()
 
 	asyncio.run(scenario())
 
@@ -125,13 +125,13 @@ def test_player_configuration_rejects_a_color_already_in_use():
 	async def scenario():
 		router = PlayerInputRouter()
 		session = GameSession("TEST", router)
-		add_player(session, router, "Alice", team="0", color="red", configured=True)
-		bobId, bob = add_player(session, router, "Bob")
+		addPlayer(session, router, "Alice", team="0", color="red", configured=True)
+		bobId, bob = addPlayer(session, router, "Bob")
 
-		assert not await session.configure_player(bobId, "1", "red")
+		assert not await session.configurePlayer(bobId, "1", "red")
 		assert bob.team == ""
 		assert bob.color == ""
-		message = await router.get_output(bobId)
+		message = await router.getOutput(bobId)
 
 		assert message["type"] == "lobby-error"
 		assert message["messageKey"] == "lobby.errors.color_taken"
@@ -146,10 +146,10 @@ def test_simultaneous_configuration_cannot_claim_the_same_color():
 	async def scenario():
 		router = PlayerInputRouter()
 		session = GameSession("TEST", router)
-		aliceId, alice = add_player(session, router, "Alice")
-		bobId, bob = add_player(session, router, "Bob")
+		aliceId, alice = addPlayer(session, router, "Alice")
+		bobId, bob = addPlayer(session, router, "Bob")
 
-		results = await asyncio.gather(session.configure_player(aliceId, "0", "red"), session.configure_player(bobId, "1", "red"))
+		results = await asyncio.gather(session.configurePlayer(aliceId, "0", "red"), session.configurePlayer(bobId, "1", "red"))
 
 		assert results.count(True) == 1
 		assert results.count(False) == 1
@@ -161,10 +161,10 @@ def test_simultaneous_configuration_cannot_claim_the_same_color():
 def test_lobby_state_reports_players_choices_and_connections():
 	router = PlayerInputRouter()
 	session = GameSession("TEST", router)
-	add_player(session, router, "Alice", team="0", color="red", configured=True)
-	add_player(session, router, "Bob", active=False)
+	addPlayer(session, router, "Alice", team="0", color="red", configured=True)
+	addPlayer(session, router, "Bob", active=False)
 
-	state = session.lobby_state()
+	state = session.lobbyState()
 
 	assert state["type"] == "lobby-state"
 	assert state["gameId"] == "TEST"
@@ -180,31 +180,32 @@ def test_router_preserves_queues_across_reconnection():
 
 		router.register(playerId)
 
-		inputQueue = router.input_queues[playerId]
-		outputQueue = router.output_queues[playerId]
+		inputQueue = router.inputQueues[playerId]
+		outputQueue = router.outputQueues[playerId]
 
-		await router.send_output(playerId, {"type": "query-card"})
-		prompt = await router.get_output(playerId)
+		await router.sendOutput(playerId, {"type": "query-card"})
+		prompt = await router.getOutput(playerId)
 
 		playerInput = {
 			"type": "card_selection",
 			"requestId": prompt["requestId"],
 		}
 
-		assert await router.add_input(playerId, playerInput) is True
+		assert await router.addInput(playerId, playerInput) is True
 
-		await router.send_output(playerId, {"type": "output"})
+		await router.sendOutput(playerId, {"type": "output"})
 
 		router.unregister(playerId)
 		router.registerAgain(playerId)
 
-		assert router.input_queues[playerId] is inputQueue
-		assert router.output_queues[playerId] is outputQueue
-		assert await router.wait_for_input(playerId) == playerInput
-		assert await router.get_output(playerId) == {"type": "output"}
+		assert router.inputQueues[playerId] is inputQueue
+		assert router.outputQueues[playerId] is outputQueue
+		assert await router.waitForInput(playerId) == playerInput
+		assert await router.getOutput(playerId) == {"type": "output"}
 		assert playerId not in router.recycleBin
 
 	asyncio.run(scenario())
+
 def test_game_session_starts_game_only_once():
 	async def scenario():
 		router = PlayerInputRouter()
@@ -214,14 +215,14 @@ def test_game_session_starts_game_only_once():
 		async def fake_game_loop():
 			starts.append("started")
 
-		session.game_loop = fake_game_loop
-		add_player(session, router, "Alice", team="0", color="red", configured=True)
-		add_player(session, router, "Bob", team="1", color="blue", configured=True)
-		add_player(session, router, "Carol", team="0", color="green", configured=True)
-		add_player(session, router, "Diana", team="1", color="yellow", configured=True)
+		session.gameLoop = fake_game_loop
+		addPlayer(session, router, "Alice", team="0", color="red", configured=True)
+		addPlayer(session, router, "Bob", team="1", color="blue", configured=True)
+		addPlayer(session, router, "Carol", team="0", color="green", configured=True)
+		addPlayer(session, router, "Diana", team="1", color="yellow", configured=True)
 		session.order = [sessionParticipant.primarySeat.seatId for sessionParticipant in session.participants.values()]
 
-		results = await asyncio.gather(session.start_game_if_ready(), session.start_game_if_ready())
+		results = await asyncio.gather(session.startGameIfReady(), session.startGameIfReady())
 		await session.gameTask
 
 		assert results.count(True) == 1
@@ -234,12 +235,12 @@ def test_player_order_alternates_teams():
 	router = PlayerInputRouter()
 	session = GameSession("TEST", router)
 
-	aliceId, _ = add_player(session, router, "Alice", "0", "red", configured=True)
-	bobId, _ = add_player(session, router, "Bob", "0", "blue", configured=True)
-	carolId, _ = add_player(session, router, "Carol", "1", "green", configured=True)
-	dianaId, _ = add_player(session, router, "Diana", "1", "yellow", configured=True)
+	aliceId, _ = addPlayer(session, router, "Alice", "0", "red", configured=True)
+	bobId, _ = addPlayer(session, router, "Bob", "0", "blue", configured=True)
+	carolId, _ = addPlayer(session, router, "Carol", "1", "green", configured=True)
+	dianaId, _ = addPlayer(session, router, "Diana", "1", "yellow", configured=True)
 
-	assert session.set_player_order()
+	assert session.setPlayerOrder()
 	assert session.order == [
 		session.participants[aliceId].primarySeat.seatId,
 		session.participants[carolId].primarySeat.seatId,
@@ -252,12 +253,12 @@ def test_player_order_rejects_invalid_teams():
 	router = PlayerInputRouter()
 	session = GameSession("TEST", router)
 
-	add_player(session, router, "Alice", "0", "red", configured=True)
-	add_player(session, router, "Bob", "0", "blue", configured=True)
-	add_player(session, router, "Carol", "0", "green", configured=True)
-	add_player(session, router, "Diana", "1", "yellow", configured=True)
+	addPlayer(session, router, "Alice", "0", "red", configured=True)
+	addPlayer(session, router, "Bob", "0", "blue", configured=True)
+	addPlayer(session, router, "Carol", "0", "green", configured=True)
+	addPlayer(session, router, "Diana", "1", "yellow", configured=True)
 
-	assert not session.set_player_order()
+	assert not session.setPlayerOrder()
 	assert session.order == []
 	
 def test_pending_prompt_is_replayed_after_reconnection():
@@ -267,8 +268,8 @@ def test_pending_prompt_is_replayed_after_reconnection():
 		prompt = {"type": "query-origin", "originOptions": ["red-1", "red-5"]}
 
 		router.register(playerId)
-		await router.send_output(playerId, prompt)
-		sentPrompt = await router.get_output(playerId)
+		await router.sendOutput(playerId, prompt)
+		sentPrompt = await router.getOutput(playerId)
 
 		assert sentPrompt["type"] == "query-origin"
 		assert sentPrompt["originOptions"] == ["red-1", "red-5"]
@@ -276,12 +277,12 @@ def test_pending_prompt_is_replayed_after_reconnection():
 
 		router.unregister(playerId)
 		router.registerAgain(playerId)
-		await router.resend_pending_prompt(playerId)
+		await router.resendPendingPrompt(playerId)
 
-		replayedPrompt = await router.get_output(playerId)
+		replayedPrompt = await router.getOutput(playerId)
 		assert replayedPrompt == sentPrompt
 
-		router.clear_pending_prompt(playerId)
+		router.clearPendingPrompt(playerId)
 		assert playerId not in router.pendingPrompts
 
 	asyncio.run(scenario())
@@ -292,16 +293,16 @@ def test_router_ignores_input_for_an_old_prompt():
 		playerId = "TEST-Alice"
 
 		router.register(playerId)
-		await router.send_output(playerId, {"type": "query-target", "targetOptions": ["red-5"]})
-		prompt = await router.get_output(playerId)
+		await router.sendOutput(playerId, {"type": "query-target", "targetOptions": ["red-5"]})
+		prompt = await router.getOutput(playerId)
 
 		staleInput = {"type": "spot_selection", "result": "red-2", "requestId": "obsolete"}
 		currentInput = {"type": "spot_selection", "result": "red-5", "requestId": prompt["requestId"]}
 
-		await router.add_input(playerId, staleInput)
-		await router.add_input(playerId, currentInput)
+		await router.addInput(playerId, staleInput)
+		await router.addInput(playerId, currentInput)
 
-		assert await router.wait_for_input(playerId) == currentInput
+		assert await router.waitForInput(playerId) == currentInput
 
 	asyncio.run(scenario())
 
@@ -310,17 +311,17 @@ def test_session_states_report_configured_rules():
 	router = PlayerInputRouter()
 	session = GameSession("TEST", router, GameRules(track_region_length=16, enter_house_at_spot=16))
 
-	assert session.lobby_state()["trackRegionLength"] == 16
-	assert session.lobby_state()["enterHouseAtSpot"] == 16
+	assert session.lobbyState()["trackRegionLength"] == 16
+	assert session.lobbyState()["enterHouseAtSpot"] == 16
 	assert session.fullUI()["trackRegionLength"] == 16
 	assert session.fullUI()["enterHouseAtSpot"] == 16
-	assert session.lobby_state()["ruleset"] == {"preset": "custom", "values": session.rules.to_dict()}
+	assert session.lobbyState()["ruleset"] == {"preset": "custom", "values": session.rules.to_dict()}
 	assert session.fullUI()["ruleset"] == {"preset": "custom", "values": session.rules.to_dict()}
 
 
 def test_create_game_endpoint_returns_translatable_validation_error():
 	with pytest.raises(HTTPException) as caughtError:
-		asyncio.run(create_game_endpoint({"preset": "unknown"}))
+		asyncio.run(createGameEndpoint({"preset": "unknown"}))
 
 	detail = caughtError.value.detail
 
@@ -358,7 +359,7 @@ def test_application_lifespan_runs_interrupted_game_recovery(monkeypatch):
 			"failed": (),
 		}
 
-	monkeypatch.setattr(manager, "recover_interrupted_games", fakeRecovery)
+	monkeypatch.setattr(manager, "recoverInterruptedGames", fakeRecovery)
 
 	with TestClient(app):
 		pass
@@ -369,9 +370,9 @@ def test_player_configuration_accepts_an_extended_color():
 	async def scenario():
 		router = PlayerInputRouter()
 		session = GameSession("TEST", router)
-		aliceId, alice = add_player(session, router, "Alice")
+		aliceId, alice = addPlayer(session, router, "Alice")
 
-		assert await session.configure_player(aliceId, "0", "purple")
+		assert await session.configurePlayer(aliceId, "0", "purple")
 		assert alice.color == "purple"
 		assert session.participants[aliceId].color == "purple"
 
@@ -391,8 +392,8 @@ def test_connection_manager_passes_game_mode_to_session():
 	manager = ConnectionManager()
 	modeDefinition = getGameModeDefinition(GameMode.TEAM_SIX)
 
-	gameId = manager.create_game(router, modeDefinition=modeDefinition)
-	session = manager.get_game(gameId)
+	gameId = manager.createGame(router, modeDefinition=modeDefinition)
+	session = manager.getGame(gameId)
 
 	assert session.modeDefinition is modeDefinition
 
@@ -401,7 +402,7 @@ def test_lobby_state_reports_game_mode_capacities():
 	modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
 	session = GameSession("TEST", PlayerInputRouter(), modeDefinition=modeDefinition)
 
-	state = session.lobby_state()
+	state = session.lobbyState()
 
 	assert state["gameMode"] == {"name": "duel_four", "layout": "cross"}
 	assert state["participantCapacity"] == 2
@@ -416,7 +417,7 @@ def test_team_six_mode_exposes_three_teams():
 	modeDefinition = getGameModeDefinition(GameMode.TEAM_SIX)
 	session = GameSession("TEST", PlayerInputRouter(), modeDefinition=modeDefinition)
 
-	state = session.lobby_state()
+	state = session.lobbyState()
 
 	assert state["gameMode"] == {"name": "team_six", "layout": None}
 	assert state["participantCapacity"] == 6
@@ -426,25 +427,25 @@ def test_team_six_mode_exposes_three_teams():
 	assert state["seatsPerParticipant"] == 1
 
 def test_create_game_endpoint_accepts_game_mode_and_layout():
-	result = asyncio.run(create_game_endpoint({"mode": "duel_four", "layout": "cross"}))
-	session = manager.get_game(result["game_id"])
+	result = asyncio.run(createGameEndpoint({"mode": "duel_four", "layout": "cross"}))
+	session = manager.getGame(result["gameId"])
 
 	try:
 		assert session.modeDefinition == getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
 		assert result["gameMode"] == {"name": "duel_four", "layout": "cross"}
 	finally:
-		manager.games.pop(result["game_id"], None)
+		manager.games.pop(result["gameId"], None)
 
 
 def test_create_game_endpoint_uses_team_four_by_default():
-	result = asyncio.run(create_game_endpoint(None))
-	session = manager.get_game(result["game_id"])
+	result = asyncio.run(createGameEndpoint(None))
+	session = manager.getGame(result["gameId"])
 
 	try:
 		assert session.modeDefinition == getGameModeDefinition(GameMode.TEAM_FOUR)
 		assert result["gameMode"] == {"name": "team_four", "layout": None}
 	finally:
-		manager.games.pop(result["game_id"], None)
+		manager.games.pop(result["gameId"], None)
 
 
 @pytest.mark.parametrize(
@@ -459,7 +460,7 @@ def test_create_game_endpoint_rejects_invalid_game_mode_configuration(payload):
 	existingGameIds = set(manager.games)
 
 	with pytest.raises(HTTPException) as caughtError:
-		asyncio.run(create_game_endpoint(payload))
+		asyncio.run(createGameEndpoint(payload))
 
 	assert caughtError.value.status_code == 422
 	assert caughtError.value.detail["type"] == "http-error"
@@ -486,9 +487,9 @@ def test_duel_four_participant_can_configure_two_seats():
 		router = PlayerInputRouter()
 		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.ADJACENT)
 		session = GameSession("TEST", router, modeDefinition=modeDefinition)
-		aliceId, alice = add_player(session, router, "Alice")
+		aliceId, alice = addPlayer(session, router, "Alice")
 
-		assert await session.configure_player(aliceId, "0", ["red", "blue"])
+		assert await session.configurePlayer(aliceId, "0", ["red", "blue"])
 
 		sessionParticipant = session.participants[aliceId]
 
@@ -511,14 +512,14 @@ def test_duel_four_configuration_requires_two_colours():
 		router = PlayerInputRouter()
 		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
 		session = GameSession("TEST", router, modeDefinition=modeDefinition)
-		aliceId, alice = add_player(session, router, "Alice")
+		aliceId, alice = addPlayer(session, router, "Alice")
 
-		assert not await session.configure_player(aliceId, "0", ["red"])
+		assert not await session.configurePlayer(aliceId, "0", ["red"])
 		assert session.roster.seatCount == 0
 		assert alice.team == ""
 		assert alice.color == ""
 
-		message = await router.get_output(aliceId)
+		message = await router.getOutput(aliceId)
 
 		assert message["type"] == "lobby-error"
 		assert message["messageKey"] == "lobby.errors.invalid_color_count"
@@ -532,15 +533,15 @@ def test_multi_seat_configuration_rejects_duplicate_colours_atomically():
 		router = PlayerInputRouter()
 		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.ADJACENT)
 		session = GameSession("TEST", router, modeDefinition=modeDefinition)
-		aliceId, alice = add_player(session, router, "Alice")
+		aliceId, alice = addPlayer(session, router, "Alice")
 
-		assert not await session.configure_player(aliceId, "0", ["red", "red"])
+		assert not await session.configurePlayer(aliceId, "0", ["red", "red"])
 		assert session.roster.seatCount == 0
 		assert session.participants[aliceId].controlledSeats == []
 		assert alice.team == ""
 		assert alice.color == ""
 
-		message = await router.get_output(aliceId)
+		message = await router.getOutput(aliceId)
 
 		assert message["messageKey"] == "lobby.errors.invalid_color"
 
@@ -552,11 +553,11 @@ def test_multi_seat_lobby_state_reports_all_selected_colours():
 		router = PlayerInputRouter()
 		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
 		session = GameSession("TEST", router, modeDefinition=modeDefinition)
-		aliceId, _ = add_player(session, router, "Alice")
+		aliceId, _ = addPlayer(session, router, "Alice")
 
-		assert await session.configure_player(aliceId, "0", ["red", "green"])
+		assert await session.configurePlayer(aliceId, "0", ["red", "green"])
 
-		state = await router.get_output(aliceId)
+		state = await router.getOutput(aliceId)
 		aliceState = state["players"][0]
 
 		assert aliceState["color"] == "red"
@@ -585,15 +586,15 @@ def test_complete_duel_four_lobby_starts_with_correct_seat_order(layout, expecte
 		async def fakeGameLoop():
 			startCalls.append([seat.color for seat in session.orderedSeats])
 
-		session.game_loop = fakeGameLoop
+		session.gameLoop = fakeGameLoop
 
-		aliceId, _ = add_player(session, router, "Alice")
-		bobId, _ = add_player(session, router, "Bob")
+		aliceId, _ = addPlayer(session, router, "Alice")
+		bobId, _ = addPlayer(session, router, "Bob")
 
-		assert await session.configure_player(aliceId, "0", ["red", "blue"])
+		assert await session.configurePlayer(aliceId, "0", ["red", "blue"])
 		assert not session.started
 
-		assert await session.configure_player(bobId, "1", ["green", "yellow"])
+		assert await session.configurePlayer(bobId, "1", ["green", "yellow"])
 		assert session.started
 		assert session.gameTask is not None
 
@@ -616,20 +617,20 @@ def test_duel_four_order_can_start_with_team_one():
 		async def fakeGameLoop():
 			pass
 
-		session.game_loop = fakeGameLoop
+		session.gameLoop = fakeGameLoop
 
-		aliceId, _ = add_player(session, router, "Alice")
-		bobId, _ = add_player(session, router, "Bob")
+		aliceId, _ = addPlayer(session, router, "Alice")
+		bobId, _ = addPlayer(session, router, "Bob")
 
-		assert await session.configure_player(aliceId, "1", ["red", "green"])
-		assert await session.configure_player(bobId, "0", ["blue", "yellow"])
+		assert await session.configurePlayer(aliceId, "1", ["red", "green"])
+		assert await session.configurePlayer(bobId, "0", ["blue", "yellow"])
 
 		await session.gameTask
 
 		assert [seat.color for seat in session.orderedSeats] == ["red", "blue", "green", "yellow"]
 		assert [seat.team for seat in session.orderedSeats] == ["1", "0", "1", "0"]
 
-		assert session.lobby_state()["seatOrder"] == session.order
+		assert session.lobbyState()["seatOrder"] == session.order
 
 	asyncio.run(scenario())
 
@@ -638,9 +639,9 @@ def test_full_ui_state_contains_one_entry_per_logical_seat():
 		router = PlayerInputRouter()
 		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.CROSS)
 		session = GameSession("TEST", router, modeDefinition=modeDefinition)
-		aliceId, _ = add_player(session, router, "Alice")
+		aliceId, _ = addPlayer(session, router, "Alice")
 
-		assert await session.configure_player(aliceId, "0", ["red", "green"])
+		assert await session.configurePlayer(aliceId, "0", ["red", "green"])
 
 		state = session.fullUI()
 
@@ -659,11 +660,11 @@ def test_duel_four_reconnection_replays_both_controlled_hands():
 		router = PlayerInputRouter()
 		modeDefinition = getGameModeDefinition(GameMode.DUEL_FOUR, DuelFourLayout.ADJACENT)
 		session = GameSession("TEST", router, modeDefinition=modeDefinition)
-		aliceId, _ = add_player(session, router, "Alice")
+		aliceId, _ = addPlayer(session, router, "Alice")
 
-		assert await session.configure_player(aliceId, "0", ["red", "blue"])
+		assert await session.configurePlayer(aliceId, "0", ["red", "blue"])
 
-		await router.get_output(aliceId)
+		await router.getOutput(aliceId)
 
 		redPlayer, bluePlayer = session.participants[aliceId].controlledPlayers
 		redPlayer.hand.addToHand(Card("♥️", "A"))
@@ -671,8 +672,8 @@ def test_duel_four_reconnection_replays_both_controlled_hands():
 
 		await session.sendHandsAgain(session.participants[aliceId])
 
-		redMessage = await router.get_output(aliceId)
-		blueMessage = await router.get_output(aliceId)
+		redMessage = await router.getOutput(aliceId)
+		blueMessage = await router.getOutput(aliceId)
 
 		assert redMessage["type"] == "reveal"
 		assert redMessage["seatId"] == redPlayer.identifier
@@ -690,7 +691,7 @@ def test_duel_two_lobby_state_reports_two_participants_and_regions():
 	modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
 	session = GameSession("TEST", PlayerInputRouter(), modeDefinition=modeDefinition)
 
-	state = session.lobby_state()
+	state = session.lobbyState()
 
 	assert state["gameMode"] == {"name": "duel_two", "layout": None}
 	assert state["participantCapacity"] == 2
@@ -705,18 +706,18 @@ def test_duel_two_rejects_two_participants_on_the_same_team():
 		router = PlayerInputRouter()
 		modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
 		session = GameSession("TEST", router, modeDefinition=modeDefinition)
-		aliceId, _ = add_player(session, router, "Alice")
+		aliceId, _ = addPlayer(session, router, "Alice")
 
-		assert await session.configure_player(aliceId, "0", "red")
+		assert await session.configurePlayer(aliceId, "0", "red")
 
-		bobId, bob = add_player(session, router, "Bob")
+		bobId, bob = addPlayer(session, router, "Bob")
 
-		assert not await session.configure_player(bobId, "0", "blue")
+		assert not await session.configurePlayer(bobId, "0", "blue")
 		assert not session.participants[bobId].configured
 		assert bob.team == ""
 		assert bob.color == ""
 
-		message = await router.get_output(bobId)
+		message = await router.getOutput(bobId)
 
 		assert message["type"] == "lobby-error"
 		assert message["messageKey"] == "lobby.errors.team_full"
@@ -744,13 +745,13 @@ def test_complete_duel_two_lobby_builds_two_region_game(monkeypatch):
 		monkeypatch.setattr(Game, "start", fakeStart)
 		session.finalizeFinishedGame = fakeFinalizeFinishedGame
 
-		aliceId, _ = add_player(session, router, "Alice")
-		bobId, _ = add_player(session, router, "Bob")
+		aliceId, _ = addPlayer(session, router, "Alice")
+		bobId, _ = addPlayer(session, router, "Bob")
 
-		assert await session.configure_player(aliceId, "0", "red")
+		assert await session.configurePlayer(aliceId, "0", "red")
 		assert not session.started
 
-		assert await session.configure_player(bobId, "1", "blue")
+		assert await session.configurePlayer(bobId, "1", "blue")
 		assert session.started
 		assert session.gameTask is not None
 
@@ -768,21 +769,21 @@ def test_complete_duel_two_lobby_builds_two_region_game(monkeypatch):
 	asyncio.run(scenario())
 
 def test_create_game_endpoint_accepts_duel_two_mode():
-	result = asyncio.run(create_game_endpoint({"mode": "duel_two"}))
-	session = manager.get_game(result["game_id"])
+	result = asyncio.run(createGameEndpoint({"mode": "duel_two"}))
+	session = manager.getGame(result["gameId"])
 
 	try:
 		assert result["gameMode"] == {"name": "duel_two", "layout": None}
 		assert session.modeDefinition == getGameModeDefinition(GameMode.DUEL_TWO)
 		assert session.dealCardCounts == (10, 8, 8)
 	finally:
-		manager.games.pop(result["game_id"], None)
+		manager.games.pop(result["gameId"], None)
 
 def test_duel_two_ruleset_state_reports_effective_mode_rules():
 	modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
 	session = GameSession("TEST", PlayerInputRouter(), modeDefinition=modeDefinition)
 
-	state = session.ruleset_state()
+	state = session.rulesetState()
 
 	assert session.rules.card_exchange is True
 	assert session.rules.deal_card_counts == (5, 4, 4)
@@ -790,8 +791,8 @@ def test_duel_two_ruleset_state_reports_effective_mode_rules():
 	assert state["values"]["deal_card_counts"] == [10, 8, 8]
 
 def test_create_game_endpoint_accepts_team_six_mode():
-	result = asyncio.run(create_game_endpoint({"mode": "team_six"}))
-	session = manager.get_game(result["game_id"])
+	result = asyncio.run(createGameEndpoint({"mode": "team_six"}))
+	session = manager.getGame(result["gameId"])
 
 	try:
 		assert session.modeDefinition == getGameModeDefinition(GameMode.TEAM_SIX)
@@ -801,13 +802,13 @@ def test_create_game_endpoint_accepts_team_six_mode():
 		assert session.dealCardCounts == (3, 3, 3)
 		assert result["gameMode"] == {"name": "team_six", "layout": None}
 	finally:
-		manager.games.pop(result["game_id"], None)
+		manager.games.pop(result["gameId"], None)
 
 def test_team_six_ruleset_state_reports_effective_dealing_schedule():
 	modeDefinition = getGameModeDefinition(GameMode.TEAM_SIX)
 	session = GameSession("TEST", PlayerInputRouter(), modeDefinition=modeDefinition)
 
-	state = session.ruleset_state()
+	state = session.rulesetState()
 
 	assert state["values"]["card_exchange"] is True
 	assert state["values"]["deal_card_counts"] == [3, 3, 3]
@@ -817,8 +818,8 @@ def test_connection_manager_retries_human_join_code_collision(monkeypatch):
 	monkeypatch.setattr("toc.session.connection_manager.createJoinCode", lambda: next(generatedCodes))
 
 	connectionManager = ConnectionManager()
-	firstGameId = connectionManager.create_game(PlayerInputRouter())
-	secondGameId = connectionManager.create_game(PlayerInputRouter())
+	firstGameId = connectionManager.createGame(PlayerInputRouter())
+	secondGameId = connectionManager.createGame(PlayerInputRouter())
 
 	assert firstGameId == "calm-otter"
 	assert secondGameId == "brave-fox"
@@ -828,32 +829,32 @@ def test_connection_manager_finds_human_join_code_case_insensitively(monkeypatch
 	monkeypatch.setattr("toc.session.connection_manager.createJoinCode", lambda: "calm-otter")
 
 	connectionManager = ConnectionManager()
-	gameId = connectionManager.create_game(PlayerInputRouter())
-	session = connectionManager.get_game(gameId)
+	gameId = connectionManager.createGame(PlayerInputRouter())
+	session = connectionManager.getGame(gameId)
 
-	assert connectionManager.get_game("CALM-OTTER") is session
-	assert connectionManager.get_game("  Calm-Otter  ") is session
+	assert connectionManager.getGame("CALM-OTTER") is session
+	assert connectionManager.getGame("  Calm-Otter  ") is session
 
 def test_create_game_endpoint_stores_creator_name():
-	result = asyncio.run(create_game_endpoint({
+	result = asyncio.run(createGameEndpoint({
 		"creatorName": "  Alice  ",
 		"mode": "team_four",
 	}))
-	session = manager.get_game(result["game_id"])
+	session = manager.getGame(result["gameId"])
 
 	try:
 		assert result["creatorName"] == "Alice"
 		assert session.creatorName == "Alice"
-		assert session.lobby_state()["creatorName"] == "Alice"
+		assert session.lobbyState()["creatorName"] == "Alice"
 	finally:
-		manager.games.pop(result["game_id"], None)
+		manager.games.pop(result["gameId"], None)
 
 @pytest.mark.parametrize("creatorName", ["", "   ", 42, [], "A" * 41])
 def test_create_game_endpoint_rejects_invalid_creator_name(creatorName):
 	existingGameIds = set(manager.games)
 
 	with pytest.raises(HTTPException) as caughtError:
-		asyncio.run(create_game_endpoint({"creatorName": creatorName}))
+		asyncio.run(createGameEndpoint({"creatorName": creatorName}))
 
 	assert caughtError.value.status_code == 422
 	assert caughtError.value.detail["type"] == "http-error"
@@ -864,12 +865,12 @@ def test_open_lobby_list_contains_only_public_information():
 	router = PlayerInputRouter()
 	connectionManager = ConnectionManager()
 	modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
-	gameId = connectionManager.create_game(router, modeDefinition=modeDefinition, creatorName="Alice")
-	session = connectionManager.get_game(gameId)
+	gameId = connectionManager.createGame(router, modeDefinition=modeDefinition, creatorName="Alice")
+	session = connectionManager.getGame(gameId)
 
-	add_player(session, router, "Alice")
+	addPlayer(session, router, "Alice")
 
-	result = connectionManager.get_open_lobbies()
+	result = connectionManager.getOpenLobbies()
 
 	assert result == [{
 		"gameName": gameId,
@@ -887,27 +888,27 @@ def test_open_lobby_list_excludes_unjoinable_sessions(monkeypatch):
 	connectionManager = ConnectionManager()
 	duelMode = getGameModeDefinition(GameMode.DUEL_TWO)
 
-	joinableId = connectionManager.create_game(router, modeDefinition=duelMode, creatorName="Joinable")
-	startedId = connectionManager.create_game(router, modeDefinition=duelMode, creatorName="Started")
-	fullId = connectionManager.create_game(router, modeDefinition=duelMode, creatorName="Full")
-	expiredId = connectionManager.create_game(router, modeDefinition=duelMode, creatorName="Expired")
+	joinableId = connectionManager.createGame(router, modeDefinition=duelMode, creatorName="Joinable")
+	startedId = connectionManager.createGame(router, modeDefinition=duelMode, creatorName="Started")
+	fullId = connectionManager.createGame(router, modeDefinition=duelMode, creatorName="Full")
+	expiredId = connectionManager.createGame(router, modeDefinition=duelMode, creatorName="Expired")
 
-	startedSession = connectionManager.get_game(startedId)
+	startedSession = connectionManager.getGame(startedId)
 	startedSession.markStarted()
 
-	fullSession = connectionManager.get_game(fullId)
-	add_player(fullSession, router, "Alice")
-	add_player(fullSession, router, "Bob")
+	fullSession = connectionManager.getGame(fullId)
+	addPlayer(fullSession, router, "Alice")
+	addPlayer(fullSession, router, "Bob")
 
-	expiredSession = connectionManager.get_game(expiredId)
+	expiredSession = connectionManager.getGame(expiredId)
 	monkeypatch.setattr(expiredSession, "lobbyAgeSeconds", lambda: LOBBY_LIFETIME_SECONDS)
 
-	result = connectionManager.get_open_lobbies()
+	result = connectionManager.getOpenLobbies()
 
 	assert [lobby["gameName"] for lobby in result] == [joinableId]
 
 def test_open_lobbies_endpoint_returns_manager_lobbies(monkeypatch):
-	monkeypatch.setattr(manager, "get_open_lobbies", lambda: [{
+	monkeypatch.setattr(manager, "getOpenLobbies", lambda: [{
 		"gameName": "calm-otter",
 		"creatorName": "Alice",
 		"playerCount": 1,
@@ -918,7 +919,7 @@ def test_open_lobbies_endpoint_returns_manager_lobbies(monkeypatch):
 		},
 	}])
 
-	result = asyncio.run(get_open_lobbies())
+	result = asyncio.run(getOpenLobbies())
 
 	assert result == {
 		"lobbies": [{
@@ -936,7 +937,7 @@ def test_open_lobbies_endpoint_returns_manager_lobbies(monkeypatch):
 def test_player_event_uses_persistent_seat_id():
 	router = PlayerInputRouter()
 	session = GameSession("TEST", router)
-	_, player = add_player(session, router, "Alice", "0", "red", configured=True)
+	_, player = addPlayer(session, router, "Alice", "0", "red", configured=True)
 
 	event = session.recordPlayerEvent(GameEventType.TURN_STARTED, player, {"handSize": 5})
 
@@ -950,16 +951,16 @@ def test_router_ignores_unsolicited_and_duplicate_input():
 		router.register(playerId)
 
 		unsolicitedInput = {"type": "card_selection", "requestId": "unsolicited"}
-		assert await router.add_input(playerId, unsolicitedInput) is False
-		assert router.input_queues[playerId].empty()
+		assert await router.addInput(playerId, unsolicitedInput) is False
+		assert router.inputQueues[playerId].empty()
 
-		await router.send_output(playerId, {"type": "query-card"})
-		prompt = await router.get_output(playerId)
+		await router.sendOutput(playerId, {"type": "query-card"})
+		prompt = await router.getOutput(playerId)
 		currentInput = {"type": "card_selection", "requestId": prompt["requestId"]}
 
-		assert await router.add_input(playerId, currentInput) is True
-		assert await router.add_input(playerId, currentInput) is False
-		assert router.input_queues[playerId].qsize() == 1
+		assert await router.addInput(playerId, currentInput) is True
+		assert await router.addInput(playerId, currentInput) is False
+		assert router.inputQueues[playerId].qsize() == 1
 
 	asyncio.run(scenario())
 
@@ -970,19 +971,19 @@ def test_router_replaces_queued_input_from_an_obsolete_prompt():
 		playerId = "TEST-Alice"
 		router.register(playerId)
 
-		await router.send_output(playerId, {"type": "query-card"})
-		firstPrompt = await router.get_output(playerId)
+		await router.sendOutput(playerId, {"type": "query-card"})
+		firstPrompt = await router.getOutput(playerId)
 		firstInput = {"type": "card_selection", "requestId": firstPrompt["requestId"]}
-		await router.add_input(playerId, firstInput)
-		assert await router.wait_for_input(playerId) == firstInput
+		await router.addInput(playerId, firstInput)
+		assert await router.waitForInput(playerId) == firstInput
 
-		await router.add_input(playerId, firstInput)
-		router.clear_pending_prompt(playerId)
-		await router.send_output(playerId, {"type": "query-card"})
-		secondPrompt = await router.get_output(playerId)
+		await router.addInput(playerId, firstInput)
+		router.clearPendingPrompt(playerId)
+		await router.sendOutput(playerId, {"type": "query-card"})
+		secondPrompt = await router.getOutput(playerId)
 		secondInput = {"type": "card_selection", "requestId": secondPrompt["requestId"]}
 
-		assert await router.add_input(playerId, secondInput) is True
-		assert await router.wait_for_input(playerId) == secondInput
+		assert await router.addInput(playerId, secondInput) is True
+		assert await router.waitForInput(playerId) == secondInput
 
 	asyncio.run(scenario())

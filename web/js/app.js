@@ -52,7 +52,7 @@ dom.createBtn.addEventListener("click", async () => {
     const data = await response.json();
     if (!response.ok) throw new Error(app.getHttpErrorMessage(data));
 
-    const gameId = data.game_id;
+    const gameId = data.gameId;
     app.log({
       messageKey: "connection.created_game",
       parameters: {gameId},

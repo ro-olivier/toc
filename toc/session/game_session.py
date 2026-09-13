@@ -2,61 +2,69 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from contextlib import suppress
-from typing import Dict, List
+from datetime import datetime
+from pathlib import Path
+from typing import Self, TYPE_CHECKING, TypeVar
 
-from settings import ALL_PLAYERS_DISCONNECTED_GRACE_SECONDS, GAME_INACTIVITY_SECONDS, GAME_SUSPENDED_CLOSE_CODE, LOBBY_LIFETIME_SECONDS
 from toc.infrastructure.clock import Clock, SYSTEM_CLOCK
 from toc.infrastructure.identity import createSeatId, createSessionId
-from toc.infrastructure.messages import build_message
-from toc.model.audit import GameEventLog, GameEventType
+from toc.infrastructure.messages import buildMessage
+from toc.model.audit import GameEvent, GameEventLog, GameEventType
+from toc.model.cards import Card
 from toc.model.game import Game
 from toc.model.game_mode import DEFAULT_GAME_MODE, GameModeDefinition, getGameModeDefinition
 from toc.model.game_phase import GamePhase
 from toc.model.move import Move
 from toc.model.params import AVAILABLE_COLORS
 from toc.model.player import Player
-from toc.model.rules import GameRules, MONTSURVENT_RULES, get_matching_preset_name
+from toc.model.rules import GameRules, MONTSURVENT_RULES, getMatchingPresetName
 from toc.persistence.archive_store import ArchiveCategory, CompressedJsonStore
 from toc.persistence.finished_state import FinishedArchiveState
 from toc.persistence.persistent_state import SessionMetadataState
 from toc.persistence.snapshot_state import CardState, GameProgressState, SessionSnapshotState, SevenHopProgressState, SevenSplitProgressState
 from toc.session.roster import Participant, PlayerSeat, SessionRoster
 from toc.session.session_participant import SessionParticipant
+from settings import ALL_PLAYERS_DISCONNECTED_GRACE_SECONDS, GAME_INACTIVITY_SECONDS, GAME_SUSPENDED_CLOSE_CODE, LOBBY_LIFETIME_SECONDS
 
+if TYPE_CHECKING:
+	from toc.session.input_router import PlayerInputRouter
+
+PersistenceResult = TypeVar("PersistenceResult")
 
 logger = logging.getLogger("toc.main")
 
 
 class GameSession:
-	def __init__(self, game_id: str, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None, clock: Clock = SYSTEM_CLOCK, archiveStore: CompressedJsonStore = None, modeDefinition: GameModeDefinition = None, creatorName: str = ""):
-		self.id = game_id
+	def __init__(self, gameId: str, msgRouter: PlayerInputRouter, rules: GameRules = MONTSURVENT_RULES, rulesetName: str | None = None, clock: Clock = SYSTEM_CLOCK, archiveStore: CompressedJsonStore | None = None, modeDefinition: GameModeDefinition | None = None, creatorName: str = "") -> None:
+		self.id = gameId
 		self._sessionId = createSessionId()
 		self._rules = rules
-		self._rulesetName = rulesetName if rulesetName is not None else get_matching_preset_name(rules)
+		self._rulesetName = rulesetName if rulesetName is not None else getMatchingPresetName(rules)
 		self.participants: dict[str, SessionParticipant] = {}
 		self._roster = SessionRoster()
 		self.started = False
 		self.lock = asyncio.Lock()
 		self.setupLock = asyncio.Lock()
-		self.router = msg_router
-		self.order: List = []
-		self.game = None
-		self.gameTask = None
+		self.router = msgRouter
+		self.order: list[str] = []
+		self.game: Game | None = None
+		self.gameTask: asyncio.Task[None] | None = None
 		self._clock = clock
 		self._createdAt = clock.utcNow()
 		self._createdMonotonic = clock.monotonic()
-		self._startedAt = None
-		self._endedAt = None
+		self._startedAt: datetime | None = None
+		self._endedAt: datetime | None = None
 		self._lastActivityAt = self._createdAt
 		self._lastActivityMonotonic = self._createdMonotonic
-		self._startedMonotonic = None
+		self._startedMonotonic: float | None = None
 		self._eventLog = GameEventLog(self.gameElapsedSeconds)
 		self._gameProgress = GameProgressState(GamePhase.DEAL_START, 0)
 		self._awaitingResume = False
-		self._archiveStore = archiveStore
+		self._archiveStore: CompressedJsonStore | None = archiveStore
 		self._checkpointLock = asyncio.Lock()
-		self._allPlayersDisconnectedMonotonic = None
+		self._allPlayersDisconnectedMonotonic: float | None = None
 		self._creatorName = creatorName
 
 		if modeDefinition is None:
@@ -104,19 +112,19 @@ class GameSession:
 		return self._rulesetName
 
 	@property
-	def createdAt(self):
+	def createdAt(self) -> datetime:
 		return self._createdAt
 
 	@property
-	def startedAt(self):
+	def startedAt(self) -> datetime | None:
 		return self._startedAt
 
 	@property
-	def endedAt(self):
+	def endedAt(self) -> datetime | None:
 		return self._endedAt
 
 	@property
-	def lastActivityAt(self):
+	def lastActivityAt(self) -> datetime:
 		return self._lastActivityAt
 
 	@property
@@ -168,7 +176,7 @@ class GameSession:
 
 		self._gameProgress = progress
 
-	def setGamePhase(self, phase: GamePhase, dealIndex: int = None) -> None:
+	def setGamePhase(self, phase: GamePhase, dealIndex: int | None = None) -> None:
 		if not isinstance(phase, GamePhase):
 			raise ValueError("Invalid game phase")
 
@@ -211,7 +219,7 @@ class GameSession:
 			await player.sendHandAgain()
 
 	@classmethod
-	def fromSnapshot(cls, snapshot: SessionSnapshotState, msg_router, clock: Clock = SYSTEM_CLOCK, archiveStore: CompressedJsonStore = None) -> "GameSession":
+	def fromSnapshot(cls, snapshot: SessionSnapshotState, msg_router: PlayerInputRouter, clock: Clock = SYSTEM_CLOCK, archiveStore: CompressedJsonStore | None = None) -> Self:
 		if not isinstance(snapshot, SessionSnapshotState):
 			raise ValueError("A valid session snapshot is required")
 
@@ -238,7 +246,7 @@ class GameSession:
 		participantsById = {}
 
 		for participantState in metadata.participants:
-			runtimeId = session.getFullPlayerId(metadata.joinCode, participantState.name)
+			runtimeId = session.buildRouterId(metadata.joinCode, participantState.name)
 			participant = Participant(
 				participantId=participantState.participantId,
 				routerId=runtimeId,
@@ -294,7 +302,7 @@ class GameSession:
 
 		return session
 
-	async def writeCheckpoint(self, category: ArchiveCategory):
+	async def writeCheckpoint(self, category: ArchiveCategory) -> Path | None:
 		if self._archiveStore is None:
 			return None
 
@@ -305,7 +313,7 @@ class GameSession:
 			payload = self.snapshotState().to_dict()
 			return await self._runPersistenceOperation(self._archiveStore.write, category, self._sessionId, payload)
 
-	async def _runPersistenceOperation(self, operation, *args):
+	async def _runPersistenceOperation(self, operation: Callable[..., PersistenceResult], *args: object) -> PersistenceResult:
 		persistenceTask = asyncio.create_task(asyncio.to_thread(operation, *args))
 
 		try:
@@ -324,18 +332,18 @@ class GameSession:
 
 			raise
 
-	async def checkpointActive(self):
+	async def checkpointActive(self) -> Path | None:
 		self.recordActivity()
 		return await self.writeCheckpoint(ArchiveCategory.ACTIVE)
 
-	async def resumed_game_loop(self) -> None:
+	async def resumedGameLoop(self) -> None:
 		try:
 			await self.resumeGame()
 		except Exception:
 			logger.exception("Resumed game loop failed", extra={"gameId": self.id, "sessionId": self._sessionId})
 			await self._handleGameLoopFailure()
 
-	async def start_resume_if_ready(self) -> bool:
+	async def startResumeIfReady(self) -> bool:
 		async with self.lock:
 			if not self._awaitingResume or self.gameTask is not None:
 				return False
@@ -350,10 +358,10 @@ class GameSession:
 			await self.activateRestoredArchive()
 
 			self._awaitingResume = False
-			self.gameTask = asyncio.create_task(self.resumed_game_loop())
+			self.gameTask = asyncio.create_task(self.resumedGameLoop())
 			return True
 
-	async def transitionCheckpoint(self, destination: ArchiveCategory, obsoleteCategories: tuple[ArchiveCategory, ...]):
+	async def transitionCheckpoint(self, destination: ArchiveCategory, obsoleteCategories: tuple[ArchiveCategory, ...]) -> Path | None:
 		if self._archiveStore is None:
 			return None
 
@@ -363,7 +371,7 @@ class GameSession:
 		async with self._checkpointLock:
 			payload = self.snapshotState().to_dict()
 
-			def persistTransition():
+			def persistTransition() -> Path:
 				path = self._archiveStore.write(destination, self._sessionId, payload)
 
 				for category in obsoleteCategories:
@@ -374,7 +382,7 @@ class GameSession:
 
 			return await self._runPersistenceOperation(persistTransition)
 
-	def getGameFinishedAuditDetails(self) -> dict:
+	def getGameFinishedAuditDetails(self) -> dict[str, object]:
 		winningPlayers = self.game.getWinningTeam() if self.game is not None else None
 
 		if winningPlayers is None:
@@ -501,7 +509,7 @@ class GameSession:
 
 		raise RuntimeError(f"Resuming phase '{progress.phase.value}' is not implemented yet")
 
-	def beginSevenSplit(self, move) -> None:
+	def beginSevenSplit(self, move: Move) -> None:
 		self.setGameProgress(GameProgressState(
 			phase=GamePhase.SEVEN_SPLIT,
 			dealIndex=self._gameProgress.dealIndex,
@@ -531,7 +539,7 @@ class GameSession:
 			),
 		))
 
-	def beginSevenHop(self, hopMove, decidingPlayer: Player, playedCard=None) -> None:
+	def beginSevenHop(self, hopMove: Move, decidingPlayer: Player, playedCard: Card | None = None) -> None:
 		card = hopMove.card if playedCard is None else playedCard
 
 		self.setGameProgress(GameProgressState(
@@ -553,12 +561,12 @@ class GameSession:
 
 		return max(0, int(self._clock.monotonic() - self._startedMonotonic))
 
-	def recordEvent(self, eventType: GameEventType, playerId: str = None, details: dict = None) -> GameEvent:
+	def recordEvent(self, eventType: GameEventType, playerId: str | None = None, details: dict[str, object] | None = None) -> GameEvent:
 		event = self._eventLog.record(eventType, playerId, details)
 		self.recordActivity()
 		return event
 
-	def recordPlayerEvent(self, eventType: GameEventType, player: Player, details: dict = None) -> GameEvent:
+	def recordPlayerEvent(self, eventType: GameEventType, player: Player, details: dict[str, object] | None = None) -> GameEvent:
 		return self.recordEvent(eventType, self.getPersistentPlayerId(player), details)
 
 	def lobbyAgeSeconds(self) -> float:
@@ -589,7 +597,7 @@ class GameSession:
 		self._lastActivityAt = self._endedAt
 		self._lastActivityMonotonic = self._clock.monotonic()
 
-	def ruleset_state(self) -> dict:
+	def rulesetState(self) -> dict[str, object]:
 		values = self._rules.to_dict()
 		seatsPerTeam = self._modeDefinition.seatCount // self._modeDefinition.teamCount
 
@@ -604,7 +612,7 @@ class GameSession:
 	def snapshotState(self) -> SessionSnapshotState:
 		return SessionSnapshotState.fromGameSession(self)
 
-	async def archiveSuspended(self):
+	async def archiveSuspended(self) -> Path | None:
 		if self.game is None:
 			raise RuntimeError("Cannot suspend a session without a game")
 
@@ -618,10 +626,10 @@ class GameSession:
 
 		return path
 
-	async def activateRestoredArchive(self):
+	async def activateRestoredArchive(self) -> Path | None:
 		return await self.transitionCheckpoint(ArchiveCategory.ACTIVE, (ArchiveCategory.SUSPENDED,))
 
-	async def archiveFinished(self):
+	async def archiveFinished(self) -> Path | None:
 		if self.game is None or not self.game.isFinished:
 			raise RuntimeError("Cannot archive an unfinished game as finished")
 
@@ -634,7 +642,7 @@ class GameSession:
 		async with self._checkpointLock:
 			payload = FinishedArchiveState.fromGameSession(self).to_dict()
 
-			def persistFinishedArchive():
+			def persistFinishedArchive() -> Path:
 				path = self._archiveStore.write(ArchiveCategory.FINISHED, self._sessionId, payload)
 				self._archiveStore.delete(ArchiveCategory.ACTIVE, self._sessionId)
 				self._archiveStore.delete(ArchiveCategory.SUSPENDED, self._sessionId)
@@ -645,7 +653,7 @@ class GameSession:
 		self._awaitingResume = False
 		return path
 
-	async def finalizeFinishedGame(self):
+	async def finalizeFinishedGame(self) -> Path | None:
 		self.completeGameLifecycle()
 		return await self.archiveFinished()
 
@@ -675,7 +683,7 @@ class GameSession:
 		self.gameTask = None
 
 		try:
-			await self.broadcast(build_message("error", "errors.internal_game_error", "The game stopped because of an internal server error."))
+			await self.broadcast(buildMessage("error", "errors.internal_game_error", "The game stopped because of an internal server error."))
 		except Exception:
 			logger.exception("Could not notify players of game-loop failure", extra={"gameId": self.id, "sessionId": self._sessionId})
 
@@ -725,11 +733,11 @@ class GameSession:
 			self._awaitingResume = False
 
 			if hadRunningTask and not self.game.isFinished:
-				self.gameTask = asyncio.create_task(self.resumed_game_loop())
+				self.gameTask = asyncio.create_task(self.resumedGameLoop())
 
 			raise
 
-	def fullUI(self) -> dict:
+	def fullUI(self) -> dict[str, object]:
 		if len(self.order) == self.roster.seatCount:
 			seats = self.orderedSeats
 		else:
@@ -761,24 +769,24 @@ class GameSession:
 			"trackRegionLength": self._rules.track_region_length,
 			"trackRegionCount": self._modeDefinition.seatCount,
 			"enterHouseAtSpot": self._rules.enter_house_at_spot,
-			"ruleset": self.ruleset_state(),
+			"ruleset": self.rulesetState(),
 			"lastPlayedCard": {
 				"value": lastPlayedCard.value,
 				"suit": lastPlayedCard.suit,
 			} if lastPlayedCard is not None else None,
 		}
 
-	def team_is_full(self, team: str) -> bool:
+	def isTeamFull(self, team: str) -> bool:
 		return sum(sessionParticipant.team == team for sessionParticipant in self.participants.values()) >= self._modeDefinition.participantsPerTeam
 
-	def is_full(self) -> bool:
+	def isFull(self) -> bool:
 		return len(self.participants) >= self._modeDefinition.participantCount
 
-	def available_colors(self) -> list[str]:
+	def availableColors(self) -> list[str]:
 		usedColors = {seat.color for seat in self.roster.seats}
 		return [color for color in AVAILABLE_COLORS if color not in usedColors]
 
-	def lobby_state(self) -> dict:
+	def lobbyState(self) -> dict[str, object]:
 		players = []
 
 		for sessionParticipant in self.participants.values():
@@ -804,7 +812,7 @@ class GameSession:
 			"gameId": self.id,
 			"started": self.started,
 			"players": players,
-			"availableColors": self.available_colors(),
+			"availableColors": self.availableColors(),
 			"teamCounts": teamCounts,
 			"teamCapacity": self._modeDefinition.participantsPerTeam,
 			"participantCapacity": self._modeDefinition.participantCount,
@@ -817,18 +825,18 @@ class GameSession:
 			"trackRegionLength": self._rules.track_region_length,
 			"trackRegionCount": self._modeDefinition.seatCount,
 			"enterHouseAtSpot": self._rules.enter_house_at_spot,
-			"ruleset": self.ruleset_state(),
+			"ruleset": self.rulesetState(),
 			"seatsPerParticipant": self._modeDefinition.seatsPerParticipant,
 			"creatorName": self._creatorName,
 		}
 
-	async def broadcast_lobby_state(self) -> None:
-		await self.broadcast(self.lobby_state())
+	async def broadcastLobbyState(self) -> None:
+		await self.broadcast(self.lobbyState())
 
-	def getFullPlayerId(self, game_id : str, player_name : str) -> str:
-		return f'{game_id}-{player_name}'
+	def buildRouterId(self, gameId: str, playerName: str) -> str:
+		return f'{gameId}-{playerName}'
 
-	def set_player_order(self) -> bool:
+	def setPlayerOrder(self) -> bool:
 		try:
 			self.order = list(self.roster.determineSeatOrder(self._modeDefinition))
 		except ValueError:
@@ -837,14 +845,14 @@ class GameSession:
 
 		return True
 
-	async def broadcast(self, message: Dict, excludedRouterId: str = None):
+	async def broadcast(self, message: dict[str, object], excludedRouterId: str | None = None) -> None:
 		for routerId, sessionParticipant in self.participants.items():
 			if routerId != excludedRouterId and sessionParticipant.primaryPlayer is not None:
 				await sessionParticipant.primaryPlayer.send_message_to_user(message)
 
-	async def game_loop(self):
+	async def gameLoop(self) -> None:
 		try:
-			await self.broadcast(build_message("log", "gameplay.game_starting", "Everyone has joined: the game is starting!"))
+			await self.broadcast(buildMessage("log", "gameplay.game_starting", "Everyone has joined: the game is starting!"))
 			orderedSeats = self.orderedSeats
 			self.game = Game(self, [seat.color for seat in orderedSeats], self._rules, self.dealCardCounts, self._modeDefinition.jokerCount)
 			self.game.setPlayers([seat.player for seat in orderedSeats])
@@ -854,7 +862,7 @@ class GameSession:
 			logger.exception("Game loop failed", extra={"gameId": self.id, "sessionId": self._sessionId})
 			await self._handleGameLoopFailure()
 
-	async def start_game_if_ready(self) -> bool:
+	async def startGameIfReady(self) -> bool:
 		async with self.lock:
 			if self.started or len(self.participants) != self._modeDefinition.participantCount or len(self.order) != self._modeDefinition.seatCount:
 				return False
@@ -865,11 +873,11 @@ class GameSession:
 			self.markStarted()
 			self.recordEvent(GameEventType.GAME_STARTED)
 
-		await self.broadcast_lobby_state()
-		self.gameTask = asyncio.create_task(self.game_loop())
+		await self.broadcastLobbyState()
+		self.gameTask = asyncio.create_task(self.gameLoop())
 		return True
 
-	async def configure_player(self, routerId: str, team: str, colors) -> bool:
+	async def configurePlayer(self, routerId: str, team: str, colors: str | list[str]) -> bool:
 		async with self.setupLock:
 			sessionParticipant = self.participants.get(routerId)
 
@@ -877,7 +885,7 @@ class GameSession:
 				return False
 
 			if sessionParticipant.configured:
-				await sessionParticipant.primaryPlayer.send_message_to_user(build_message(
+				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
 					"lobby-error",
 					"lobby.errors.already_confirmed",
 					"Your lobby choices have already been confirmed.",
@@ -885,7 +893,7 @@ class GameSession:
 				return False
 
 			if team not in self._modeDefinition.teamIds:
-				await sessionParticipant.primaryPlayer.send_message_to_user(build_message(
+				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
 					"lobby-error",
 					"lobby.errors.invalid_team",
 					"Please choose a valid team.",
@@ -900,7 +908,7 @@ class GameSession:
 			expectedColorCount = self._modeDefinition.seatsPerParticipant
 
 			if type(colors) is not list or len(colors) != expectedColorCount:
-				await sessionParticipant.primaryPlayer.send_message_to_user(build_message(
+				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
 					"lobby-error",
 					"lobby.errors.invalid_color_count",
 					f"Please select {expectedColorCount} colours.",
@@ -909,15 +917,15 @@ class GameSession:
 				return False
 
 			if len(set(colors)) != len(colors) or any(color not in AVAILABLE_COLORS for color in colors):
-				await sessionParticipant.primaryPlayer.send_message_to_user(build_message(
+				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
 					"lobby-error",
 					"lobby.errors.invalid_color",
 					"Please choose valid and distinct colours.",
 				))
 				return False
 
-			if self.team_is_full(team):
-				await sessionParticipant.primaryPlayer.send_message_to_user(build_message(
+			if self.isTeamFull(team):
+				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
 					"lobby-error",
 					"lobby.errors.team_full",
 					f"Team {team} is already full.",
@@ -925,11 +933,11 @@ class GameSession:
 				))
 				return False
 
-			availableColors = set(self.available_colors())
+			availableColors = set(self.availableColors())
 			takenColor = next((color for color in colors if color not in availableColors), None)
 
 			if takenColor is not None:
-				await sessionParticipant.primaryPlayer.send_message_to_user(build_message(
+				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
 					"lobby-error",
 					"lobby.errors.color_taken",
 					f"The colour {takenColor} has already been selected.",
@@ -977,14 +985,14 @@ class GameSession:
 			sessionParticipant.configureSeats(seats)
 
 			if len(self.participants) == self._modeDefinition.participantCount and all(data.configured for data in self.participants.values()):
-				if not self.set_player_order():
+				if not self.setPlayerOrder():
 					raise RuntimeError("Could not determine a valid player order")
 
-		await self.broadcast_lobby_state()
-		await self.start_game_if_ready()
+		await self.broadcastLobbyState()
+		await self.startGameIfReady()
 		return True
 
-	async def handle_player_message(self, routerId: str, message: dict) -> None:
+	async def handlePlayerMessage(self, routerId: str, message: dict[str, object]) -> None:
 		messageType = message.get("type")
 
 		if messageType == "configure-player":
@@ -993,7 +1001,7 @@ class GameSession:
 			if colors is None:
 				colors = message.get("color", "")
 
-			await self.configure_player(routerId, message.get("team", ""), colors)
+			await self.configurePlayer(routerId, message.get("team", ""), colors)
 			return
 
-		await self.router.add_input(routerId, message)
+		await self.router.addInput(routerId, message)

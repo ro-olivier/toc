@@ -42,7 +42,7 @@ MESSAGE_KEYS = frozenset({
 	"prompts.seven_hop",
 })
 
-def build_message(messageType: str, messageKey: str, fallback: str, parameters: dict | None = None, **payload) -> dict:
+def buildMessage(messageType: str, messageKey: str, fallback: str, parameters: dict[str, object] | None = None, **payload: object) -> dict[str, object]:
 	if not isinstance(messageType, str) or not messageType:
 		raise ValueError("Message type must be a non-empty string")
 
@@ -62,7 +62,7 @@ def build_message(messageType: str, messageKey: str, fallback: str, parameters: 
 	if conflictingFields:
 		raise ValueError(f"Reserved message fields cannot be passed as payload: {', '.join(sorted(conflictingFields))}")
 
-	message = {
+	message: dict[str, object] = {
 		"type": messageType,
 		"messageKey": messageKey,
 		"parameters": dict(parameters) if parameters is not None else {},

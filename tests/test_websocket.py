@@ -12,6 +12,7 @@ from toc.model.audit import GameEventType
 from toc.infrastructure.identity import resumeTokenMatches
 from toc.model.game_mode import GameMode, getGameModeDefinition
 from toc.model.game import Game
+from toc.model.rules import resolveRuleset
 from settings import INVALID_PLAYER_NAME_CODE, MAX_PLAYER_NAME_LENGTH
 
 
@@ -26,7 +27,7 @@ def client():
 
 @pytest.fixture
 def gameId():
-	createdGameId = manager.create_game(router)
+	createdGameId = manager.createGame(router)
 
 	try:
 		yield createdGameId
@@ -35,15 +36,15 @@ def gameId():
 
 		if session is not None:
 			for playerId in session.participants:
-				router.input_queues.pop(playerId, None)
-				router.output_queues.pop(playerId, None)
+				router.inputQueues.pop(playerId, None)
+				router.outputQueues.pop(playerId, None)
 				router.recycleBin.pop(playerId, None)
 				router.pendingPrompts.pop(playerId, None)
 
 @pytest.fixture
 def duelTwoGameId():
 	modeDefinition = getGameModeDefinition(GameMode.DUEL_TWO)
-	createdGameId = manager.create_game(router, modeDefinition=modeDefinition)
+	createdGameId = manager.createGame(router, modeDefinition=modeDefinition)
 
 	try:
 		yield createdGameId
@@ -52,15 +53,15 @@ def duelTwoGameId():
 
 		if session is not None:
 			for playerId in session.participants:
-				router.input_queues.pop(playerId, None)
-				router.output_queues.pop(playerId, None)
+				router.inputQueues.pop(playerId, None)
+				router.outputQueues.pop(playerId, None)
 				router.recycleBin.pop(playerId, None)
 				router.pendingPrompts.pop(playerId, None)
 
 @pytest.fixture
 def teamSixGameId():
 	modeDefinition = getGameModeDefinition(GameMode.TEAM_SIX)
-	createdGameId = manager.create_game(router, modeDefinition=modeDefinition)
+	createdGameId = manager.createGame(router, modeDefinition=modeDefinition)
 
 	try:
 		yield createdGameId
@@ -69,8 +70,8 @@ def teamSixGameId():
 
 		if session is not None:
 			for playerId in session.participants:
-				router.input_queues.pop(playerId, None)
-				router.output_queues.pop(playerId, None)
+				router.inputQueues.pop(playerId, None)
+				router.outputQueues.pop(playerId, None)
 				router.recycleBin.pop(playerId, None)
 				router.pendingPrompts.pop(playerId, None)
 
@@ -479,7 +480,7 @@ def test_four_configured_players_start_game_once(client, gameId, monkeypatch):
 		gameLoopCalls.append(True)
 		gameLoopStarted.set()
 
-	monkeypatch.setattr(session, "game_loop", fakeGameLoop)
+	monkeypatch.setattr(session, "gameLoop", fakeGameLoop)
 
 	playerConfigurations = {
 		"Alice": {"team": "0", "color": "red"},
@@ -644,14 +645,14 @@ def test_disconnect_moves_player_queues_to_recycle_bin(client, gameId):
 		identifyWebSocket(websocket)
 		receiveLobbyState(websocket)
 
-		assert playerId in router.input_queues
-		assert playerId in router.output_queues
+		assert playerId in router.inputQueues
+		assert playerId in router.outputQueues
 		assert playerId not in router.recycleBin
 		assert session.participants[playerId].active is True
 
 	assert session.participants[playerId].active is False
-	assert playerId not in router.input_queues
-	assert playerId not in router.output_queues
+	assert playerId not in router.inputQueues
+	assert playerId not in router.outputQueues
 	assert playerId in router.recycleBin
 	assert "in" in router.recycleBin[playerId]
 	assert "out" in router.recycleBin[playerId]
@@ -877,7 +878,7 @@ def test_create_game_uses_requested_game_mode(client):
 		"layout": "adjacent",
 	}
 
-	gameId = response.json()["game_id"]
+	gameId = response.json()["gameId"]
 	session = manager.games[gameId]
 
 	assert session.modeDefinition == getGameModeDefinition("duel_four", "adjacent")
@@ -900,7 +901,7 @@ def test_two_configured_players_start_duel_two_game(client, duelTwoGameId, monke
 	with ExitStack() as stack:
 		sockets = connectPlayers(stack, client, duelTwoGameId, ["Alice", "Bob"])
 
-		initialState = session.lobby_state()
+		initialState = session.lobbyState()
 
 		assert initialState["participantCapacity"] == 2
 		assert initialState["seatCapacity"] == 2
@@ -967,7 +968,7 @@ def test_six_configured_players_start_team_six_game(client, teamSixGameId, monke
 	with ExitStack() as stack:
 		sockets = connectPlayers(stack, client, teamSixGameId, list(playerConfigurations))
 
-		initialState = session.lobby_state()
+		initialState = session.lobbyState()
 
 		assert initialState["participantCapacity"] == 6
 		assert initialState["seatCapacity"] == 6
@@ -1045,7 +1046,7 @@ def test_created_lobby_is_listed_and_can_be_joined_case_insensitively(client):
 
 		assert response.status_code == 200
 
-		gameId = response.json()["game_id"]
+		gameId = response.json()["gameId"]
 		lobbyResponse = client.get("/toc/api/open-lobbies")
 
 		assert lobbyResponse.status_code == 200

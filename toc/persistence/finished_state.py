@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from toc.infrastructure.versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, RULES_FORMAT_VERSION
@@ -8,6 +11,10 @@ from toc.model.rules import GameRules
 from toc.persistence.snapshot_state import GameState
 from toc.model.game_mode import GameModeDefinition
 from toc.model.params import SPOTS_PER_HOUSE
+
+if TYPE_CHECKING:
+	from toc.session.game_session import GameSession
+	from toc.session.roster import Participant, PlayerSeat
 
 
 def _validateId(value: str, fieldName: str) -> None:
@@ -23,7 +30,7 @@ def _validateId(value: str, fieldName: str) -> None:
 		raise ValueError(f"Invalid {fieldName}")
 
 
-def _parseTimestamp(value, fieldName: str) -> datetime:
+def _parseTimestamp(value: object, fieldName: str) -> datetime:
 	if type(value) is not str:
 		raise ValueError(f"Invalid {fieldName}")
 
@@ -93,7 +100,7 @@ class FinishedParticipantState:
 		return cls(participantId=values["participantId"], name=values["name"])
 
 	@classmethod
-	def fromParticipant(cls, participant) -> "FinishedParticipantState":
+	def fromParticipant(cls, participant: Participant) -> "FinishedParticipantState":
 		return cls(participantId=participant.participantId, name=participant.name)
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +141,7 @@ class FinishedSeatState:
 		)
 
 	@classmethod
-	def fromSeat(cls, seat) -> "FinishedSeatState":
+	def fromSeat(cls, seat: PlayerSeat) -> "FinishedSeatState":
 		return cls(seatId=seat.seatId, participantId=seat.participantId, team=seat.team, color=seat.color)
 
 
@@ -372,7 +379,7 @@ class FinishedArchiveState:
 		)
 
 	@classmethod
-	def fromGameSession(cls, session) -> "FinishedArchiveState":
+	def fromGameSession(cls, session: GameSession) -> "FinishedArchiveState":
 		if session.game is None or not session.game.isFinished:
 			raise ValueError("Cannot archive an unfinished game")
 

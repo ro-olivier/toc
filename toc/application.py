@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+import logging
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from settings import BASE_DIR
 from toc.infrastructure.app_logging import configureApplicationLogging
 from toc.runtime import manager
 from toc.transport.http_routes import httpRouter
 from toc.transport.websocket_routes import websocketRouter
+from settings import BASE_DIR
 
 
 configureApplicationLogging()
@@ -19,8 +20,8 @@ logger = logging.getLogger("toc.main")
 
 
 @asynccontextmanager
-async def applicationLifespan(app: FastAPI):
-	recoveryResult = await manager.recover_interrupted_games()
+async def applicationLifespan(app: FastAPI) -> AsyncIterator[None]:
+	recoveryResult = await manager.recoverInterruptedGames()
 
 	logger.info(
 		"Interrupted-game recovery completed",
@@ -31,7 +32,7 @@ async def applicationLifespan(app: FastAPI):
 		},
 	)
 
-	monitorTask = asyncio.create_task(manager.monitor_sessions())
+	monitorTask = asyncio.create_task(manager.monitorSessions())
 
 	try:
 		yield

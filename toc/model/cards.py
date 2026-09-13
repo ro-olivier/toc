@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import random
+
 from toc.model.hand import Hand
 from toc.model.params import *
 
-import random
-
 
 class Deck:
-	def __init__(self, jokerCount: int = 0):
+	def __init__(self, jokerCount: int = 0) -> None:
 		if type(jokerCount) is not int or not 0 <= jokerCount <= len(JOKER_COLORS):
 			raise ValueError("Invalid Joker count")
 
@@ -61,7 +61,6 @@ class Deck:
 
 		return deck
 
-
 	def drawCard(self) -> Card:
 		if not self._cards:
 			raise RuntimeError("Cannot draw a card from an empty deck")
@@ -89,7 +88,7 @@ class Deck:
 
 
 class Card:
-	def __init__(self, suit : str, value : str, deck : Deck = None):
+	def __init__(self, suit: str, value: str, deck: Deck | None = None) -> None:
 		self._suit = suit
 		self._value = value
 		self._deck = deck
@@ -97,12 +96,12 @@ class Card:
 	def __str__(self) -> str:
 		return f'{self._suit}{self._value}'
 
-	def __eq__(self, other) -> bool:
+	def __eq__(self, other: object) -> bool:
 		if isinstance(other, Card):
 			return self.suit == other.suit and self.value == other.value
 		return False
 
-	def __hash__(self):
+	def __hash__(self) -> int:
 		return hash((self.suit, self.value))
 
 	@property
@@ -114,7 +113,7 @@ class Card:
 		return self._suit
 
 	@property
-	def json(self) -> dict:
+	def json(self) -> dict[str, str]:
 		return {"suit": self._suit, "value": self._value}
 
 	@property

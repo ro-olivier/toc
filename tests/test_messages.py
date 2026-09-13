@@ -2,12 +2,12 @@ import pytest
 import ast
 from pathlib import Path
 
-from toc.infrastructure.messages import MESSAGE_KEYS, build_message
+from toc.infrastructure.messages import MESSAGE_KEYS, buildMessage
 
 
 
 def test_build_message_contains_translation_and_event_data():
-	message = build_message("play", "gameplay.piece_moved", "Alice played ♥️5.", {"player": "Alice", "card": "♥️5"}, playerId="Alice", value="5", suit="♥️")
+	message = buildMessage("play", "gameplay.piece_moved", "Alice played ♥️5.", {"player": "Alice", "card": "♥️5"}, playerId="Alice", value="5", suit="♥️")
 
 	assert message == {
 		"type": "play",
@@ -21,8 +21,8 @@ def test_build_message_contains_translation_and_event_data():
 
 
 def test_build_message_uses_independent_empty_parameters():
-	firstMessage = build_message("log", "gameplay.game_starting", "The game started.")
-	secondMessage = build_message("log", "gameplay.game_starting", "The game started.")
+	firstMessage = buildMessage("log", "gameplay.game_starting", "The game started.")
+	secondMessage = buildMessage("log", "gameplay.game_starting", "The game started.")
 
 	firstMessage["parameters"]["test"] = True
 
@@ -31,7 +31,7 @@ def test_build_message_uses_independent_empty_parameters():
 
 def test_build_message_rejects_old_msg_field():
 	with pytest.raises(ValueError, match="Reserved message fields"):
-		build_message("log", "gameplay.game_starting", "The game started.", msg="Old message")
+		buildMessage("log", "gameplay.game_starting", "The game started.", msg="Old message")
 
 def test_every_backend_message_key_is_registered():
 	projectRoot = Path(__file__).resolve().parents[1]

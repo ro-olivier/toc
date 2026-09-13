@@ -1,7 +1,13 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from toc.model.player import Player
 from toc.session.roster import Participant, PlayerSeat
+
+if TYPE_CHECKING:
+	from starlette.websockets import WebSocket
 
 
 @dataclass(slots=True)
@@ -36,11 +42,11 @@ class SessionParticipant:
 		return self.participant.resumeTokenHash
 
 	@property
-	def websocket(self) -> object | None:
+	def websocket(self) -> WebSocket | None:
 		return self.participant.websocket
 
 	@websocket.setter
-	def websocket(self, websocket: object | None) -> None:
+	def websocket(self, websocket: WebSocket | None) -> None:
 		self.participant.websocket = websocket
 
 	@property

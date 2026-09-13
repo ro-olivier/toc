@@ -53,7 +53,7 @@ def makeGameSessionState(archiveStore=None, clock=SYSTEM_CLOCK, joinCode="TEST")
 	players = []
 
 	for name, team, color in playerDefinitions:
-		routerId = session.getFullPlayerId(session.id, name)
+		routerId = session.buildRouterId(session.id, name)
 		participantId = createPlayerId()
 		resumeTokenHash = hashResumeToken(createResumeToken())
 
@@ -89,7 +89,7 @@ def makeRestorationSession(sourceSession):
 
 	for sourceSessionParticipant in sourceSession.participants.values():
 		name = sourceSessionParticipant.name
-		routerId = session.getFullPlayerId(session.id, name)
+		routerId = session.buildRouterId(session.id, name)
 		participantId = sourceSessionParticipant.participantId
 		seatId = sourceSessionParticipant.primarySeat.seatId
 
@@ -514,8 +514,8 @@ def test_restored_players_start_disconnected_with_fresh_router_queues():
 	for runtimeId, sessionParticipant in restoredSession.participants.items():
 		assert sessionParticipant.active is False
 		assert sessionParticipant.websocket is None
-		assert runtimeId not in router.input_queues
-		assert runtimeId not in router.output_queues
+		assert runtimeId not in router.inputQueues
+		assert runtimeId not in router.outputQueues
 		assert runtimeId in router.recycleBin
 		assert runtimeId not in router.pendingPrompts
 		assert sessionParticipant.primaryPlayer.identifier == sessionParticipant.participantId
@@ -832,7 +832,7 @@ def test_restored_session_does_not_resume_until_every_player_is_connected():
 		for sessionParticipant in list(restoredSession.participants.values())[:-1]:
 			sessionParticipant.active = True
 
-		result = await restoredSession.start_resume_if_ready()
+		result = await restoredSession.startResumeIfReady()
 
 		assert result is False
 		assert restoredSession.awaitingResume is True
@@ -850,12 +850,12 @@ def test_fourth_reconnected_player_starts_resumed_game(monkeypatch):
 		async def fakeResumedGameLoop():
 			resumeCalls.append("resume")
 
-		monkeypatch.setattr(restoredSession, "resumed_game_loop", fakeResumedGameLoop)
+		monkeypatch.setattr(restoredSession, "resumedGameLoop", fakeResumedGameLoop)
 
 		for sessionParticipant in restoredSession.participants.values():
 			sessionParticipant.active = True
 
-		result = await restoredSession.start_resume_if_ready()
+		result = await restoredSession.startResumeIfReady()
 
 		assert result is True
 		assert restoredSession.awaitingResume is False
@@ -880,12 +880,12 @@ def test_simultaneous_resume_checks_start_only_one_task(monkeypatch):
 		async def fakeResumedGameLoop():
 			resumeCalls.append("resume")
 
-		monkeypatch.setattr(restoredSession, "resumed_game_loop", fakeResumedGameLoop)
+		monkeypatch.setattr(restoredSession, "resumedGameLoop", fakeResumedGameLoop)
 
 		results = await asyncio.gather(
-			restoredSession.start_resume_if_ready(),
-			restoredSession.start_resume_if_ready(),
-			restoredSession.start_resume_if_ready(),
+			restoredSession.startResumeIfReady(),
+			restoredSession.startResumeIfReady(),
+			restoredSession.startResumeIfReady(),
 		)
 
 		await restoredSession.gameTask
@@ -916,33 +916,33 @@ def test_connection_manager_restores_suspended_game_by_join_code(tmp_path):
 
 	router = PlayerInputRouter()
 	manager = ConnectionManager(archiveStore=store)
-	restoredSession = manager.get_or_restore_game(session.joinCode, router)
+	restoredSession = manager.getOrRestoreGame(session.joinCode, router)
 
 	assert restoredSession is not None
 	assert restoredSession.sessionId == session.sessionId
 	assert restoredSession.joinCode == session.joinCode
 	assert restoredSession.awaitingResume is True
-	assert manager.get_game(session.joinCode) is restoredSession
+	assert manager.getGame(session.joinCode) is restoredSession
 	assert all(sessionParticipant.active is False for sessionParticipant in restoredSession.participants.values())
 
 def test_connection_manager_returns_none_for_unknown_suspended_game(tmp_path):
 	store = CompressedJsonStore(tmp_path / "game-data")
 	manager = ConnectionManager(archiveStore=store)
 
-	assert manager.get_or_restore_game("UNKNOWN", PlayerInputRouter()) is None
+	assert manager.getOrRestoreGame("UNKNOWN", PlayerInputRouter()) is None
 
 def test_connection_manager_does_not_reload_an_existing_live_session(tmp_path, monkeypatch):
 	store = CompressedJsonStore(tmp_path / "game-data")
 	manager = ConnectionManager(archiveStore=store)
 	router = PlayerInputRouter()
-	gameId = manager.create_game(router)
+	gameId = manager.createGame(router)
 
 	def unexpectedList(category):
 		raise AssertionError("The archive store must not be scanned for a live game")
 
 	monkeypatch.setattr(store, "listDocumentIds", unexpectedList)
 
-	assert manager.get_or_restore_game(gameId, router) is manager.get_game(gameId)
+	assert manager.getOrRestoreGame(gameId, router) is manager.getGame(gameId)
 
 def test_duplicate_suspended_join_codes_are_rejected(tmp_path):
 	session = makeGameSessionState()
@@ -960,7 +960,7 @@ def test_duplicate_suspended_join_codes_are_rejected(tmp_path):
 	manager = ConnectionManager(archiveStore=store)
 
 	with pytest.raises(RuntimeError, match="Multiple suspended archives"):
-		manager.get_or_restore_game(session.joinCode, PlayerInputRouter())
+		manager.getOrRestoreGame(session.joinCode, PlayerInputRouter())
 
 def test_active_checkpoint_writes_complete_session_snapshot(tmp_path):
 	store = CompressedJsonStore(tmp_path / "game-data")
@@ -1143,9 +1143,9 @@ def test_resumed_session_promotes_suspended_archive_to_active(tmp_path, monkeypa
 		async def fakeResumedGameLoop():
 			resumeCalls.append("resume")
 
-		monkeypatch.setattr(restoredSession, "resumed_game_loop", fakeResumedGameLoop)
+		monkeypatch.setattr(restoredSession, "resumedGameLoop", fakeResumedGameLoop)
 
-		assert await restoredSession.start_resume_if_ready() is True
+		assert await restoredSession.startResumeIfReady() is True
 
 		await restoredSession.gameTask
 
@@ -1181,7 +1181,7 @@ def test_failed_active_promotion_does_not_start_resumed_game(tmp_path, monkeypat
 		monkeypatch.setattr(store, "write", failingWrite)
 
 		with pytest.raises(OSError, match="Simulated active-archive failure"):
-			await restoredSession.start_resume_if_ready()
+			await restoredSession.startResumeIfReady()
 
 		assert restoredSession.awaitingResume is True
 		assert restoredSession.gameTask is None
@@ -1342,7 +1342,7 @@ def test_interrupted_active_game_is_recovered_as_suspended(tmp_path):
 		await session.checkpointActive()
 
 		manager = ConnectionManager(archiveStore=store)
-		result = await manager.recover_interrupted_games()
+		result = await manager.recoverInterruptedGames()
 
 		assert result == {
 			"suspended": (session.sessionId,),
@@ -1363,7 +1363,7 @@ def test_interrupted_finished_game_is_recovered_as_finished(tmp_path):
 		await session.checkpointActive()
 
 		manager = ConnectionManager(archiveStore=store)
-		result = await manager.recover_interrupted_games()
+		result = await manager.recoverInterruptedGames()
 
 		assert result == {
 			"suspended": (),
@@ -1396,7 +1396,7 @@ def test_recovery_keeps_newer_suspended_duplicate(tmp_path):
 		store.write(ArchiveCategory.SUSPENDED, session.sessionId, suspendedPayload)
 
 		manager = ConnectionManager(archiveStore=store)
-		result = await manager.recover_interrupted_games()
+		result = await manager.recoverInterruptedGames()
 
 		assert result["suspended"] == (session.sessionId,)
 		assert not store.pathFor(ArchiveCategory.ACTIVE, session.sessionId).exists()
@@ -1419,7 +1419,7 @@ def test_recovery_prefers_active_duplicate_when_timestamps_match(tmp_path):
 		store.write(ArchiveCategory.SUSPENDED, session.sessionId, suspendedPayload)
 
 		manager = ConnectionManager(archiveStore=store)
-		await manager.recover_interrupted_games()
+		await manager.recoverInterruptedGames()
 
 		recoveredPayload = store.read(ArchiveCategory.SUSPENDED, session.sessionId)
 
@@ -1435,7 +1435,7 @@ def test_corrupt_active_archive_is_reported_without_deletion(tmp_path):
 	path.write_bytes(b"not-a-gzip-archive")
 
 	manager = ConnectionManager(archiveStore=store)
-	result = asyncio.run(manager.recover_interrupted_games())
+	result = asyncio.run(manager.recoverInterruptedGames())
 
 	assert result == {
 		"suspended": (),
@@ -1455,14 +1455,14 @@ def test_monitor_removes_expired_lobby_without_archiving(tmp_path):
 
 		clock.advance(LOBBY_LIFETIME_SECONDS)
 
-		result = await manager.monitor_once()
+		result = await manager.monitorOnce()
 
 		assert result == {
 			"expired": ("TEST",),
 			"suspended": (),
 			"failed": (),
 		}
-		assert manager.get_game("TEST") is None
+		assert manager.getGame("TEST") is None
 		assert store.listDocumentIds(ArchiveCategory.ACTIVE) == ()
 		assert store.listDocumentIds(ArchiveCategory.SUSPENDED) == ()
 
@@ -1484,14 +1484,14 @@ def test_monitor_suspends_game_after_disconnection_grace(tmp_path):
 
 		clock.advance(ALL_PLAYERS_DISCONNECTED_GRACE_SECONDS)
 
-		result = await manager.monitor_once()
+		result = await manager.monitorOnce()
 
 		assert result == {
 			"expired": (),
 			"suspended": (session.joinCode,),
 			"failed": (),
 		}
-		assert manager.get_game(session.joinCode) is None
+		assert manager.getGame(session.joinCode) is None
 		assert store.pathFor(ArchiveCategory.SUSPENDED, session.sessionId).exists()
 		assert not store.pathFor(ArchiveCategory.ACTIVE, session.sessionId).exists()
 
@@ -1540,7 +1540,7 @@ def test_failed_suspension_restarts_cancelled_game_task(tmp_path, monkeypatch):
 
 		session.gameTask = asyncio.create_task(waitingGameTask())
 		monkeypatch.setattr(session, "archiveSuspended", failingArchive)
-		monkeypatch.setattr(session, "resumed_game_loop", restartedGameLoop)
+		monkeypatch.setattr(session, "resumedGameLoop", restartedGameLoop)
 
 		with pytest.raises(OSError, match="Simulated suspension failure"):
 			await session.suspendGame()
@@ -1728,11 +1728,11 @@ def test_new_game_cannot_reuse_suspended_game_join_code(tmp_path, monkeypatch):
 	monkeypatch.setattr("toc.session.connection_manager.createJoinCode", lambda: next(generatedCodes))
 
 	connectionManager = ConnectionManager(archiveStore=store)
-	newGameId = connectionManager.create_game(PlayerInputRouter())
+	newGameId = connectionManager.createGame(PlayerInputRouter())
 
 	assert newGameId == "brave-fox"
-	assert connectionManager.get_game("brave-fox") is not None
-	assert connectionManager.get_game("calm-otter") is None
+	assert connectionManager.getGame("brave-fox") is not None
+	assert connectionManager.getGame("calm-otter") is None
 
 def test_full_ui_reports_last_played_card():
 	session = makeGameSessionState()

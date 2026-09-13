@@ -18,8 +18,8 @@ CONTEXT_FIELDS = (
 
 
 class TocJsonFormatter(logging.Formatter):
-	def format(self, record):
-		payload = {
+	def format(self, record: logging.LogRecord) -> str:
+		payload: dict[str, object] = {
 			"timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
 			"level": record.levelname,
 			"logger": record.name,

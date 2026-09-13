@@ -1,9 +1,9 @@
+from enum import StrEnum
 import gzip
 import json
 import os
-
-from enum import StrEnum
 from pathlib import Path
+from typing import Never
 from uuid import UUID, uuid4
 
 
@@ -17,12 +17,12 @@ class ArchiveCorruptionError(ValueError):
 	pass
 
 
-def _rejectInvalidJsonConstant(value):
+def _rejectInvalidJsonConstant(value: str) -> Never:
 	raise ValueError(f"Invalid JSON constant: {value}")
 
 
 class CompressedJsonStore:
-	def __init__(self, rootDirectory):
+	def __init__(self, rootDirectory: str | os.PathLike[str]) -> None:
 		self._rootDirectory = Path(rootDirectory)
 
 		for category in ArchiveCategory:
@@ -45,7 +45,7 @@ class CompressedJsonStore:
 
 		return self._rootDirectory / category.value / f"{documentId}.json.gz"
 
-	def write(self, category: ArchiveCategory, documentId: str, payload: dict) -> Path:
+	def write(self, category: ArchiveCategory, documentId: str, payload: dict[str, object]) -> Path:
 		if type(payload) is not dict:
 			raise ValueError("Archive payload must be an object")
 
@@ -76,7 +76,7 @@ class CompressedJsonStore:
 
 		return finalPath
 
-	def read(self, category: ArchiveCategory, documentId: str) -> dict:
+	def read(self, category: ArchiveCategory, documentId: str) -> dict[str, object]:
 		path = self.pathFor(category, documentId)
 
 		try:
@@ -110,7 +110,7 @@ class CompressedJsonStore:
 			raise ValueError("Invalid archive category")
 
 		directory = self._rootDirectory / category.value
-		documentIds = []
+		documentIds: list[str] = []
 
 		for path in directory.glob("*.json.gz"):
 			documentId = path.name.removesuffix(".json.gz")

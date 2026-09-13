@@ -1,11 +1,10 @@
 from __future__ import annotations
-from typing import Optional
 
 from toc.model.player import Player
 
 
 class Spot:
-	def __init__(self, color : str, number : int):
+	def __init__(self, color: str, number: int) -> None:
 		self._color = color
 		self._number = number
 		self._isOccupied = False
@@ -16,12 +15,12 @@ class Spot:
 	def __str__(self) -> str:
 		return 'spot-'+self._color+'-'+str(self._number)
 
-	def __eq__(self, other) -> bool:
+	def __eq__(self, other: object) -> bool:
 		if isinstance(other, Spot):
 			return str(self) == str(other)
 		return False
 
-	def __hash__(self):
+	def __hash__(self) -> int:
 		return hash(str(self))
 
 	@property
@@ -45,10 +44,10 @@ class Spot:
 		return self._isFreshlyDeployed
 
 	@property
-	def occupant(self) -> Player:
+	def occupant(self) -> Player | None:
 		return self._occupant
 
-	def setOccupant(self, player : Player, isOwnPlayerTakingAPieceOut : bool = False, isBlocking: Optional[bool] = None) -> Optional[Player]:
+	def setOccupant(self, player: Player, isOwnPlayerTakingAPieceOut: bool = False, isBlocking: bool | None = None) -> Player | None:
 		# The 'result' variable is returned with the previous occupant of the spot, if there is one. This is used by the game.py logic to decrease the counter keeping track of how many pieces any given player has on the board. 
 		result = None
 		if self._isOccupied:

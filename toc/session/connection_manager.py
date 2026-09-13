@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Dict
 
-from settings import GAME_SUSPENDED_CLOSE_CODE, LOBBY_EXPIRED_CLOSE_CODE, LOBBY_LIFETIME_SECONDS, SESSION_MONITOR_INTERVAL_SECONDS
 from toc.infrastructure.clock import Clock, SYSTEM_CLOCK
 from toc.infrastructure.identity import createJoinCode, normalizeJoinCode
 from toc.model.game_mode import GameModeDefinition
@@ -13,20 +11,21 @@ from toc.persistence.archive_store import ArchiveCategory, ArchiveCorruptionErro
 from toc.persistence.snapshot_state import SessionSnapshotState
 from toc.session.game_session import GameSession
 from toc.session.input_router import PlayerInputRouter
+from settings import GAME_SUSPENDED_CLOSE_CODE, LOBBY_EXPIRED_CLOSE_CODE, LOBBY_LIFETIME_SECONDS, SESSION_MONITOR_INTERVAL_SECONDS
 
 
 logger = logging.getLogger("toc.main")
 
 
 class ConnectionManager:
-	def __init__(self, clock: Clock = SYSTEM_CLOCK, archiveStore: CompressedJsonStore = None):
-		self.games: Dict[str, GameSession] = {}
+	def __init__(self, clock: Clock = SYSTEM_CLOCK, archiveStore: CompressedJsonStore | None = None) -> None:
+		self.games: dict[str, GameSession] = {}
 		self._clock = clock
-		self._archiveStore = archiveStore
+		self._archiveStore: CompressedJsonStore | None = archiveStore
 
-	def _generate_game_id(self) -> str:
+	def _generateGameId(self) -> str:
 		reservedJoinCodes = {normalizeJoinCode(joinCode) for joinCode in self.games}
-		reservedJoinCodes.update(self._get_suspended_join_codes())
+		reservedJoinCodes.update(self._getSuspendedJoinCodes())
 
 		while True:
 			gameId = normalizeJoinCode(createJoinCode())
@@ -34,20 +33,20 @@ class ConnectionManager:
 			if gameId not in reservedJoinCodes:
 				return gameId
 
-	def create_game(self, msg_router, rules: GameRules = MONTSURVENT_RULES, rulesetName: str = None, modeDefinition: GameModeDefinition = None, creatorName: str = "") -> str:
-		game_id = self._generate_game_id()
-		self.games[game_id] = GameSession(game_id, msg_router, rules, rulesetName, self._clock, self._archiveStore, modeDefinition, creatorName)
-		return game_id
+	def createGame(self, msg_router: PlayerInputRouter, rules: GameRules = MONTSURVENT_RULES, rulesetName: str | None = None, modeDefinition: GameModeDefinition | None = None, creatorName: str = "") -> str:
+		gameId = self._generateGameId()
+		self.games[gameId] = GameSession(gameId, msg_router, rules, rulesetName, self._clock, self._archiveStore, modeDefinition, creatorName)
+		return gameId
 
-	def get_game(self, game_id: str):
+	def getGame(self, gameId: str) -> GameSession | None:
 		try:
-			normalizedGameId = normalizeJoinCode(game_id)
+			normalizedGameId = normalizeJoinCode(gameId)
 		except ValueError:
 			return None
 
-		return self.games.get(normalizedGameId) or self.games.get(game_id)
+		return self.games.get(normalizedGameId) or self.games.get(gameId)
 
-	def _get_suspended_join_codes(self) -> set[str]:
+	def _getSuspendedJoinCodes(self) -> set[str]:
 		if self._archiveStore is None:
 			return set()
 
@@ -63,11 +62,11 @@ class ConnectionManager:
 
 		return joinCodes
 
-	def get_open_lobbies(self) -> list[dict]:
-		lobbies = []
+	def getOpenLobbies(self) -> list[dict[str, object]]:
+		lobbies: list[dict[str, object]] = []
 
 		for session in reversed(tuple(self.games.values())):
-			if session.started or session.is_full():
+			if session.started or session.isFull():
 				continue
 
 			if session.lobbyAgeSeconds() >= LOBBY_LIFETIME_SECONDS:
@@ -83,11 +82,11 @@ class ConnectionManager:
 
 		return lobbies
 
-	def load_suspended_game(self, game_id: str, msg_router) -> GameSession | None:
+	def _loadSuspendedGame(self, gameId: str, msg_router: PlayerInputRouter) -> GameSession | None:
 		if self._archiveStore is None:
 			return None
 
-		matchingSnapshots = []
+		matchingSnapshots: list[SessionSnapshotState] = []
 
 		for sessionId in self._archiveStore.listDocumentIds(ArchiveCategory.SUSPENDED):
 			try:
@@ -97,7 +96,7 @@ class ConnectionManager:
 				logger.exception("Could not load suspended game archive", extra={"sessionId": sessionId})
 				continue
 
-			normalizedGameId = normalizeJoinCode(game_id)
+			normalizedGameId = normalizeJoinCode(gameId)
 			if normalizeJoinCode(snapshot.metadata.joinCode) == normalizedGameId:
 				matchingSnapshots.append(snapshot)
 
@@ -105,7 +104,7 @@ class ConnectionManager:
 			return None
 
 		if len(matchingSnapshots) > 1:
-			raise RuntimeError(f"Multiple suspended archives use join code '{game_id}'")
+			raise RuntimeError(f"Multiple suspended archives use join code '{gameId}'")
 
 		snapshot = matchingSnapshots[0]
 
@@ -119,21 +118,21 @@ class ConnectionManager:
 		self.games[normalizedGameId] = session
 		return session
 
-	def get_or_restore_game(self, game_id: str, msg_router) -> GameSession | None:
-		existingSession = self.get_game(game_id)
+	def getOrRestoreGame(self, gameId: str, msg_router: PlayerInputRouter) -> GameSession | None:
+		existingSession = self.getGame(gameId)
 
 		if existingSession is not None:
 			return existingSession
 
-		return self.load_suspended_game(game_id, msg_router)
+		return self._loadSuspendedGame(gameId, msg_router)
 
-	async def recover_interrupted_games(self) -> dict:
+	async def recoverInterruptedGames(self) -> dict[str, tuple[str, ...]]:
 		if self._archiveStore is None:
 			return {"suspended": (), "finished": (), "failed": ()}
 
-		suspendedSessionIds = []
-		finishedSessionIds = []
-		failedSessionIds = []
+		suspendedSessionIds: list[str] = []
+		finishedSessionIds: list[str] = []
+		failedSessionIds: list[str] = []
 
 		for sessionId in self._archiveStore.listDocumentIds(ArchiveCategory.ACTIVE):
 			try:
@@ -181,7 +180,7 @@ class ConnectionManager:
 					continue
 
 				if selectedCategory is ArchiveCategory.ACTIVE:
-					def moveActiveToSuspended():
+					def moveActiveToSuspended() -> None:
 						self._archiveStore.write(ArchiveCategory.SUSPENDED, sessionId, selectedPayload)
 						self._archiveStore.delete(ArchiveCategory.ACTIVE, sessionId)
 
@@ -202,15 +201,15 @@ class ConnectionManager:
 			"failed": tuple(failedSessionIds),
 		}
 
-	async def monitor_sessions(self, intervalSeconds: float = SESSION_MONITOR_INTERVAL_SECONDS) -> None:
+	async def monitorSessions(self, intervalSeconds: float = SESSION_MONITOR_INTERVAL_SECONDS) -> None:
 		while True:
 			await asyncio.sleep(intervalSeconds)
-			await self.monitor_once()
+			await self.monitorOnce()
 
-	async def monitor_once(self) -> dict:
-		expiredGameIds = []
-		suspendedGameIds = []
-		failedGameIds = []
+	async def monitorOnce(self) -> dict[str, tuple[str, ...]]:
+		expiredGameIds: list[str] = []
+		suspendedGameIds: list[str] = []
+		failedGameIds: list[str] = []
 
 		for gameId, session in list(self.games.items()):
 			try:

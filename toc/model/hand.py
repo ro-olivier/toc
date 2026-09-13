@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+	from toc.model.board import Board
+	from toc.model.cards import Card
+	from toc.model.move import Move
+	from toc.model.player import Player
+
 
 class Hand:
-	def __init__(self, player : Player, cards : list[Card] = None):
+	def __init__(self, player: Player, cards: list[Card] | None = None) -> None:
 		self._player = player
 		self._cards = list(cards) if cards is not None else []
 
@@ -30,13 +38,13 @@ class Hand:
 	def fold(self) -> None:
 		self._cards = []
 
-	def discardFromHand(self, card) -> None:
+	def discardFromHand(self, card: Card) -> None:
 		del self._cards[self._cards.index(card)]
 
-	def addToHand(self, card) -> None:
+	def addToHand(self, card: Card) -> None: 
 		self._cards.append(card)
 
-	def getAllPossibleMoves(self, board: Board, pieceOwner: Player = None) -> list[Move]:
+	def getAllPossibleMoves(self, board: Board, pieceOwner: Player | None = None) -> list[Move]:
 		allPossibleMoveOptions = []
 
 		for card in self._cards:

@@ -15,19 +15,19 @@ class FakeRouter:
 		self.inputRouterIds = []
 		self.clearedRouterIds = []
 
-	async def send_output(self, routerId, message):
+	async def sendOutput(self, routerId, message):
 		self.outputs.append((routerId, message))
 
-	async def wait_for_input(self, routerId):
+	async def waitForInput(self, routerId):
 		self.inputRouterIds.append(routerId)
 		return next(self.inputs)
 
-	def clear_pending_prompt(self, routerId) -> None:
+	def clearPendingPrompt(self, routerId) -> None:
 		self.clearedRouterIds.append(routerId)
 		self.pendingPrompts = []
 
 
-def make_player(router):
+def makePlayer(router):
 	return Player(identifier="TEST-Alice", name="Alice", team="0", color="red", router=router)
 
 
@@ -39,7 +39,7 @@ def test_origin_selection_accepts_house_position():
 		{"type": "spot_selection", "result": str(origin)},
 	])
 
-	player = make_player(router)
+	player = makePlayer(router)
 	player.setBoard(board)
 
 	result = asyncio.run(player.getOriginChoiceFromPlayer([origin]))
@@ -58,7 +58,7 @@ def test_origin_selection_rejects_position_not_offered():
 		{"type": "spot_selection", "result": str(origin)},
 	])
 
-	player = make_player(router)
+	player = makePlayer(router)
 	player.setBoard(board)
 
 	result = asyncio.run(player.getOriginChoiceFromPlayer([origin]))
@@ -74,7 +74,7 @@ def test_target_selection_accepts_house_position():
 		{"type": "spot_selection", "result": str(target)},
 	])
 
-	player = make_player(router)
+	player = makePlayer(router)
 	player.setBoard(board)
 
 	result = asyncio.run(player.getTargetChoiceFromPlayer([target]))
@@ -90,7 +90,7 @@ def test_origin_selection_can_cancel_when_allowed():
 	router = FakeRouter([
 		{"type": "cancel_move_selection"},
 	])
-	player = make_player(router)
+	player = makePlayer(router)
 	player.setBoard(board)
 
 	result = asyncio.run(player.getOriginChoiceFromPlayer([origin], canCancel=True))
@@ -105,7 +105,7 @@ def test_target_selection_can_cancel_when_allowed():
 	router = FakeRouter([
 		{"type": "cancel_move_selection"},
 	])
-	player = make_player(router)
+	player = makePlayer(router)
 	player.setBoard(board)
 
 	result = asyncio.run(player.getTargetChoiceFromPlayer([target], canCancel=True))
@@ -121,7 +121,7 @@ def test_origin_selection_ignores_cancel_when_not_allowed():
 		{"type": "cancel_move_selection"},
 		{"type": "spot_selection", "result": str(origin)},
 	])
-	player = make_player(router)
+	player = makePlayer(router)
 	player.setBoard(board)
 
 	result = asyncio.run(player.getOriginChoiceFromPlayer([origin]))
@@ -144,7 +144,7 @@ def test_cancelling_origin_returns_to_card_selection():
 		{"type": "cancel_move_selection"},
 		{"type": "card_selection", "suit": "♠️", "value": "3"},
 	])
-	player = make_player(router)
+	player = makePlayer(router)
 	player.setBoard(board)
 	player.hand.addToHand(cardTwo)
 	player.hand.addToHand(cardThree)
@@ -163,7 +163,7 @@ def test_cancelling_origin_returns_to_card_selection():
 def test_card_choice_can_use_custom_prompt():
 	card = Card("♥️", "2")
 	router = FakeRouter([{"type": "card_selection", "suit": "♥️", "value": "2"}])
-	player = make_player(router)
+	player = makePlayer(router)
 	player.hand.addToHand(card)
 
 	result = asyncio.run(player.getCardChoiceFromPlayer("prompts.discard_card", "Choose one card to discard."))
@@ -187,7 +187,7 @@ def test_card_exchange_log_uses_translation_message():
 	cardGiven = Card("♥️", "2")
 	cardReceived = Card("♠️", "3")
 	router = FakeRouter([])
-	player = make_player(router)
+	player = makePlayer(router)
 	player.hand.addToHand(cardGiven)
 
 	asyncio.run(player.switchCard(cardGiven, cardReceived))
@@ -211,7 +211,7 @@ def test_card_exchange_log_uses_translation_message():
 def test_card_exchange_uses_reconnectable_prompt():
 	card = Card("♥️", "2")
 	router = FakeRouter([{"type": "card_selection", "suit": "♥️", "value": "2"}])
-	player = make_player(router)
+	player = makePlayer(router)
 	player.hand.addToHand(card)
 
 	result = asyncio.run(player.requestCardExchange())

@@ -1,8 +1,8 @@
 import json
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Callable
 
 from toc.model.params import JOKER_COLORS, JOKER_VALUE, SUITS, VALUES
 
@@ -38,7 +38,7 @@ EVENT_DETAIL_FIELDS = {
 
 MOVE_TYPES = {"OUT", "MOVE", "BACK", "FIVE", "HOP", "SWITCH", "ENTER", "SEVEN"}
 
-def _validateString(value, fieldName: str, allowNone: bool = False) -> None:
+def _validateString(value: object, fieldName: str, allowNone: bool = False) -> None:
 	if value is None and allowNone:
 		return
 
@@ -46,12 +46,12 @@ def _validateString(value, fieldName: str, allowNone: bool = False) -> None:
 		raise ValueError(f"Invalid audit-event {fieldName}")
 
 
-def _validateInteger(value, fieldName: str, minimum: int = 0) -> None:
+def _validateInteger(value: object, fieldName: str, minimum: int = 0) -> None:
 	if type(value) is not int or value < minimum:
 		raise ValueError(f"Invalid audit-event {fieldName}")
 
 
-def _validateCardData(value, fieldName: str) -> None:
+def _validateCardData(value: object, fieldName: str) -> None:
 	if type(value) is not dict or set(value) != {"suit", "value"}:
 		raise ValueError(f"Invalid audit-event {fieldName}")
 
@@ -65,7 +65,7 @@ def _validateCardData(value, fieldName: str) -> None:
 		raise ValueError(f"Invalid audit-event {fieldName}")
 
 
-def _validateCardList(value, fieldName: str) -> None:
+def _validateCardList(value: object, fieldName: str) -> None:
 	if type(value) is not list or not value:
 		raise ValueError(f"Invalid audit-event {fieldName}")
 
@@ -73,12 +73,12 @@ def _validateCardList(value, fieldName: str) -> None:
 		_validateCardData(card, fieldName)
 
 
-def _validateStringList(value, fieldName: str) -> None:
+def _validateStringList(value: object, fieldName: str) -> None:
 	if type(value) is not list or any(type(item) is not str or not item for item in value):
 		raise ValueError(f"Invalid audit-event {fieldName}")
 
 
-def _validateMovementData(details: dict, requireTarget: bool) -> None:
+def _validateMovementData(details: dict[str, object], requireTarget: bool) -> None:
 	if details["moveType"] not in MOVE_TYPES:
 		raise ValueError("Invalid audit-event move type")
 
@@ -90,7 +90,7 @@ def _validateMovementData(details: dict, requireTarget: bool) -> None:
 		_validateInteger(details["steps"], "step count", 1)
 
 
-def _validateJsonValue(value) -> None:
+def _validateJsonValue(value: object) -> None:
 	if value is None or type(value) in (str, int, float, bool):
 		return
 
@@ -112,7 +112,7 @@ def _validateJsonValue(value) -> None:
 	raise ValueError(f"Audit-event value is not JSON-compatible: {type(value).__name__}")
 
 
-def _normaliseDetails(details: dict) -> dict:
+def _normaliseDetails(details: dict[str, object]) -> dict[str, object]:
 	if type(details) is not dict:
 		raise ValueError("Audit-event details must be an object")
 
@@ -125,7 +125,7 @@ def _normaliseDetails(details: dict) -> dict:
 
 	return json.loads(encoded)
 
-def _validateEventDetails(eventType: GameEventType, details: dict) -> None:
+def _validateEventDetails(eventType: GameEventType, details: dict[str, object]) -> None:
 	if set(details) != EVENT_DETAIL_FIELDS[eventType]:
 		raise ValueError(f"Invalid details for audit event '{eventType.value}'")
 
@@ -223,7 +223,7 @@ class GameEvent:
 	elapsedSeconds: int
 	eventType: GameEventType
 	playerId: str | None
-	details: dict
+	details: dict[str, object]
 
 	def __post_init__(self) -> None:
 		if type(self.sequence) is not int or self.sequence < 1:
@@ -279,15 +279,15 @@ class GameEvent:
 
 
 class GameEventLog:
-	def __init__(self, elapsedSecondsProvider: Callable[[], int]):
+	def __init__(self, elapsedSecondsProvider: Callable[[], int]) -> None:
 		self._elapsedSecondsProvider = elapsedSecondsProvider
-		self._events = []
+		self._events: list[GameEvent] = []
 
 	@property
 	def events(self) -> tuple[GameEvent, ...]:
 		return tuple(self._events)
 
-	def record(self, eventType: GameEventType, playerId: str = None, details: dict = None) -> GameEvent:
+	def record(self, eventType: GameEventType, playerId: str | None = None, details: dict[str, object] | None = None) -> GameEvent:
 		elapsedSeconds = max(0, int(self._elapsedSecondsProvider()))
 
 		event = GameEvent(
@@ -301,11 +301,11 @@ class GameEventLog:
 		self._events.append(event)
 		return event
 
-	def to_list(self) -> list[dict]:
+	def to_list(self) -> list[dict[str, object]]:
 		return [event.to_dict() for event in self._events]
 
 	@classmethod
-	def from_list(cls, values: list, elapsedSecondsProvider: Callable[[], int]) -> "GameEventLog":
+	def from_list(cls, values: list[dict[str, object]], elapsedSecondsProvider: Callable[[], int]) -> "GameEventLog":
 		if type(values) is not list:
 			raise ValueError("Audit-event log must be an array")
 

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from toc.model.cards import Card
+from toc.model.params import *
 from toc.model.player import Player
 
-from toc.model.params import *
+if TYPE_CHECKING:
+	from toc.model.spot import Spot
 
 
 class Move:
-	def __init__(self, ID : str, originSpot : Spot = None, targetSpot : Spot = None, card : Card = None, player : Player = None, pieceOwner: Player = None, steps: int = None):
+	def __init__(self, ID: str, originSpot: Spot | None = None, targetSpot: Spot | None = None, card: Card | None = None, player: Player | None = None, pieceOwner: Player | None = None, steps: int | None = None) -> None:
 		self._ID = ID
 		self._description = MOVE_DESCRIPTION[self._ID]
 		self._originSpot = originSpot
@@ -22,27 +26,27 @@ class Move:
 		return self._ID
 
 	@property
-	def originSpot(self) -> Spot:
+	def originSpot(self) -> Spot | None:
 		return self._originSpot
 
 	@property
-	def targetSpot(self) -> Spot:
+	def targetSpot(self) -> Spot | None:
 		return self._targetSpot
 
 	@property
-	def card(self) -> Card:
+	def card(self) -> Card | None:
 		return self._card
 
 	@property
-	def player(self) -> Player:
+	def player(self) -> Player | None:
 		return self._player
 
 	@property
-	def pieceOwner(self) -> Player:
+	def pieceOwner(self) -> Player | None:
 		return self._pieceOwner
 
 	@property
-	def steps(self) -> int:
+	def steps(self) -> int | None:
 		return self._steps
 
 	def __str__(self) -> str:

@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from toc.model.cards import Card, Deck
@@ -7,6 +10,11 @@ from toc.model.game import Game
 from toc.model.audit import GameEvent
 from toc.model.game_phase import GamePhase
 from toc.persistence.persistent_state import SessionMetadataState
+
+if TYPE_CHECKING:
+	from toc.model.player import Player
+	from toc.model.spot import Spot
+	from toc.session.game_session import GameSession
 
 
 def _validatePlayerId(playerId: str) -> None:
@@ -59,7 +67,7 @@ class CardState:
 	def fromCard(cls, card: Card) -> "CardState":
 		return cls(suit=card.suit, value=card.value)
 
-	def toCard(self, deck: Deck = None) -> Card:
+	def toCard(self, deck: Deck | None = None) -> Card:
 		return Card(self.suit, self.value, deck)
 
 
@@ -139,7 +147,7 @@ class PlayerGameState:
 		)
 
 	@classmethod
-	def fromPlayer(cls, player, playerId: str) -> "PlayerGameState":
+	def fromPlayer(cls, player: Player, playerId: str) -> "PlayerGameState":
 		return cls(
 			playerId=playerId,
 			hand=tuple(CardState.fromCard(card) for card in player.hand.cards),
@@ -197,7 +205,7 @@ class PositionState:
 		)
 
 	@classmethod
-	def fromPosition(cls, position, playerId: str) -> "PositionState":
+	def fromPosition(cls, position: Spot, playerId: str) -> "PositionState":
 		if not position.isOccupied:
 			raise ValueError("Cannot serialize an unoccupied board position")
 
@@ -524,7 +532,7 @@ class GameState:
 		)
 
 	@classmethod
-	def fromGameSession(cls, session) -> "GameState":
+	def fromGameSession(cls, session: GameSession) -> "GameState":
 		if session.game is None:
 			raise ValueError("Cannot snapshot a session without a game")
 
@@ -573,7 +581,7 @@ class GameState:
 			lastPlayedCard=CardState.fromCard(game.lastPlayedCard) if game.lastPlayedCard is not None else None,
 		)
 
-	def restoreGame(self, session) -> Game:
+	def restoreGame(self, session: GameSession) -> Game:
 		seatsById = {}
 
 		for seat in session.roster.seats:
@@ -722,7 +730,7 @@ class SessionSnapshotState:
 		)
 
 	@classmethod
-	def fromGameSession(cls, session) -> "SessionSnapshotState":
+	def fromGameSession(cls, session: GameSession) -> "SessionSnapshotState":
 		return cls(
 			metadata=session.metadataState(),
 			game=GameState.fromGameSession(session),

@@ -87,7 +87,7 @@ def test_real_uvicorn_http_and_websocket_round_trip(liveServer):
 
 	with urlopen(creationRequest, timeout=2) as response:
 		assert response.status == 200
-		gameId = json.load(response)["game_id"]
+		gameId = json.load(response)["gameId"]
 
 	with connect(
 		f"{liveServer['websocketUrl']}/toc/ws/{gameId}/Alice",

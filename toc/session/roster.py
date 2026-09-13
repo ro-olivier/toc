@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from toc.model.player import Player
 from toc.model.game_mode import GameModeDefinition
+
+if TYPE_CHECKING:
+	from starlette.websockets import WebSocket
 
 
 def _validatePersistentId(value: str, fieldName: str) -> None:
@@ -24,7 +30,7 @@ class Participant:
 	routerId: str
 	name: str
 	resumeTokenHash: str
-	websocket: object | None = None
+	websocket: WebSocket | None = None
 	active: bool = False
 	configured: bool = False
 	seatIds: list[str] = field(default_factory=list)
@@ -84,7 +90,7 @@ class PlayerSeat:
 
 
 class SessionRoster:
-	def __init__(self):
+	def __init__(self) -> None:
 		self._participantsByRouterId: dict[str, Participant] = {}
 		self._participantsById: dict[str, Participant] = {}
 		self._seatsById: dict[str, PlayerSeat] = {}
@@ -188,7 +194,7 @@ class SessionRoster:
 			raise ValueError("Seat count does not match game mode")
 
 		participants = list(self.participants)
-		participantTeams = {}
+		participantTeams: dict[str, str] = {}
 
 		for participant in participants:
 			seats = self.getSeatsForParticipant(participant.participantId)
@@ -207,7 +213,7 @@ class SessionRoster:
 		firstTeamIndex = modeDefinition.teamIds.index(firstTeam)
 		actualTeamOrder = modeDefinition.teamIds[firstTeamIndex:] + modeDefinition.teamIds[:firstTeamIndex]
 		teamMapping = {abstractTeamIndex: actualTeamOrder[abstractTeamIndex] for abstractTeamIndex in range(modeDefinition.teamCount)}
-		participantsByAbstractIndex = {}
+		participantsByAbstractIndex: dict[int, Participant] = {}
 
 		for abstractTeamIndex in range(modeDefinition.teamCount):
 			actualTeam = teamMapping[abstractTeamIndex]
@@ -228,8 +234,8 @@ class SessionRoster:
 			for participantIndex, participant in zip(abstractParticipantIndexes, actualParticipants):
 				participantsByAbstractIndex[participantIndex] = participant
 
-		seatOffsets = {participant.participantId: 0 for participant in participants}
-		orderedSeatIds = []
+		seatOffsets: dict[str, int] = {participant.participantId: 0 for participant in participants}
+		orderedSeatIds: list[str] = []
 
 		for participantIndex in modeDefinition.participantPattern:
 			participant = participantsByAbstractIndex[participantIndex]

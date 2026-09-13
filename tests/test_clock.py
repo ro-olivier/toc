@@ -77,8 +77,8 @@ def test_connection_manager_passes_clock_to_new_session():
 	initialTime = datetime(2026, 8, 21, 12, 0, tzinfo=timezone.utc)
 	clock = FakeClock(initialTime)
 	connectionManager = ConnectionManager(clock)
-	gameId = connectionManager.create_game(PlayerInputRouter())
-	session = connectionManager.get_game(gameId)
+	gameId = connectionManager.createGame(PlayerInputRouter())
+	session = connectionManager.getGame(gameId)
 
 	assert session.createdAt == initialTime
 

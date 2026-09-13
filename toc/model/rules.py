@@ -147,14 +147,14 @@ RULE_CHOICE_OPTIONS = {
 	"ace_values": [[1, 11], [1], [11]],
 }
 
-def get_matching_preset_name(rules: GameRules) -> str:
+def getMatchingPresetName(rules: GameRules) -> str:
 	for presetName, presetRules in RULE_PRESETS.items():
 		if rules == presetRules:
 			return presetName
 
 	return "custom"
 
-def get_rule_schema() -> dict:
+def getRuleSchema() -> dict:
 	typeHints = get_type_hints(GameRules)
 	schema = {}
 
@@ -171,7 +171,7 @@ def get_rule_schema() -> dict:
 
 	return schema
 
-def resolve_ruleset(presetName: str = DEFAULT_RULE_PRESET, customValues: dict = None) -> GameRules:
+def resolveRuleset(presetName: str = DEFAULT_RULE_PRESET, customValues: dict = None) -> GameRules:
 	if type(presetName) is not str:
 		raise ValueError("Rule preset name must be a string")
 

@@ -1,18 +1,18 @@
 from __future__ import annotations
-from typing import Optional
 
-from toc.model.move import Move
-from toc.model.spot import Spot, House
-from toc.model.cards import Card
-from toc.model.rules import FiveBehaviour, GameRules, MONTSURVENT_RULES
-from toc.model.params import *
 import logging
+
+from toc.model.cards import Card
+from toc.model.move import Move
+from toc.model.params import *
+from toc.model.rules import FiveBehaviour, GameRules, MONTSURVENT_RULES
+from toc.model.spot import Spot, House
 
 logger = logging.getLogger("toc.board")
 
 
 class Board:
-	def __init__(self, colors : List, rules: GameRules = MONTSURVENT_RULES):
+	def __init__(self, colors: list[str], rules: GameRules = MONTSURVENT_RULES) -> None:
 		self._rules = rules
 		self._spots = []
 		self._colors = colors
@@ -65,34 +65,28 @@ class Board:
 				s += f'House {str(house)} is occupied by player {house.occupant.name}.\n'
 		return s
 
-	def getHousesByColor(self, color : str) -> list[House]:
-		colorIndex = self._colors.index(color)
-		return self._houses[colorIndex * SPOTS_PER_HOUSE: (colorIndex + 1) * SPOTS_PER_HOUSE]
 
-	def areAllHouseFilled(self, color : str) -> bool:
+	## Various methods
+	def areAllHouseFilled(self, color: str) -> bool:
 		return all([house.isOccupied for house in self.getHousesByColor(color)])
 
-	def getPreviousColor(self, color : str) -> str:
+	def _getPreviousColor(self, color: str) -> str:
 		colorIndex = self._colors.index(color)
 		if colorIndex == 0:
 			return self._colors[-1]
 		else:
 			return self._colors[colorIndex - 1]
 
-	def getSpot(self, color : str, number : int) -> Spot:
+
+	## Spots getters
+	def getSpot(self, color: str, number: int) -> Spot:
 		if not 0 <= number < self._regionLength:
 			raise ValueError(f"Position number {number} is outside a region of length {self._regionLength}")
 
 		return self._spots[self._colors.index(color) * self._regionLength + number]
 
-	def getSpotById(self, spotId : str) -> Spot:
+	def getSpotById(self, spotId: str) -> Spot:
 		return [spot for spot in self._spots if str(spot) == spotId][0]
-
-	def getHouse(self, color : str, number : int) -> Spot:
-		return self._houses[self._colors.index(color)*SPOTS_PER_HOUSE + number]
-
-	def getHouseById(self, houseId : str) -> Spot:
-		return [house for house in self._houses if str(house) == houseId][0]
 
 	def getPositionById(self, positionId: str) -> Spot:
 		for position in self.positions:
@@ -101,33 +95,17 @@ class Board:
 
 		raise ValueError(f"Unknown board position: {positionId}")
 
-	def getFirstSpot(self, color : str) -> Optional[Spot]:
+	def getFirstSpot(self, color: str) -> Spot:
 		return [spot for spot in self._spots if spot.color == color and spot.number == 0][0]
 
 	def getHouseEntrySpot(self, color: str) -> Spot:
 		if self._rules.enter_house_at_spot == self._regionLength:
 			return self.getFirstSpot(color)
 
-		return self.getSpot(self.getPreviousColor(color), self._rules.enter_house_at_spot)
+		return self.getSpot(self._getPreviousColor(color), self._rules.enter_house_at_spot)
 
 	def getOccupiedSpotsOnTheBoard(self, player: Player) -> list[Spot]:
 		return [spot for spot in self._spots if spot.isOccupied and spot.occupant is player]
-
-	def getOccupiedHouses(self, player: Player) -> list[House]:
-		return [house for house in self._houses if house.isOccupied and house.occupant is player]
-
-	def getOtherPiecesOnTheBoard(self, player: Player) -> list[Spot]:
-		return [spot for spot in self._spots if spot.isOccupied and spot.occupant is not player]
-
-	def getOpponentPiecesOnTheBoard(self, player: Player) -> list[Spot]:
-		return [spot for spot in self._spots if spot.isOccupied and spot.occupant.team != player.team]
-
-	def getAllPiecesOfOtherPlayer(self, player: Player) -> list[Spot]:
-		return self.getOtherPiecesOnTheBoard(player)
-
-	def getAllPiecesOnTheBoard(self) -> list[dict]:
-		occupiedPositions = [position for position in self._houses + self._spots if position.isOccupied]
-		return [{"spotIndex": str(position), **position.occupant.getMessageIdentity()} for position in occupiedPositions]
 
 	def getSpotFromDistance(self, originSpot: Spot, distance: int) -> Spot:
 		originIndex = self._spots.index(originSpot)
@@ -136,7 +114,21 @@ class Board:
 		return self._spots[targetIndex]
 
 
-	def getHouseFromDistance(self, originSpot: Spot, distance: int, player: Player) -> Optional[House]:
+	## House getters
+	def getHouse(self, color: str, number: int) -> House:
+		return self._houses[self._colors.index(color)*SPOTS_PER_HOUSE + number]
+
+	def getHouseById(self, houseId: str) -> House:
+		return [house for house in self._houses if str(house) == houseId][0]
+
+	def getHousesByColor(self, color: str) -> list[House]:
+		colorIndex = self._colors.index(color)
+		return self._houses[colorIndex * SPOTS_PER_HOUSE: (colorIndex + 1) * SPOTS_PER_HOUSE]
+
+	def getOccupiedHouses(self, player: Player) -> list[House]:
+		return [house for house in self._houses if house.isOccupied and house.occupant is player]
+
+	def getHouseFromDistance(self, originSpot: Spot, distance: int, player: Player) -> House | None:
 		if distance <= 0:
 			return None
 
@@ -178,55 +170,7 @@ class Board:
 
 		return None
 
-	def getForwardMoveOptions(self, player: Player, card: Card, distances: list[int], pieceOwner: Player = None) -> list[Move]:
-		pieceOwner = pieceOwner if pieceOwner is not None else player
-		options = []
-
-		boardPieces = self.getOccupiedSpotsOnTheBoard(pieceOwner)
-		housePieces = self.getOccupiedHouses(pieceOwner)
-
-		for distance in distances:
-			# Pieces on the circular track can either remain on the track
-			# or enter their house lane when both moves are legal.
-			for piece in boardPieces:
-				trackMove = Move("MOVE", piece, self.getSpotFromDistance(piece, distance), card, player, pieceOwner, distance)
-
-				if self.isMoveValid(trackMove):
-					options.append(trackMove)
-
-				availableHouse = self.getHouseFromDistance(piece, distance, pieceOwner)
-
-				if availableHouse is not None:
-					houseMove = Move("ENTER", piece, availableHouse, card, player, pieceOwner, distance)
-
-					if self.isMoveValid(houseMove):
-						options.append(houseMove)
-
-			# Pieces already inside houses can only move farther forward
-			# through the same house lane.
-			for piece in housePieces:
-				availableHouse = self.getHouseFromDistance(piece, distance, pieceOwner)
-
-				if availableHouse is not None:
-					houseMove = Move("ENTER", piece, availableHouse, card, player, pieceOwner, distance)
-
-					if self.isMoveValid(houseMove):
-						options.append(houseMove)
-
-		return options
-
-	def getPositionSnapshot(self) -> list[tuple]:
-		return [(position, position.occupant, position.isBlocking, position.isFreshlyDeployed) for position in self._spots + self._houses]
-
-
-	def restorePositionSnapshot(self, snapshot: list[tuple]) -> None:
-		for position, occupant, isBlocking, isFreshlyDeployed in snapshot:
-			position.setEmpty()
-
-			if occupant is not None:
-				position.setOccupant(occupant, isFreshlyDeployed, isBlocking)
-
-	def getHouseFromBackwardDistance(self, originSpot: Spot, distance: int, player: Player) -> Optional[House]:
+	def getHouseFromBackwardDistance(self, originSpot: Spot, distance: int, player: Player) -> House | None:
 		if distance <= 0 or isinstance(originSpot, House):
 			return None
 
@@ -253,100 +197,25 @@ class Board:
 
 		return None
 
-	def applySimulatedMove(self, move: Move) -> None:
-		move.originSpot.setEmpty()
-		move.targetSpot.setOccupant(move.pieceOwner)
+	
+	## Pieces getters 
+	def getOtherPiecesOnTheBoard(self, player: Player) -> list[Spot]:
+		return [spot for spot in self._spots if spot.isOccupied and spot.occupant is not player]
 
-	def isMoveValid(self, move : Move) -> bool:
-		result = True
-		
-		landingMoveTypes = ("OUT", "MOVE", "BACK", "FIVE", "HOP", "ENTER")
-		isPathKickingSevenStep = move.card is not None and move.card.suit == "" and move.card.value == "1" and self._rules.seven_split_kicks_pieces_on_path
+	def getOpponentPiecesOnTheBoard(self, player: Player) -> list[Spot]:
+		return [spot for spot in self._spots if spot.isOccupied and spot.occupant.team != player.team]
 
-		if not self._rules.landing_on_occupied_spot_kicks_piece and move.ID in landingMoveTypes and move.targetSpot is not None and move.targetSpot.isOccupied and not isPathKickingSevenStep:
-			return False
+	def getAllPiecesOfOtherPlayer(self, player: Player) -> list[Spot]:
+		return self.getOtherPiecesOnTheBoard(player)
 
-		if move.ID == 'SWITCH' and (move.originSpot.isBlocking or move.targetSpot.isBlocking):
-			# Cannot do a SWITCH move where one of the pieces is on a blocking spots
-			result = False
-		elif move.ID == 'OUT':
-			# Cannot take a piece out if there is already a piece in the exit spot
-			if move.originSpot.isBlocking:
-				result = False
-			# Cannot take more pieces out than there are spots in the houses
-			if move.pieceOwner.piecesOnTheBoard == SPOTS_PER_HOUSE:
-				result = False
-		elif move.ID in ["MOVE", "FIVE"]:
-			# Cannot do a MOVE move up X spots if there is a blocking spot less or equal to X spots ahead
-			i = 0
-			spotAhead = self.getSpotFromDistance(move.originSpot, i + 1)
-			while spotAhead != move.targetSpot:
-				if spotAhead.isBlocking:
-					result = False
-				i += 1
-				spotAhead = self.getSpotFromDistance(move.originSpot, i + 1)
-			if move.targetSpot.isBlocking:
-				result = False
-		elif move.ID == 'BACK':
-			# Cannot do a BACK move back 4 spots if there is a blocking spot less or equal to 4 spots behind
-			i = 0
-			spotBack = self.getSpotFromDistance(move.originSpot, i - 1)
-			while spotBack != move.targetSpot:
-				if spotBack.isBlocking:
-					result = False
-				i -= 1
-				spotBack = self.getSpotFromDistance(move.originSpot, i - 1)
-			if move.targetSpot.isBlocking:
-				result = False
-		elif move.ID == "ENTER":
-			target = move.targetSpot
-			origin = move.originSpot
+	def getAllPiecesOnTheBoard(self) -> list[dict[str, object]]:
+		occupiedPositions = [position for position in self._houses + self._spots if position.isOccupied]
+		return [{"spotIndex": str(position), **position.occupant.getMessageIdentity()} for position in occupiedPositions]
 
-			if not isinstance(target, House):
-				result = False
 
-			elif target.color != move.pieceOwner.color:
-				result = False
 
-			else:
-				houses = self.getHousesByColor(target.color)
-
-				if target.isOccupied and self._rules.house_spots_are_blocking_and_protected:
-					result = False
-
-				if isinstance(origin, House):
-					# A piece already inside the lane can only move forward.
-					if origin.color != target.color or target.number <= origin.number:
-						result = False
-
-					elif self._rules.house_spots_are_blocking_and_protected:
-						housesBetween = houses[origin.number + 1:target.number]
-
-						if any(house.isOccupied for house in housesBetween):
-							result = False
-
-				else:
-					# A protected exit position still blocks house entry.
-					if self.getHouseEntrySpot(target.color).isBlocking:
-						result = False
-
-					elif self._rules.house_spots_are_blocking_and_protected:
-						housesBeforeTarget = houses[:target.number]
-
-						if any(house.isOccupied for house in housesBeforeTarget):
-							result = False
-		elif move.ID == "SEVEN":
-			if self._rules.seven_split_kicks_pieces_on_path:
-				sevenOptions = self.getSevenStepOptions(move.player, 7, move.pieceOwner)
-			else:
-				sevenOptions = self.getSevenAllocationOptions(move.player, 7, move.pieceOwner)
-
-			if move.pieceOwner.piecesOnTheBoard == 0 or not sevenOptions:
-				result = False
-
-		return result
-
-	def getMoveOptions(self, player: Player, card: Card, pieceOwner: Player = None) -> Optional[list[Move]]:
+	## Move methods
+	def getMoveOptions(self, player: Player, card: Card, pieceOwner: Player | None = None) -> list[Move]:
 		pieceOwner = pieceOwner if pieceOwner is not None else player
 		options = []
 
@@ -447,7 +316,139 @@ class Board:
 
 		return options
 
-	def getSevenStepOptions(self, player: Player, stepsRemaining: int, pieceOwner: Player = None) -> list[Move]:
+	def getForwardMoveOptions(self, player: Player, card: Card, distances: list[int], pieceOwner: Player | None = None) -> list[Move]:
+		pieceOwner = pieceOwner if pieceOwner is not None else player
+		options = []
+
+		boardPieces = self.getOccupiedSpotsOnTheBoard(pieceOwner)
+		housePieces = self.getOccupiedHouses(pieceOwner)
+
+		for distance in distances:
+			# Pieces on the circular track can either remain on the track
+			# or enter their house lane when both moves are legal.
+			for piece in boardPieces:
+				trackMove = Move("MOVE", piece, self.getSpotFromDistance(piece, distance), card, player, pieceOwner, distance)
+
+				if self.isMoveValid(trackMove):
+					options.append(trackMove)
+
+				availableHouse = self.getHouseFromDistance(piece, distance, pieceOwner)
+
+				if availableHouse is not None:
+					houseMove = Move("ENTER", piece, availableHouse, card, player, pieceOwner, distance)
+
+					if self.isMoveValid(houseMove):
+						options.append(houseMove)
+
+			# Pieces already inside houses can only move farther forward
+			# through the same house lane.
+			for piece in housePieces:
+				availableHouse = self.getHouseFromDistance(piece, distance, pieceOwner)
+
+				if availableHouse is not None:
+					houseMove = Move("ENTER", piece, availableHouse, card, player, pieceOwner, distance)
+
+					if self.isMoveValid(houseMove):
+						options.append(houseMove)
+
+		return options
+
+	def applySimulatedMove(self, move: Move) -> None:
+		move.originSpot.setEmpty()
+		move.targetSpot.setOccupant(move.pieceOwner)
+
+	def isMoveValid(self, move: Move) -> bool:
+		result = True
+		
+		landingMoveTypes = ("OUT", "MOVE", "BACK", "FIVE", "HOP", "ENTER")
+		isPathKickingSevenStep = move.card is not None and move.card.suit == "" and move.card.value == "1" and self._rules.seven_split_kicks_pieces_on_path
+
+		if not self._rules.landing_on_occupied_spot_kicks_piece and move.ID in landingMoveTypes and move.targetSpot is not None and move.targetSpot.isOccupied and not isPathKickingSevenStep:
+			return False
+
+		if move.ID == 'SWITCH' and (move.originSpot.isBlocking or move.targetSpot.isBlocking):
+			# Cannot do a SWITCH move where one of the pieces is on a blocking spots
+			result = False
+		elif move.ID == 'OUT':
+			# Cannot take a piece out if there is already a piece in the exit spot
+			if move.originSpot.isBlocking:
+				result = False
+			# Cannot take more pieces out than there are spots in the houses
+			if move.pieceOwner.piecesOnTheBoard == SPOTS_PER_HOUSE:
+				result = False
+		elif move.ID in ["MOVE", "FIVE"]:
+			# Cannot do a MOVE move up X spots if there is a blocking spot less or equal to X spots ahead
+			i = 0
+			spotAhead = self.getSpotFromDistance(move.originSpot, i + 1)
+			while spotAhead != move.targetSpot:
+				if spotAhead.isBlocking:
+					result = False
+				i += 1
+				spotAhead = self.getSpotFromDistance(move.originSpot, i + 1)
+			if move.targetSpot.isBlocking:
+				result = False
+		elif move.ID == 'BACK':
+			# Cannot do a BACK move back 4 spots if there is a blocking spot less or equal to 4 spots behind
+			i = 0
+			spotBack = self.getSpotFromDistance(move.originSpot, i - 1)
+			while spotBack != move.targetSpot:
+				if spotBack.isBlocking:
+					result = False
+				i -= 1
+				spotBack = self.getSpotFromDistance(move.originSpot, i - 1)
+			if move.targetSpot.isBlocking:
+				result = False
+		elif move.ID == "ENTER":
+			target = move.targetSpot
+			origin = move.originSpot
+
+			if not isinstance(target, House):
+				result = False
+
+			elif target.color != move.pieceOwner.color:
+				result = False
+
+			else:
+				houses = self.getHousesByColor(target.color)
+
+				if target.isOccupied and self._rules.house_spots_are_blocking_and_protected:
+					result = False
+
+				if isinstance(origin, House):
+					# A piece already inside the lane can only move forward.
+					if origin.color != target.color or target.number <= origin.number:
+						result = False
+
+					elif self._rules.house_spots_are_blocking_and_protected:
+						housesBetween = houses[origin.number + 1:target.number]
+
+						if any(house.isOccupied for house in housesBetween):
+							result = False
+
+				else:
+					# A protected exit position still blocks house entry.
+					if self.getHouseEntrySpot(target.color).isBlocking:
+						result = False
+
+					elif self._rules.house_spots_are_blocking_and_protected:
+						housesBeforeTarget = houses[:target.number]
+
+						if any(house.isOccupied for house in housesBeforeTarget):
+							result = False
+		elif move.ID == "SEVEN":
+			if self._rules.seven_split_kicks_pieces_on_path:
+				sevenOptions = self.getSevenStepOptions(move.player, 7, move.pieceOwner)
+			else:
+				sevenOptions = self.getSevenAllocationOptions(move.player, 7, move.pieceOwner)
+
+			if move.pieceOwner.piecesOnTheBoard == 0 or not sevenOptions:
+				result = False
+
+		return result
+
+	
+	## Seven-split and seven-hop methods
+	def getSevenStepOptions(self, player: Player, stepsRemaining: int, pieceOwner: Player | None = None) -> list[Move]:
 		if stepsRemaining <= 0:
 			return []
 
@@ -479,7 +480,7 @@ class Board:
 
 		return self.getSpotFromDistance(originSpot, direction * self._regionLength)
 
-	def getSevenAllocationOptions(self, player: Player, stepsRemaining: int, pieceOwner: Player = None, movedPiecePositions: set[Spot] = None) -> list[Move]:
+	def getSevenAllocationOptions(self, player: Player, stepsRemaining: int, pieceOwner: Player | None = None, movedPiecePositions: set[Spot] | None = None) -> list[Move]:
 		if stepsRemaining <= 0:
 			return []
 
@@ -511,7 +512,7 @@ class Board:
 
 		return viableOptions
 
-	def getSevenHopMove(self, triggeringMove: Move) -> Optional[Move]:
+	def getSevenHopMove(self, triggeringMove: Move) -> Move | None:
 		allowedMoveTypes = ["MOVE", "BACK", "FIVE"]
 
 		if self._rules.jacks_can_switch and self._rules.jacks_can_switch_then_seven_hop:
@@ -555,3 +556,15 @@ class Board:
 		housePositions = self.getHousesByColor(move.pieceOwner.color)[:move.targetSpot.number]
 
 		return trackPositions + housePositions
+
+
+	## Snapshot methods
+	def getPositionSnapshot(self) -> list[tuple[Spot, Player | None, bool, bool]]:
+		return [(position, position.occupant, position.isBlocking, position.isFreshlyDeployed) for position in self._spots + self._houses]
+
+	def restorePositionSnapshot(self, snapshot: list[tuple[Spot, Player | None, bool, bool]]) -> None:
+		for position, occupant, isBlocking, isFreshlyDeployed in snapshot:
+			position.setEmpty()
+
+			if occupant is not None:
+				position.setOccupant(occupant, isFreshlyDeployed, isBlocking)

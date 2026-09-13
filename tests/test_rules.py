@@ -63,9 +63,9 @@ def test_unknown_rule_field_is_rejected():
 
 
 def test_ruleset_resolver_returns_preset_or_custom_rules():
-	assert resolve_ruleset("montsurvent") is MONTSURVENT_RULES
+	assert resolveRuleset("montsurvent") is MONTSURVENT_RULES
 
-	customRules = resolve_ruleset("custom", {"card_exchange": False})
+	customRules = resolveRuleset("custom", {"card_exchange": False})
 
 	assert customRules.card_exchange is False
 	assert customRules.rotation is Rotation.CLOCKWISE
@@ -78,11 +78,11 @@ def test_ruleset_resolver_returns_preset_or_custom_rules():
 ])
 def test_invalid_ruleset_requests_are_rejected(presetName, customValues):
 	with pytest.raises(ValueError):
-		resolve_ruleset(presetName, customValues)
+		resolveRuleset(presetName, customValues)
 
 
 def test_rule_schema_describes_every_rule_with_json_safe_options():
-	schema = get_rule_schema()
+	schema = getRuleSchema()
 
 	assert set(schema) == set(MONTSURVENT_RULES.to_dict())
 	assert schema["card_exchange"] == {"type": "boolean"}
@@ -96,4 +96,4 @@ def test_joker_path_kicking_is_disabled_by_default():
 
 	assert rules.joker_kicks_pieces_on_path is False
 	assert rules.to_dict()["joker_kicks_pieces_on_path"] is False
-	assert get_rule_schema()["joker_kicks_pieces_on_path"] == {"type": "boolean"}
+	assert getRuleSchema()["joker_kicks_pieces_on_path"] == {"type": "boolean"}

@@ -1,10 +1,18 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from uuid import UUID
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Literal, overload
+from uuid import UUID
 
 from toc.model.rules import GameRules
 from toc.infrastructure.versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, RULES_FORMAT_VERSION
 from toc.model.game_mode import GameModeDefinition
+
+if TYPE_CHECKING:
+	from toc.session.game_session import GameSession
+	from toc.session.roster import Participant, PlayerSeat
+
 
 def _validatePersistentId(value: str, fieldName: str) -> None:
 	if type(value) is not str:
@@ -65,7 +73,7 @@ class ParticipantMetadataState:
 		)
 
 	@classmethod
-	def fromParticipant(cls, participant) -> "ParticipantMetadataState":
+	def fromParticipant(cls, participant: Participant) -> "ParticipantMetadataState":
 		return cls(
 			participantId=participant.participantId,
 			name=participant.name,
@@ -113,7 +121,7 @@ class SeatMetadataState:
 		)
 
 	@classmethod
-	def fromSeat(cls, seat) -> "SeatMetadataState":
+	def fromSeat(cls, seat: PlayerSeat) -> "SeatMetadataState":
 		return cls(
 			seatId=seat.seatId,
 			participantId=seat.participantId,
@@ -237,7 +245,7 @@ class SessionMetadataState:
 		)
 
 	@classmethod
-	def fromGameSession(cls, session) -> "SessionMetadataState":
+	def fromGameSession(cls, session: GameSession) -> "SessionMetadataState":
 		return cls(
 			archiveFormatVersion=ARCHIVE_FORMAT_VERSION,
 			engineVersion=ENGINE_VERSION,
@@ -255,7 +263,15 @@ class SessionMetadataState:
 			lastActivityAt=session.lastActivityAt,
 		)
 
-def _parseTimestamp(value, fieldName: str, optional: bool = False):
+@overload
+def _parseTimestamp(value: object, fieldName: str, optional: Literal[False] = False) -> datetime:
+	...
+
+@overload
+def _parseTimestamp(value: object, fieldName: str, optional: Literal[True]) -> datetime | None:
+	...
+
+def _parseTimestamp(value: object, fieldName: str, optional: bool = False) -> datetime | None:
 	if value is None and optional:
 		return None
 
@@ -271,4 +287,3 @@ def _parseTimestamp(value, fieldName: str, optional: bool = False):
 		raise ValueError(f"{fieldName} must include a timezone")
 
 	return timestamp.astimezone(timezone.utc)
-	
