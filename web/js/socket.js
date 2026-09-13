@@ -25,7 +25,7 @@ app.returnToStartAfterServerClose = function returnToStartAfterServerClose(messa
   window.location.reload();
 };
 
-app.connectToGame = async function connectToGame(gameId, name, rejoin = false) {
+app.connectToGame = async function connectToGame(gameId, name) {
   app.clearError();
   gameId = gameId.trim().toLowerCase();
   const wsUrl = app.buildWebSocketUrl(gameId, name);
