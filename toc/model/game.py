@@ -623,7 +623,7 @@ class Game:
 					))
 
 					self._deck.discardCards(self._activePlayer.hand)
-					await self._activePlayer.foldHand()
+					self._activePlayer.foldHand()
 					self._gameSession.recordPlayerEvent(GameEventType.HAND_FOLDED, self._activePlayer, {"reason": "no-legal-move", "cards": foldedCards})
 				else:
 					cardChoice = await self._activePlayer.getCardChoiceFromPlayer("prompts.discard_card", "You cannot make a move. Choose one card to discard.")

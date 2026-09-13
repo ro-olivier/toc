@@ -91,7 +91,7 @@ async def websocket_endpoint(websocket: WebSocket, gameId: str, playerName: str)
 
 			router.register(routerId)
 
-			newPlayer = Player(identifier=participantId, name=playerName, team="", color="", position="", gameSession=gameSession, router=router, routerId=routerId)
+			newPlayer = Player(identifier=participantId, name=playerName, team="", color="", gameSession=gameSession, router=router, routerId=routerId)
 
 			participant = Participant(
 				participantId=participantId,

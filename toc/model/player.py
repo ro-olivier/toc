@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 import logging
-import random
 from typing import TYPE_CHECKING
 
 from toc.infrastructure.messages import buildMessage
@@ -20,13 +18,12 @@ logger = logging.getLogger("toc.player")
 
 
 class Player:
-	def __init__(self, identifier: str, name: str, team: str | None = None, color: str | None = None, position: str | None = None, gameSession: GameSession | None = None, router: PlayerInputRouter | None = None, routerId: str | None = None) -> None:
+	def __init__(self, identifier: str, name: str, team: str | None = None, color: str | None = None, gameSession: GameSession | None = None, router: PlayerInputRouter | None = None, routerId: str | None = None) -> None:
 		self._id = identifier
 		self._routerId = routerId if routerId is not None else identifier
 		self._name = name
 		self._team = team
 		self._color = color
-		self._position = position
 		self._hand = Hand(player = self)
 		self._active = False
 		self._isDealer = False
@@ -81,13 +78,6 @@ class Player:
 		self._color = color
 
 	@property
-	def position(self) -> str | None:
-		return self._position
-
-	def setPosition(self, position: str) -> None:
-		self._position = position
-
-	@property
 	def identifier(self) -> str:
 		return self._id
 
@@ -120,7 +110,7 @@ class Player:
 	def discard(self, card: Card) -> None:
 		self._hand.discardFromHand(card)
 
-	async def foldHand(self) -> None:
+	def foldHand(self) -> None:
 		 self._hand.fold()
 
 	@property

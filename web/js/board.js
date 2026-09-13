@@ -335,27 +335,6 @@ app.getCardBoxFromId = function getCardBoxFromId(seatId) {
   return player.handCardBox || constants.positionMap[player.position].card_box;
 };
 
-app.getOppositePosition = function getOppositePosition(pos) {
-  const opposites = {
-    'top-left': 'bottom-right',
-    'top-right': 'bottom-left',
-    'bottom-left': 'top-right',
-    'bottom-right': 'top-left'
-  };
-  return opposites[pos];
-};
-
-app.getAdjacentFreePosition = function getAdjacentFreePosition(pos) {
-  const adjacency = {
-    'top-left':    ['top-right', 'bottom-left'],
-    'top-right':   ['top-left', 'bottom-right'],
-    'bottom-left': ['top-left', 'bottom-right'],
-    'bottom-right':['top-right', 'bottom-left']
-  };
-  const candidates = adjacency[pos];
-  return candidates.find(p => !state.usedPositions.includes(p));
-};
-
 app.getPlayerClass = function getPlayerClass(seatId) {
   const player = app.getPlayerFromId(seatId);
   return player ? `player-${player.color}` : '';

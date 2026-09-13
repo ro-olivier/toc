@@ -63,7 +63,6 @@ export const state = {
   selectableSpotHandlers: new Map(),
   ws: null,
   local_player_name: null,
-  local_game_Id: null,
   local_player: null,
   local_card_box: null,
   local_info_box: null,

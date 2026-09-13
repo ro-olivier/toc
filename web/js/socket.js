@@ -79,7 +79,6 @@ app.connectToGame = async function connectToGame(gameId, name, rejoin = false) {
         });
         app.setTranslatedText(dom.connectionStatusText, "connection.connected");
         state.local_player_name = name;
-        state.local_game_Id = gameId;
         dom.gameIdDisplay.textContent = gameId;
         dom.connectionStatus.classList.add("connected");
         app.showLobbyUI();
