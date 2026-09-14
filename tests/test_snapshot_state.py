@@ -368,6 +368,10 @@ def test_session_snapshot_survives_compressed_json_round_trip(tmp_path):
 	assert restoredState.events == session.events
 	assert restoredState.progress == session.gameProgress
 
+@pytest.mark.parametrize("payload", [None, [], {}])
+def test_session_snapshot_rejects_malformed_top_level_payload(payload):
+	with pytest.raises(ValueError, match="Invalid session snapshot"):
+		SessionSnapshotState.from_dict(payload)
 
 def test_session_snapshot_rejects_metadata_game_player_mismatch():
 	session = makeGameSessionState()
