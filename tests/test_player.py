@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 
 from toc.model.board import Board
 from toc.model.cards import Card
@@ -318,3 +319,17 @@ def test_yellow_six_prompt_offers_track_and_fourth_house_in_cross_mode():
 	assert result.ID == "ENTER"
 	assert str(result.originSpot) == "spot-blue-16"
 	assert str(result.targetSpot) == "house-yellow-3"
+
+def test_move_selection_rejects_ambiguous_duplicate_moves():
+	board = Board(COLORS)
+	card = Card("♥️", "2")
+	origin = board.getSpot("red", 1)
+	target = board.getSpot("red", 3)
+	router = FakeRouter([{"type": "card_selection", "suit": "♥️", "value": "2"}])
+	player = makePlayer(router)
+	player.setBoard(board)
+	player.hand.addToHand(card)
+	options = [Move("MOVE", origin, target, card, player), Move("MOVE", origin, target, card, player)]
+
+	with pytest.raises(RuntimeError, match="Expected exactly one move"):
+		asyncio.run(player.getMoveChoiceFromPlayer(options))

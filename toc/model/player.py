@@ -200,7 +200,10 @@ class Player:
 
 				logger.debug('targetSpot selected', extra={"targetSpot": str(target)})
 				result = [move for move in possibleMoves if move.originSpot == origin and move.card == cardChoice and move.targetSpot == target]
-				#TODO should we test here if there is only one resulting move? I don't see why there should not be but if not, we're screwed
+
+				if len(result) != 1:
+					raise RuntimeError(f"Expected exactly one move for the selected card, origin and target; found {len(result)}")
+
 				moveChoice = result[0]
 			
 		return moveChoice
