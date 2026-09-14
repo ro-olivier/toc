@@ -268,7 +268,7 @@ class Game:
 		for player in self._players:
 			await player.setHand(Hand(player, cardsByPlayer[player]))
 
-	async def requestCardExchange(self, players: Tuple[Player, Player]) -> tuple[Player, Card, Player, Card]:
+	async def requestCardExchange(self, players: tuple[Player, Player]) -> tuple[Player, Card, Player, Card]:
 		player1, player2 = players
 
 		if player1.routerId == player2.routerId:
