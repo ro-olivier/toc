@@ -171,7 +171,7 @@ def getRuleSchema() -> dict:
 
 	return schema
 
-def resolveRuleset(presetName: str = DEFAULT_RULE_PRESET, customValues: dict = None) -> GameRules:
+def resolveRuleset(presetName: str = DEFAULT_RULE_PRESET, customValues: dict | None = None) -> GameRules:
 	if type(presetName) is not str:
 		raise ValueError("Rule preset name must be a string")
 

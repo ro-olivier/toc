@@ -127,7 +127,7 @@ def hashResumeToken(token: str) -> str:
 	return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def resumeTokenMatches(token: str, expectedHash: str) -> bool:
+def resumeTokenMatches(token: str | None, expectedHash: str) -> bool:
 	if not isinstance(token, str) or not token:
 		return False
 
