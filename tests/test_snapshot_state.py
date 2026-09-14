@@ -1958,6 +1958,7 @@ def test_checkpoint_cancellation_waits_for_persistence_thread(tmp_path, monkeypa
 
 	asyncio.run(scenario())
 
+
 def test_game_state_rejects_active_index_without_active_player():
 	session = makeGameSessionState()
 	payload = session.snapshotState().to_dict()["game"]
@@ -1966,3 +1967,22 @@ def test_game_state_rejects_active_index_without_active_player():
 
 	with pytest.raises(ValueError, match="without an active player"):
 		GameState.from_dict(payload)
+
+def test_suspended_game_index_is_reused_for_unknown_join_codes(tmp_path, monkeypatch):
+	session = makeGameSessionState()
+	markGameAsStarted(session)
+	store = CompressedJsonStore(tmp_path / "game-data")
+	store.write(ArchiveCategory.SUSPENDED, session.sessionId, session.snapshotState().to_dict())
+	readCalls = []
+	originalRead = store.read
+
+	def countedRead(category, documentId):
+		readCalls.append((category, documentId))
+		return originalRead(category, documentId)
+
+	monkeypatch.setattr(store, "read", countedRead)
+	manager = ConnectionManager(archiveStore=store)
+
+	assert manager.getOrRestoreGame("unknown-one", PlayerInputRouter()) is None
+	assert manager.getOrRestoreGame("unknown-two", PlayerInputRouter()) is None
+	assert readCalls == [(ArchiveCategory.SUSPENDED, session.sessionId)]

@@ -22,6 +22,7 @@ class ConnectionManager:
 		self.games: dict[str, GameSession] = {}
 		self._clock = clock
 		self._archiveStore: CompressedJsonStore | None = archiveStore
+		self._suspendedSessionIdsByJoinCode: dict[str, tuple[str, ...]] | None = None
 
 	def _generateGameId(self) -> str:
 		reservedJoinCodes = {normalizeJoinCode(joinCode) for joinCode in self.games}
@@ -46,21 +47,37 @@ class ConnectionManager:
 
 		return self.games.get(normalizedGameId) or self.games.get(gameId)
 
-	def _getSuspendedJoinCodes(self) -> set[str]:
-		if self._archiveStore is None:
-			return set()
+	def _rebuildSuspendedGameIndex(self) -> None:
+		index: dict[str, list[str]] = {}
 
-		joinCodes = set()
+		if self._archiveStore is None:
+			self._suspendedSessionIdsByJoinCode = {}
+			return
 
 		for sessionId in self._archiveStore.listDocumentIds(ArchiveCategory.SUSPENDED):
 			try:
 				payload = self._archiveStore.read(ArchiveCategory.SUSPENDED, sessionId)
 				snapshot = SessionSnapshotState.from_dict(payload)
-				joinCodes.add(normalizeJoinCode(snapshot.metadata.joinCode))
-			except (ArchiveCorruptionError, ValueError):
+
+				if snapshot.metadata.sessionId != sessionId:
+					raise ValueError("Suspended archive filename does not match its session ID")
+
+				joinCode = normalizeJoinCode(snapshot.metadata.joinCode)
+				index.setdefault(joinCode, []).append(sessionId)
+			except (ArchiveCorruptionError, ValueError, OSError):
 				logger.exception("Could not read suspended game join code", extra={"sessionId": sessionId})
 
-		return joinCodes
+		self._suspendedSessionIdsByJoinCode = {joinCode: tuple(sessionIds) for joinCode, sessionIds in index.items()}
+
+	def _getSuspendedGameIndex(self) -> dict[str, tuple[str, ...]]:
+		if self._suspendedSessionIdsByJoinCode is None:
+			self._rebuildSuspendedGameIndex()
+
+		assert self._suspendedSessionIdsByJoinCode is not None
+		return self._suspendedSessionIdsByJoinCode
+
+	def _getSuspendedJoinCodes(self) -> set[str]:
+		return set(self._getSuspendedGameIndex())
 
 	def getOpenLobbies(self) -> list[dict[str, object]]:
 		lobbies: list[dict[str, object]] = []
@@ -86,27 +103,30 @@ class ConnectionManager:
 		if self._archiveStore is None:
 			return None
 
-		matchingSnapshots: list[SessionSnapshotState] = []
-
-		for sessionId in self._archiveStore.listDocumentIds(ArchiveCategory.SUSPENDED):
-			try:
-				payload = self._archiveStore.read(ArchiveCategory.SUSPENDED, sessionId)
-				snapshot = SessionSnapshotState.from_dict(payload)
-			except (ArchiveCorruptionError, ValueError):
-				logger.exception("Could not load suspended game archive", extra={"sessionId": sessionId})
-				continue
-
+		try:
 			normalizedGameId = normalizeJoinCode(gameId)
-			if normalizeJoinCode(snapshot.metadata.joinCode) == normalizedGameId:
-				matchingSnapshots.append(snapshot)
-
-		if not matchingSnapshots:
+		except ValueError:
 			return None
 
-		if len(matchingSnapshots) > 1:
+		sessionIds = self._getSuspendedGameIndex().get(normalizedGameId, ())
+
+		if not sessionIds:
+			return None
+
+		if len(sessionIds) > 1:
 			raise RuntimeError(f"Multiple suspended archives use join code '{gameId}'")
 
-		snapshot = matchingSnapshots[0]
+		sessionId = sessionIds[0]
+
+		try:
+			payload = self._archiveStore.read(ArchiveCategory.SUSPENDED, sessionId)
+			snapshot = SessionSnapshotState.from_dict(payload)
+
+			if snapshot.metadata.sessionId != sessionId or normalizeJoinCode(snapshot.metadata.joinCode) != normalizedGameId:
+				raise ValueError("Suspended-game index does not match its archive")
+		except (ArchiveCorruptionError, ValueError, OSError):
+			logger.exception("Could not load suspended game archive", extra={"sessionId": sessionId})
+			return None
 
 		if not snapshot.game.isStarted:
 			raise ValueError("Suspended archive contains an unstarted game")
@@ -116,6 +136,7 @@ class ConnectionManager:
 
 		session = GameSession.fromSnapshot(snapshot, msg_router, self._clock, self._archiveStore)
 		self.games[normalizedGameId] = session
+		self._suspendedSessionIdsByJoinCode.pop(normalizedGameId, None)
 		return session
 
 	def getOrRestoreGame(self, gameId: str, msg_router: PlayerInputRouter) -> GameSession | None:
@@ -195,6 +216,8 @@ class ConnectionManager:
 				logger.exception("Could not complete interrupted-game recovery", extra={"sessionId": sessionId})
 				failedSessionIds.append(sessionId)
 
+		await asyncio.to_thread(self._rebuildSuspendedGameIndex)
+
 		return {
 			"suspended": tuple(suspendedSessionIds),
 			"finished": tuple(finishedSessionIds),
@@ -228,6 +251,7 @@ class ConnectionManager:
 					continue
 
 				await session.suspendGame()
+				self._suspendedSessionIdsByJoinCode = None
 				await session.closeConnections(GAME_SUSPENDED_CLOSE_CODE, "Game suspended")
 
 				if self.games.get(gameId) is session:
