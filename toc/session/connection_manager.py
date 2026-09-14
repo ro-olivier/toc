@@ -147,6 +147,13 @@ class ConnectionManager:
 
 		return self._loadSuspendedGame(gameId, msg_router)
 
+	def _moveActiveArchiveToSuspended(self, sessionId: str, payload: dict[str, object]) -> None:
+		if self._archiveStore is None:
+			raise RuntimeError("Cannot move an archive without persistent storage")
+
+		self._archiveStore.write(ArchiveCategory.SUSPENDED, sessionId, payload)
+		self._archiveStore.delete(ArchiveCategory.ACTIVE, sessionId)
+
 	async def recoverInterruptedGames(self) -> dict[str, tuple[str, ...]]:
 		if self._archiveStore is None:
 			return {"suspended": (), "finished": (), "failed": ()}
@@ -201,11 +208,7 @@ class ConnectionManager:
 					continue
 
 				if selectedCategory is ArchiveCategory.ACTIVE:
-					def moveActiveToSuspended() -> None:
-						self._archiveStore.write(ArchiveCategory.SUSPENDED, sessionId, selectedPayload)
-						self._archiveStore.delete(ArchiveCategory.ACTIVE, sessionId)
-
-					await asyncio.to_thread(moveActiveToSuspended)
+					await asyncio.to_thread(self._moveActiveArchiveToSuspended, sessionId, selectedPayload)
 
 				else:
 					await asyncio.to_thread(self._archiveStore.delete, ArchiveCategory.ACTIVE, sessionId)
