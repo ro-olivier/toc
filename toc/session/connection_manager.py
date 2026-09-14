@@ -73,8 +73,12 @@ class ConnectionManager:
 		if self._suspendedSessionIdsByJoinCode is None:
 			self._rebuildSuspendedGameIndex()
 
-		assert self._suspendedSessionIdsByJoinCode is not None
-		return self._suspendedSessionIdsByJoinCode
+		index = self._suspendedSessionIdsByJoinCode
+
+		if index is None:
+			raise RuntimeError("Suspended-game index could not be initialized")
+
+		return index
 
 	def _getSuspendedJoinCodes(self) -> set[str]:
 		return set(self._getSuspendedGameIndex())
