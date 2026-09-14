@@ -11,10 +11,9 @@ from toc.session.connection_manager import ConnectionManager
 from toc.session.game_session import GameSession
 from toc.session.input_router import PlayerInputRouter
 from toc.transport.http_routes import createGame as createGameEndpoint, getRulePresets, getOpenLobbies
-from toc.model.rules import GameRules, MONTSURVENT_RULES, resolveRuleset
+from toc.model.rules import GameRules, MONTSURVENT_RULES
 from toc.model.player import Player
 from toc.model.cards import Card
-from toc.model.rules import GameRules, resolveRuleset
 from toc.model.game_phase import GamePhase
 from toc.model.params import AVAILABLE_COLORS
 from toc.model.game import Game

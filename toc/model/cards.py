@@ -37,7 +37,7 @@ class Deck:
 		return self._discardPile
 
 	@classmethod
-	def fromPiles(cls, drawPile: list[Card], discardPile: list[Card], expectedCardCount: int = 52) -> "Deck":
+	def fromPiles(cls, drawPile: list[Card], discardPile: list[Card], expectedCardCount: int = 52) -> Deck:
 		if type(drawPile) is not list or type(discardPile) is not list:
 			raise ValueError("Deck piles must be lists")
 

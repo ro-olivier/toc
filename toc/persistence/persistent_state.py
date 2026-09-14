@@ -59,7 +59,7 @@ class ParticipantMetadataState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "ParticipantMetadataState":
+	def from_dict(cls, values: dict) -> ParticipantMetadataState:
 		expectedFields = {"participantId", "name", "configured", "resumeTokenHash"}
 
 		if type(values) is not dict or set(values) != expectedFields:
@@ -73,7 +73,7 @@ class ParticipantMetadataState:
 		)
 
 	@classmethod
-	def fromParticipant(cls, participant: Participant) -> "ParticipantMetadataState":
+	def fromParticipant(cls, participant: Participant) -> ParticipantMetadataState:
 		return cls(
 			participantId=participant.participantId,
 			name=participant.name,
@@ -107,7 +107,7 @@ class SeatMetadataState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "SeatMetadataState":
+	def from_dict(cls, values: dict) -> SeatMetadataState:
 		expectedFields = {"seatId", "participantId", "team", "color"}
 
 		if type(values) is not dict or set(values) != expectedFields:
@@ -121,7 +121,7 @@ class SeatMetadataState:
 		)
 
 	@classmethod
-	def fromSeat(cls, seat: PlayerSeat) -> "SeatMetadataState":
+	def fromSeat(cls, seat: PlayerSeat) -> SeatMetadataState:
 		return cls(
 			seatId=seat.seatId,
 			participantId=seat.participantId,
@@ -187,7 +187,7 @@ class SessionMetadataState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "SessionMetadataState":
+	def from_dict(cls, values: dict) -> SessionMetadataState:
 		if type(values) is not dict:
 			raise ValueError("Session metadata must be an object")
 
@@ -245,7 +245,7 @@ class SessionMetadataState:
 		)
 
 	@classmethod
-	def fromGameSession(cls, session: GameSession) -> "SessionMetadataState":
+	def fromGameSession(cls, session: GameSession) -> SessionMetadataState:
 		return cls(
 			archiveFormatVersion=ARCHIVE_FORMAT_VERSION,
 			engineVersion=ENGINE_VERSION,

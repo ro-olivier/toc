@@ -984,9 +984,8 @@ class GameSession:
 
 			sessionParticipant.configureSeats(seats)
 
-			if len(self.participants) == self._modeDefinition.participantCount and all(data.configured for data in self.participants.values()):
-				if not self.setPlayerOrder():
-					raise RuntimeError("Could not determine a valid player order")
+			if len(self.participants) == self._modeDefinition.participantCount and all(data.configured for data in self.participants.values()) and not self.setPlayerOrder():
+				raise RuntimeError("Could not determine a valid player order")
 
 		await self.broadcastLobbyState()
 		await self.startGameIfReady()

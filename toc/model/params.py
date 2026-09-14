@@ -7,13 +7,13 @@ AVAILABLE_COLORS = COLORS + ['orange', 'purple', 'pink', 'cyan', 'lime', 'brown'
 SPOTS_PER_HOUSE = 4
 MOVE_DESCRIPTION = {
 	'OUT' : 'Take a piece out.', 
-	'MOVE' : f'Move x time(s) forward.', 
-	'SWITCH' : f'Switch piece with piece of player x in spot x.', 
+	'MOVE' : 'Move x time(s) forward.', 
+	'SWITCH' : 'Switch piece with piece of player x in spot x.', 
 	'CHANGE_CARD' : 'Pick another card', 
-	'BACK' : f'Move 4 spots backward.', 
-	'ENTER' : f'Enter house spot number x.', 
-	'SEVEN': f'Play a seven split.',
-	'FIVE': f'Move an opponent\'s piece 5 times forward.',
+	'BACK' : 'Move 4 spots backward.', 
+	'ENTER' : 'Enter house spot number x.', 
+	'SEVEN': 'Play a seven split.',
+	'FIVE': 'Move an opponent\'s piece 5 times forward.',
 	'HOP': 'Hop from one position numbered 7 to the next.',
 	}
 IDENTIFY_TIMEOUT_SECONDS = 5

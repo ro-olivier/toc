@@ -60,19 +60,19 @@ class Board:
 		s = ''
 		for spot in self._spots:
 			if spot.isOccupied:
-				s += f'Spot {str(spot)} is occupied by player {spot.occupant.name}.'
+				s += f'Spot {spot} is occupied by player {spot.occupant.name}.'
 				if spot.isBlocking:
 					s += ' This spot is blocked.'
 				s += '\n'
 		for house in self._houses:
 			if house.isOccupied:
-				s += f'House {str(house)} is occupied by player {house.occupant.name}.\n'
+				s += f'House {house} is occupied by player {house.occupant.name}.\n'
 		return s
 
 
 	## Various methods
 	def areAllHouseFilled(self, color: str) -> bool:
-		return all([house.isOccupied for house in self.getHousesByColor(color)])
+		return all(house.isOccupied for house in self.getHousesByColor(color))
 
 	def _getPreviousColor(self, color: str) -> str:
 		colorIndex = self._colors.index(color)
@@ -90,7 +90,7 @@ class Board:
 		return self._spots[self._colors.index(color) * self._regionLength + number]
 
 	def getSpotById(self, spotId: str) -> Spot:
-		return [spot for spot in self._spots if str(spot) == spotId][0]
+		return next(spot for spot in self._spots if str(spot) == spotId)
 
 	def getPositionById(self, positionId: str) -> Spot:
 		for position in self.positions:
@@ -100,7 +100,7 @@ class Board:
 		raise ValueError(f"Unknown board position: {positionId}")
 
 	def getFirstSpot(self, color: str) -> Spot:
-		return [spot for spot in self._spots if spot.color == color and spot.number == 0][0]
+		return next(spot for spot in self._spots if spot.color == color and spot.number == 0)
 
 	def getHouseEntrySpot(self, color: str) -> Spot:
 		if self._rules.enter_house_at_spot == self._regionLength:
@@ -123,7 +123,7 @@ class Board:
 		return self._houses[self._colors.index(color)*SPOTS_PER_HOUSE + number]
 
 	def getHouseById(self, houseId: str) -> House:
-		return [house for house in self._houses if str(house) == houseId][0]
+		return next(house for house in self._houses if str(house) == houseId)
 
 	def getHousesByColor(self, color: str) -> list[House]:
 		colorIndex = self._colors.index(color)
@@ -406,10 +406,7 @@ class Board:
 			target = move.targetSpot
 			origin = move.originSpot
 
-			if not isinstance(target, House):
-				result = False
-
-			elif target.color != move.pieceOwner.color:
+			if not isinstance(target, House) or target.color != move.pieceOwner.color:
 				result = False
 
 			else:

@@ -141,7 +141,7 @@ class Player:
 		await self.sendMessageToUser(buildMessage("query-card", messageKey, fallback, **self.getMessageIdentity()))
 		cardChoice = await self.getInputFromPrompt(messageKey, fallback)
 
-		while not cardChoice or (not 'type' in cardChoice.keys()) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
+		while not cardChoice or (not 'type' in cardChoice) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
 			cardChoice = await self.getInputFromPrompt(messageKey, fallback)
 
 		chosenCard = Card(cardChoice['suit'], cardChoice['value'])
@@ -159,7 +159,7 @@ class Player:
 		moveChoice = None
 		while not moveChoice:
 			possibleMoves = [move for move in options if move.card == cardChoice]
-			logger.debug('Possible moves with this card:', extra={"possibleMoves": [f'{str(m)} ---- origin: {m.originSpot} {id(m.originSpot)}' for m in possibleMoves]})
+			logger.debug('Possible moves with this card:', extra={"possibleMoves": [f'{m} ---- origin: {m.originSpot} {id(m.originSpot)}' for m in possibleMoves]})
 			if len(possibleMoves) == 0:
 				await self.sendMessageToUser(buildMessage("reject-card-selection", "prompts.card_unplayable", "You cannot play that card right now!", **self.getMessageIdentity()))
 				cardChoice = await self.getCardChoiceFromPlayer()
@@ -167,7 +167,7 @@ class Player:
 				moveChoice = possibleMoves[0]
 			else:
 
-				possibleOrigins = list(set([move.originSpot for move in possibleMoves if move.card == cardChoice]))
+				possibleOrigins = list({move.originSpot for move in possibleMoves if move.card == cardChoice})
 				if len(possibleOrigins) == 1: # There could be one single origin, but several targets (for example an A being played with only one piece out and no more pieces to take out), and so here we may skip asking the player to choose the origin
 					origin = possibleOrigins[0]
 				else:
@@ -178,7 +178,7 @@ class Player:
 
 				logger.debug('originSpot selected', extra={"originSpot": str(origin)})
 
-				possibleTargets = list(set([move.targetSpot for move in possibleMoves if move.originSpot == origin and move.card == cardChoice]))
+				possibleTargets = list({move.targetSpot for move in possibleMoves if move.originSpot == origin and move.card == cardChoice})
 
 				logger.debug("Move targets calculated", extra={
 					"seatId": self.identifier,
@@ -270,7 +270,7 @@ class Player:
 
 		while True:
 			await self.sendMessageToUser(message)
-			logger.debug(f"Waiting for seven-hop choice from player...", extra={"playerName": self._name})
+			logger.debug("Waiting for seven-hop choice from player...", extra={"playerName": self._name})
 			choice = await self._router.waitForInput(self._routerId)
 
 			if isinstance(choice, dict) and choice.get("type") == "seven_hop_choice" and isinstance(choice.get("result"), bool):

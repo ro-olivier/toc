@@ -93,14 +93,14 @@ class FinishedParticipantState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "FinishedParticipantState":
+	def from_dict(cls, values: dict) -> FinishedParticipantState:
 		if type(values) is not dict or set(values) != {"participantId", "name"}:
 			raise ValueError("Invalid finished-participant data")
 
 		return cls(participantId=values["participantId"], name=values["name"])
 
 	@classmethod
-	def fromParticipant(cls, participant: Participant) -> "FinishedParticipantState":
+	def fromParticipant(cls, participant: Participant) -> FinishedParticipantState:
 		return cls(participantId=participant.participantId, name=participant.name)
 
 @dataclass(frozen=True, slots=True)
@@ -129,7 +129,7 @@ class FinishedSeatState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "FinishedSeatState":
+	def from_dict(cls, values: dict) -> FinishedSeatState:
 		if type(values) is not dict or set(values) != {"seatId", "participantId", "team", "color"}:
 			raise ValueError("Invalid finished-seat data")
 
@@ -141,7 +141,7 @@ class FinishedSeatState:
 		)
 
 	@classmethod
-	def fromSeat(cls, seat: PlayerSeat) -> "FinishedSeatState":
+	def fromSeat(cls, seat: PlayerSeat) -> FinishedSeatState:
 		return cls(seatId=seat.seatId, participantId=seat.participantId, team=seat.team, color=seat.color)
 
 
@@ -325,7 +325,7 @@ class FinishedArchiveState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "FinishedArchiveState":
+	def from_dict(cls, values: dict) -> FinishedArchiveState:
 		expectedFields = {
 			"archiveFormatVersion",
 			"engineVersion",
@@ -379,7 +379,7 @@ class FinishedArchiveState:
 		)
 
 	@classmethod
-	def fromGameSession(cls, session: GameSession) -> "FinishedArchiveState":
+	def fromGameSession(cls, session: GameSession) -> FinishedArchiveState:
 		if session.game is None or not session.game.isFinished:
 			raise ValueError("Cannot archive an unfinished game")
 

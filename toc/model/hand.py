@@ -49,9 +49,6 @@ class Hand:
 
 		for card in self._cards:
 			optionsFromThisCard = board.getMoveOptions(self._player, card, pieceOwner)
-
-			for option in optionsFromThisCard:
-				allPossibleMoveOptions.append(option)
+			allPossibleMoveOptions.extend(optionsFromThisCard)
 
 		return allPossibleMoveOptions
-

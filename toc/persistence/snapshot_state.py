@@ -57,14 +57,14 @@ class CardState:
 		return {"suit": self.suit, "value": self.value}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "CardState":
+	def from_dict(cls, values: dict) -> CardState:
 		if type(values) is not dict or set(values) != {"suit", "value"}:
 			raise ValueError("Invalid card state")
 
 		return cls(suit=values["suit"], value=values["value"])
 
 	@classmethod
-	def fromCard(cls, card: Card) -> "CardState":
+	def fromCard(cls, card: Card) -> CardState:
 		return cls(suit=card.suit, value=card.value)
 
 	def toCard(self, deck: Deck | None = None) -> Card:
@@ -90,7 +90,7 @@ class DeckState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "DeckState":
+	def from_dict(cls, values: dict) -> DeckState:
 		if type(values) is not dict or set(values) != {"drawPile", "discardPile"}:
 			raise ValueError("Invalid deck state")
 
@@ -103,7 +103,7 @@ class DeckState:
 		)
 
 	@classmethod
-	def fromDeck(cls, deck: Deck) -> "DeckState":
+	def fromDeck(cls, deck: Deck) -> DeckState:
 		return cls(
 			drawPile=tuple(CardState.fromCard(card) for card in deck.cards),
 			discardPile=tuple(CardState.fromCard(card) for card in deck.discardPile),
@@ -133,7 +133,7 @@ class PlayerGameState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "PlayerGameState":
+	def from_dict(cls, values: dict) -> PlayerGameState:
 		if type(values) is not dict or set(values) != {"playerId", "hand", "piecesOnTheBoard"}:
 			raise ValueError("Invalid player game state")
 
@@ -147,7 +147,7 @@ class PlayerGameState:
 		)
 
 	@classmethod
-	def fromPlayer(cls, player: Player, playerId: str) -> "PlayerGameState":
+	def fromPlayer(cls, player: Player, playerId: str) -> PlayerGameState:
 		return cls(
 			playerId=playerId,
 			hand=tuple(CardState.fromCard(card) for card in player.hand.cards),
@@ -191,7 +191,7 @@ class PositionState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "PositionState":
+	def from_dict(cls, values: dict) -> PositionState:
 		expectedFields = {"positionId", "playerId", "isBlocking", "isFreshlyDeployed"}
 
 		if type(values) is not dict or set(values) != expectedFields:
@@ -205,7 +205,7 @@ class PositionState:
 		)
 
 	@classmethod
-	def fromPosition(cls, position: Spot, playerId: str) -> "PositionState":
+	def fromPosition(cls, position: Spot, playerId: str) -> PositionState:
 		if not position.isOccupied:
 			raise ValueError("Cannot serialize an unoccupied board position")
 
@@ -254,7 +254,7 @@ class SevenSplitProgressState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "SevenSplitProgressState":
+	def from_dict(cls, values: dict) -> SevenSplitProgressState:
 		expectedFields = {"actingPlayerId", "pieceOwnerId", "card", "stepsRemaining", "movedPositionIds"}
 
 		if type(values) is not dict or set(values) != expectedFields or type(values["movedPositionIds"]) is not list:
@@ -300,7 +300,7 @@ class SevenHopProgressState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "SevenHopProgressState":
+	def from_dict(cls, values: dict) -> SevenHopProgressState:
 		expectedFields = {"actingPlayerId", "pieceOwnerId", "decidingPlayerId", "card", "originPositionId", "targetPositionId"}
 
 		if type(values) is not dict or set(values) != expectedFields:
@@ -364,7 +364,7 @@ class GameProgressState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "GameProgressState":
+	def from_dict(cls, values: dict) -> GameProgressState:
 		if type(values) is not dict or set(values) != {"phase", "dealIndex", "sevenSplit", "sevenHop"}:
 			raise ValueError("Invalid game progress")
 
@@ -505,7 +505,7 @@ class GameState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "GameState":
+	def from_dict(cls, values: dict) -> GameState:
 		expectedFields = {
 			"isStarted", "isFinished", "handsFinished", "activePlayerIndex",
 			"activePlayerId", "dealerRotationCount", "boardColors", "playerOrder",
@@ -535,7 +535,7 @@ class GameState:
 		)
 
 	@classmethod
-	def fromGameSession(cls, session: GameSession) -> "GameState":
+	def fromGameSession(cls, session: GameSession) -> GameState:
 		if session.game is None:
 			raise ValueError("Cannot snapshot a session without a game")
 
@@ -718,7 +718,7 @@ class SessionSnapshotState:
 		}
 
 	@classmethod
-	def from_dict(cls, values: dict) -> "SessionSnapshotState":
+	def from_dict(cls, values: dict) -> SessionSnapshotState:
 		if type(values) is not dict or set(values) != {"metadata", "game", "progress", "events"}:
 			raise ValueError("Invalid session snapshot")
 
@@ -733,7 +733,7 @@ class SessionSnapshotState:
 		)
 
 	@classmethod
-	def fromGameSession(cls, session: GameSession) -> "SessionSnapshotState":
+	def fromGameSession(cls, session: GameSession) -> SessionSnapshotState:
 		return cls(
 			metadata=session.metadataState(),
 			game=GameState.fromGameSession(session),

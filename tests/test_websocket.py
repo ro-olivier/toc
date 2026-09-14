@@ -12,7 +12,6 @@ from toc.model.audit import GameEventType
 from toc.infrastructure.identity import resumeTokenMatches
 from toc.model.game_mode import GameMode, getGameModeDefinition
 from toc.model.game import Game
-from toc.model.rules import resolveRuleset
 from settings import INVALID_PLAYER_NAME_CODE, MAX_PLAYER_NAME_LENGTH
 
 

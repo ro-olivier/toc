@@ -57,8 +57,8 @@ class Game:
 
 	def __str__(self) -> str:
 		s = f'This game has {self._numPlayers} players.\r\n'
-		for i in range(0, self._numPlayers):
-			s += f'Player {i} : {str(self._players[i])}'
+		for i in range(self._numPlayers):
+			s += f'Player {i} : {self._players[i]}'
 			s += '\r\n'
 		return s
 
