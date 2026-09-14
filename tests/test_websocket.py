@@ -88,7 +88,7 @@ def connectPlayers(stack, client, gameId, playerNames):
 		websocket = stack.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/{playerName}"))
 		sockets[playerName] = websocket
 
-		ready = identifyWebSocket(websocket)
+		identifyWebSocket(websocket)
 
 		for connectedSocket in sockets.values():
 			state = receiveLobbyState(connectedSocket)
@@ -169,7 +169,7 @@ def test_fifth_player_closes_websocket_with_4004(client, gameId):
 
 def test_invalid_json_returns_error_and_connection_remains_open(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
-		ready = identifyWebSocket(websocket)
+		identifyWebSocket(websocket)
 		assert websocket.receive_json()["type"] == "lobby-state"
 
 		websocket.send_text("{not-valid-json")
@@ -493,7 +493,7 @@ def test_four_configured_players_start_game_once(client, gameId, monkeypatch):
 			websocket = stack.enter_context(client.websocket_connect(f"/toc/ws/{gameId}/{playerName}"))
 			sockets[playerName] = websocket
 
-			ready = identifyWebSocket(websocket)
+			identifyWebSocket(websocket)
 
 			for connectedSocket in sockets.values():
 				state = receiveLobbyState(connectedSocket)
@@ -802,7 +802,7 @@ def test_resume_token_is_not_broadcast_to_other_players(client, gameId):
 
 def test_player_cannot_reconnect_with_another_players_token(client, gameId):
 	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as aliceSocket:
-		aliceReady = identifyWebSocket(aliceSocket)
+		identifyWebSocket(aliceSocket)
 		receiveLobbyState(aliceSocket)
 
 	with client.websocket_connect(f"/toc/ws/{gameId}/Bob") as bobSocket:
