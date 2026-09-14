@@ -246,7 +246,7 @@ def test_player_uses_identifier_as_router_id_by_default():
 	router = FakeRouter([])
 	player = Player(identifier="TEST-Alice", name="Alice", router=router)
 
-	asyncio.run(player.send_message_to_user({"type": "test"}))
+	asyncio.run(player.sendMessageToUser({"type": "test"}))
 
 	assert player.identifier == "TEST-Alice"
 	assert player.routerId == "TEST-Alice"

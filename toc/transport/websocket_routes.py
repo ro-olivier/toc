@@ -193,9 +193,9 @@ async def websocket_endpoint(websocket: WebSocket, gameId: str, playerName: str)
 
 		else:
 			if gameSession.started:
-				await existingParticipant.primaryPlayer.send_message_to_user(gameSession.lobbyState())
-				await existingParticipant.primaryPlayer.send_message_to_user(gameSession.fullUI())
-				await existingParticipant.primaryPlayer.send_message_to_user(buildMessage(
+				await existingParticipant.primaryPlayer.sendMessageToUser(gameSession.lobbyState())
+				await existingParticipant.primaryPlayer.sendMessageToUser(gameSession.fullUI())
+				await existingParticipant.primaryPlayer.sendMessageToUser(buildMessage(
 					"log",
 					"connection.rejoined_self",
 					f"You successfully rejoined the game in team {existingParticipant.team} with colour {existingParticipant.color}!",

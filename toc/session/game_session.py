@@ -848,7 +848,7 @@ class GameSession:
 	async def broadcast(self, message: dict[str, object], excludedRouterId: str | None = None) -> None:
 		for routerId, sessionParticipant in self.participants.items():
 			if routerId != excludedRouterId and sessionParticipant.primaryPlayer is not None:
-				await sessionParticipant.primaryPlayer.send_message_to_user(message)
+				await sessionParticipant.primaryPlayer.sendMessageToUser(message)
 
 	async def gameLoop(self) -> None:
 		try:
@@ -885,7 +885,7 @@ class GameSession:
 				return False
 
 			if sessionParticipant.configured:
-				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
+				await sessionParticipant.primaryPlayer.sendMessageToUser(buildMessage(
 					"lobby-error",
 					"lobby.errors.already_confirmed",
 					"Your lobby choices have already been confirmed.",
@@ -893,7 +893,7 @@ class GameSession:
 				return False
 
 			if team not in self._modeDefinition.teamIds:
-				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
+				await sessionParticipant.primaryPlayer.sendMessageToUser(buildMessage(
 					"lobby-error",
 					"lobby.errors.invalid_team",
 					"Please choose a valid team.",
@@ -908,7 +908,7 @@ class GameSession:
 			expectedColorCount = self._modeDefinition.seatsPerParticipant
 
 			if type(colors) is not list or len(colors) != expectedColorCount:
-				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
+				await sessionParticipant.primaryPlayer.sendMessageToUser(buildMessage(
 					"lobby-error",
 					"lobby.errors.invalid_color_count",
 					f"Please select {expectedColorCount} colours.",
@@ -917,7 +917,7 @@ class GameSession:
 				return False
 
 			if len(set(colors)) != len(colors) or any(color not in AVAILABLE_COLORS for color in colors):
-				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
+				await sessionParticipant.primaryPlayer.sendMessageToUser(buildMessage(
 					"lobby-error",
 					"lobby.errors.invalid_color",
 					"Please choose valid and distinct colours.",
@@ -925,7 +925,7 @@ class GameSession:
 				return False
 
 			if self.isTeamFull(team):
-				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
+				await sessionParticipant.primaryPlayer.sendMessageToUser(buildMessage(
 					"lobby-error",
 					"lobby.errors.team_full",
 					f"Team {team} is already full.",
@@ -937,7 +937,7 @@ class GameSession:
 			takenColor = next((color for color in colors if color not in availableColors), None)
 
 			if takenColor is not None:
-				await sessionParticipant.primaryPlayer.send_message_to_user(buildMessage(
+				await sessionParticipant.primaryPlayer.sendMessageToUser(buildMessage(
 					"lobby-error",
 					"lobby.errors.color_taken",
 					f"The colour {takenColor} has already been selected.",

@@ -87,7 +87,7 @@ class DiscardChoosingPlayer(Player):
 		self.discardPrompts.append(fallback)
 		return self.cardToDiscard
 
-	async def send_message_to_user(self, message):
+	async def sendMessageToUser(self, message):
 		pass
 
 class ExchangeOrderPlayer(Player):

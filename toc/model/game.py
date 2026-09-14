@@ -649,7 +649,7 @@ class Game:
 					moveChoice = moveOptions[0]
 					moveChoice.updateDescription()
 					cardLabel = f"{moveChoice.card.suit}{moveChoice.card.value}"
-					await self._activePlayer.send_message_to_user(buildMessage(
+					await self._activePlayer.sendMessageToUser(buildMessage(
 						"forced-play",
 						"gameplay.forced_play",
 						f"You have only one legal move, so you must play {cardLabel}.",
