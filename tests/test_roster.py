@@ -1,9 +1,13 @@
 import pytest
 
-from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken
+from toc.infrastructure.identity import (
+	createPlayerId,
+	createResumeToken,
+	hashResumeToken,
+)
+from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
 from toc.model.player import Player
 from toc.session.roster import Participant, PlayerSeat, SessionRoster
-from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
 
 
 def makeParticipant(name: str) -> Participant:

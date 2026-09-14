@@ -2,9 +2,7 @@ import json
 import logging
 import os
 import sys
-
 from datetime import datetime, timezone
-
 
 CONTEXT_FIELDS = (
 	"sessionId",

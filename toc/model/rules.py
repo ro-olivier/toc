@@ -2,6 +2,7 @@ from dataclasses import asdict, dataclass, fields
 from enum import StrEnum
 from typing import get_type_hints
 
+
 class ShuffleMode(StrEnum):
 	NEVER = "never"
 	ON_DEALER_CHANGE = "on_dealer_change"

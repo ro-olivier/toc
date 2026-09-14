@@ -3,16 +3,24 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from toc.infrastructure.clock import Clock, SYSTEM_CLOCK
+from settings import (
+	GAME_SUSPENDED_CLOSE_CODE,
+	LOBBY_EXPIRED_CLOSE_CODE,
+	LOBBY_LIFETIME_SECONDS,
+	SESSION_MONITOR_INTERVAL_SECONDS,
+)
+from toc.infrastructure.clock import SYSTEM_CLOCK, Clock
 from toc.infrastructure.identity import createJoinCode, normalizeJoinCode
 from toc.model.game_mode import GameModeDefinition
-from toc.model.rules import GameRules, MONTSURVENT_RULES
-from toc.persistence.archive_store import ArchiveCategory, ArchiveCorruptionError, CompressedJsonStore
+from toc.model.rules import MONTSURVENT_RULES, GameRules
+from toc.persistence.archive_store import (
+	ArchiveCategory,
+	ArchiveCorruptionError,
+	CompressedJsonStore,
+)
 from toc.persistence.snapshot_state import SessionSnapshotState
 from toc.session.game_session import GameSession
 from toc.session.input_router import PlayerInputRouter
-from settings import GAME_SUSPENDED_CLOSE_CODE, LOBBY_EXPIRED_CLOSE_CODE, LOBBY_LIFETIME_SECONDS, SESSION_MONITOR_INTERVAL_SECONDS
-
 
 logger = logging.getLogger("toc.main")
 

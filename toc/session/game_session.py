@@ -6,27 +6,42 @@ from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Self, TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Self, TypeVar
 
-from toc.infrastructure.clock import Clock, SYSTEM_CLOCK
+from settings import (
+	ALL_PLAYERS_DISCONNECTED_GRACE_SECONDS,
+	GAME_INACTIVITY_SECONDS,
+	GAME_SUSPENDED_CLOSE_CODE,
+	LOBBY_LIFETIME_SECONDS,
+)
+from toc.infrastructure.clock import SYSTEM_CLOCK, Clock
 from toc.infrastructure.identity import createSeatId, createSessionId
 from toc.infrastructure.messages import buildMessage
 from toc.model.audit import GameEvent, GameEventLog, GameEventType
 from toc.model.cards import Card
 from toc.model.game import Game
-from toc.model.game_mode import DEFAULT_GAME_MODE, GameModeDefinition, getGameModeDefinition
+from toc.model.game_mode import (
+	DEFAULT_GAME_MODE,
+	GameModeDefinition,
+	getGameModeDefinition,
+)
 from toc.model.game_phase import GamePhase
 from toc.model.move import Move
 from toc.model.params import AVAILABLE_COLORS
 from toc.model.player import Player
-from toc.model.rules import GameRules, MONTSURVENT_RULES, getMatchingPresetName
+from toc.model.rules import MONTSURVENT_RULES, GameRules, getMatchingPresetName
 from toc.persistence.archive_store import ArchiveCategory, CompressedJsonStore
 from toc.persistence.finished_state import FinishedArchiveState
 from toc.persistence.persistent_state import SessionMetadataState
-from toc.persistence.snapshot_state import CardState, GameProgressState, SessionSnapshotState, SevenHopProgressState, SevenSplitProgressState
+from toc.persistence.snapshot_state import (
+	CardState,
+	GameProgressState,
+	SessionSnapshotState,
+	SevenHopProgressState,
+	SevenSplitProgressState,
+)
 from toc.session.roster import Participant, PlayerSeat, SessionRoster
 from toc.session.session_participant import SessionParticipant
-from settings import ALL_PLAYERS_DISCONNECTED_GRACE_SECONDS, GAME_INACTIVITY_SECONDS, GAME_SUSPENDED_CLOSE_CODE, LOBBY_LIFETIME_SECONDS
 
 if TYPE_CHECKING:
 	from toc.session.input_router import PlayerInputRouter

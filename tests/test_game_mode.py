@@ -1,6 +1,12 @@
 import pytest
 
-from toc.model.game_mode import DEFAULT_GAME_MODE, DuelFourLayout, GameMode, GameModeDefinition, getGameModeDefinition
+from toc.model.game_mode import (
+	DEFAULT_GAME_MODE,
+	DuelFourLayout,
+	GameMode,
+	GameModeDefinition,
+	getGameModeDefinition,
+)
 
 
 @pytest.mark.parametrize(

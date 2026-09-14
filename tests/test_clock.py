@@ -1,14 +1,13 @@
-import json
 import asyncio
-
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from toc.infrastructure.identity import createPlayerId
+from toc.persistence.persistent_state import SessionMetadataState
 from toc.session.connection_manager import ConnectionManager
 from toc.session.game_session import GameSession
 from toc.session.input_router import PlayerInputRouter
-from toc.persistence.persistent_state import SessionMetadataState
-from toc.infrastructure.identity import createPlayerId
 from toc.session.roster import Participant
 from toc.session.session_participant import SessionParticipant
 

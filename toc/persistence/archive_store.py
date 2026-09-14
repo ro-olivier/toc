@@ -1,7 +1,7 @@
-from enum import StrEnum
 import gzip
 import json
 import os
+from enum import StrEnum
 from pathlib import Path
 from typing import Never
 from uuid import UUID, uuid4

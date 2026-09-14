@@ -1,5 +1,4 @@
 import json
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum

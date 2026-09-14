@@ -2,8 +2,7 @@ import hashlib
 import secrets
 import uuid
 
-from settings import MAX_PLAYER_NAME_LENGTH, RESUME_TOKEN_BYTES, PLAYER_NAME_PATTERN
-
+from settings import MAX_PLAYER_NAME_LENGTH, PLAYER_NAME_PATTERN, RESUME_TOKEN_BYTES
 
 JOIN_CODE_ADJECTIVES = (
 	"amber",

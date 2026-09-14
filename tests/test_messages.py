@@ -1,9 +1,9 @@
-import pytest
 import ast
 from pathlib import Path
 
-from toc.infrastructure.messages import MESSAGE_KEYS, buildMessage
+import pytest
 
+from toc.infrastructure.messages import MESSAGE_KEYS, buildMessage
 
 
 def test_build_message_contains_translation_and_event_data():

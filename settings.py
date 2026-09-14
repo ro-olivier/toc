@@ -1,6 +1,6 @@
-from pathlib import Path
 import os
 import re
+from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 GAME_DATA_DIRECTORY = Path(os.environ.get("TOC_DATA_DIRECTORY", BASE_DIR / "game-data"))

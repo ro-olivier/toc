@@ -5,16 +5,16 @@ import logging
 from typing import TYPE_CHECKING
 
 from toc.infrastructure.messages import buildMessage
+from toc.model.audit import GameEventType
 from toc.model.board import Board
-from toc.model.cards import Deck, Card
+from toc.model.cards import Card, Deck
 from toc.model.game_phase import GamePhase
 from toc.model.hand import Hand
 from toc.model.move import Move
-from toc.model.spot import Spot
 from toc.model.params import *
 from toc.model.player import Player
 from toc.model.rules import *
-from toc.model.audit import GameEventType
+from toc.model.spot import Spot
 
 if TYPE_CHECKING:
 	from toc.session.game_session import GameSession

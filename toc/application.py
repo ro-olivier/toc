@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-import logging
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from settings import BASE_DIR
 from toc.infrastructure.app_logging import configureApplicationLogging
 from toc.runtime import manager
 from toc.transport.http_routes import httpRouter
 from toc.transport.websocket_routes import websocketRouter
-from settings import BASE_DIR
-
 
 configureApplicationLogging()
 logger = logging.getLogger("toc.main")

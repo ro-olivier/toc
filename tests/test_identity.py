@@ -1,8 +1,20 @@
-import pytest
-
 from uuid import UUID
 
-from toc.infrastructure.identity import JOIN_CODE_ADJECTIVES, JOIN_CODE_NOUNS, createJoinCode, createPlayerId, createResumeToken, createSessionId, hashResumeToken, resumeTokenMatches, createSeatId, normalizeJoinCode, normalizePlayerName
+import pytest
+
+from toc.infrastructure.identity import (
+	JOIN_CODE_ADJECTIVES,
+	JOIN_CODE_NOUNS,
+	createJoinCode,
+	createPlayerId,
+	createResumeToken,
+	createSeatId,
+	createSessionId,
+	hashResumeToken,
+	normalizeJoinCode,
+	normalizePlayerName,
+	resumeTokenMatches,
+)
 
 
 def test_join_code_uses_adjective_and_noun():

@@ -1,14 +1,28 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 import json
 import logging
+from contextlib import suppress
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from settings import CLIENT_MESSAGE_TYPES, CONNECTION_IDENTIFICATION_ERROR_CODE, GAME_ALREADY_FULL_CODE, NO_GAME_FOUND_CODE, NO_PLAYER_CONTEXT_FOUND_CODE, INVALID_PLAYER_NAME_CODE
-from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken, normalizeJoinCode, normalizePlayerName, resumeTokenMatches
+from settings import (
+	CLIENT_MESSAGE_TYPES,
+	CONNECTION_IDENTIFICATION_ERROR_CODE,
+	GAME_ALREADY_FULL_CODE,
+	INVALID_PLAYER_NAME_CODE,
+	NO_GAME_FOUND_CODE,
+	NO_PLAYER_CONTEXT_FOUND_CODE,
+)
+from toc.infrastructure.identity import (
+	createPlayerId,
+	createResumeToken,
+	hashResumeToken,
+	normalizeJoinCode,
+	normalizePlayerName,
+	resumeTokenMatches,
+)
 from toc.infrastructure.messages import buildMessage
 from toc.infrastructure.versions import WEBSOCKET_PROTOCOL_VERSION
 from toc.model.params import IDENTIFY_TIMEOUT_SECONDS
@@ -17,7 +31,6 @@ from toc.runtime import manager, router
 from toc.session.input_router import DuplicateNameError
 from toc.session.roster import Participant
 from toc.session.session_participant import SessionParticipant
-
 
 logger = logging.getLogger("toc.main")
 websocketRouter = APIRouter()

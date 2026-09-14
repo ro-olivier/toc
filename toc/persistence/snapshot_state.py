@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from toc.model.cards import Card, Deck
-from toc.model.params import JOKER_COLORS, JOKER_VALUE, SPOTS_PER_HOUSE, SUITS, VALUES
-from toc.model.game import Game
 from toc.model.audit import GameEvent
+from toc.model.cards import Card, Deck
+from toc.model.game import Game
 from toc.model.game_phase import GamePhase
+from toc.model.params import JOKER_COLORS, JOKER_VALUE, SPOTS_PER_HOUSE, SUITS, VALUES
 from toc.persistence.persistent_state import SessionMetadataState
 
 if TYPE_CHECKING:

@@ -5,9 +5,13 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Literal, overload
 from uuid import UUID
 
-from toc.model.rules import GameRules
-from toc.infrastructure.versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, RULES_FORMAT_VERSION
+from toc.infrastructure.versions import (
+	ARCHIVE_FORMAT_VERSION,
+	ENGINE_VERSION,
+	RULES_FORMAT_VERSION,
+)
 from toc.model.game_mode import GameModeDefinition
+from toc.model.rules import GameRules
 
 if TYPE_CHECKING:
 	from toc.session.game_session import GameSession

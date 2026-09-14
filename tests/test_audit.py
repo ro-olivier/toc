@@ -1,8 +1,7 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
-
-from datetime import datetime, timedelta, timezone
 
 from toc.model.audit import GameEvent, GameEventLog, GameEventType
 from toc.session.game_session import GameSession

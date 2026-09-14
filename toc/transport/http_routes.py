@@ -5,9 +5,13 @@ from fastapi import APIRouter, Body, HTTPException
 from toc.infrastructure.identity import normalizePlayerName
 from toc.infrastructure.messages import MESSAGE_KEYS, buildMessage
 from toc.model.game_mode import DEFAULT_GAME_MODE, getGameModeDefinition
-from toc.model.rules import DEFAULT_RULE_PRESET, RULE_PRESETS, getRuleSchema, resolveRuleset
+from toc.model.rules import (
+	DEFAULT_RULE_PRESET,
+	RULE_PRESETS,
+	getRuleSchema,
+	resolveRuleset,
+)
 from toc.runtime import manager, router
-
 
 httpRouter = APIRouter()
 

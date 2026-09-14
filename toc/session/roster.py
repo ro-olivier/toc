@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from toc.model.player import Player
 from toc.model.game_mode import GameModeDefinition
+from toc.model.player import Player
 
 if TYPE_CHECKING:
 	from starlette.websockets import WebSocket

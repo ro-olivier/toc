@@ -3,8 +3,12 @@ import stat
 
 import pytest
 
-from toc.persistence.archive_store import ArchiveCategory, ArchiveCorruptionError, CompressedJsonStore
 from toc.infrastructure.identity import createSessionId
+from toc.persistence.archive_store import (
+	ArchiveCategory,
+	ArchiveCorruptionError,
+	CompressedJsonStore,
+)
 
 
 @pytest.fixture

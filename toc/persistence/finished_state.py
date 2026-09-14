@@ -5,12 +5,16 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from toc.infrastructure.versions import ARCHIVE_FORMAT_VERSION, ENGINE_VERSION, RULES_FORMAT_VERSION
+from toc.infrastructure.versions import (
+	ARCHIVE_FORMAT_VERSION,
+	ENGINE_VERSION,
+	RULES_FORMAT_VERSION,
+)
 from toc.model.audit import GameEvent, GameEventType
-from toc.model.rules import GameRules
-from toc.persistence.snapshot_state import GameState
 from toc.model.game_mode import GameModeDefinition
 from toc.model.params import SPOTS_PER_HOUSE
+from toc.model.rules import GameRules
+from toc.persistence.snapshot_state import GameState
 
 if TYPE_CHECKING:
 	from toc.session.game_session import GameSession

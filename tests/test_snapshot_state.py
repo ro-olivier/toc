@@ -1,30 +1,46 @@
-import json
-
-import pytest
 import asyncio
-from datetime import timedelta, datetime, timezone
+import json
+from datetime import datetime, timedelta, timezone
 from threading import Event
 
+import pytest
+
 from settings import *
-from toc.infrastructure.identity import createPlayerId, createResumeToken, hashResumeToken, createSessionId
 from toc.infrastructure.clock import SYSTEM_CLOCK
+from toc.infrastructure.identity import (
+	createPlayerId,
+	createResumeToken,
+	createSessionId,
+	hashResumeToken,
+)
+from toc.model.audit import GameEventType
 from toc.model.cards import Card, Deck
+from toc.model.game import Game
+from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
+from toc.model.game_phase import GamePhase
+from toc.model.move import Move
+from toc.model.params import COLORS
 from toc.model.player import Player
 from toc.model.spot import Spot
-from toc.model.move import Move
-from toc.model.game import Game
-from toc.model.params import COLORS
-from toc.model.audit import GameEventType
-from toc.model.game_phase import GamePhase
 from toc.persistence.archive_store import ArchiveCategory, CompressedJsonStore
-from toc.persistence.snapshot_state import CardState, DeckState, GameProgressState, GameState, PlayerGameState, PositionState, SessionSnapshotState, SevenHopProgressState, SevenSplitProgressState
 from toc.persistence.finished_state import FinishedArchiveState
+from toc.persistence.snapshot_state import (
+	CardState,
+	DeckState,
+	GameProgressState,
+	GameState,
+	PlayerGameState,
+	PositionState,
+	SessionSnapshotState,
+	SevenHopProgressState,
+	SevenSplitProgressState,
+)
 from toc.session.connection_manager import ConnectionManager
 from toc.session.game_session import GameSession
 from toc.session.input_router import PlayerInputRouter
-from toc.model.game_mode import DuelFourLayout, GameMode, getGameModeDefinition
 from toc.session.roster import Participant, PlayerSeat
 from toc.session.session_participant import SessionParticipant
+
 
 class FakeClock:
 	def __init__(self, initialTime):

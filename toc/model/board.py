@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 from toc.model.cards import Card
 from toc.model.move import Move
 from toc.model.params import *
-from toc.model.rules import FiveBehaviour, GameRules, MONTSURVENT_RULES
-from toc.model.spot import Spot, House
+from toc.model.rules import MONTSURVENT_RULES, FiveBehaviour, GameRules
+from toc.model.spot import House, Spot
 
 if TYPE_CHECKING:
 	from toc.model.player import Player

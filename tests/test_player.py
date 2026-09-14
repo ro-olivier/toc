@@ -1,4 +1,5 @@
 import asyncio
+
 import pytest
 
 from toc.model.board import Board

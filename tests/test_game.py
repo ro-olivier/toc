@@ -1,14 +1,22 @@
+import asyncio
+
+import pytest
+
+from toc.model.audit import GameEventType
 from toc.model.cards import Card
 from toc.model.game import Game
+from toc.model.game_phase import GamePhase
 from toc.model.move import Move
 from toc.model.params import COLORS
 from toc.model.player import Player
-from toc.model.rules import FiveHopDecider, GameRules, MONTSURVENT_RULES, Rotation, SevenHopping, ShuffleMode
-from toc.model.game_phase import GamePhase
-from toc.model.audit import GameEventType
-	
-import asyncio
-import pytest
+from toc.model.rules import (
+	MONTSURVENT_RULES,
+	FiveHopDecider,
+	GameRules,
+	Rotation,
+	SevenHopping,
+	ShuffleMode,
+)
 
 TEAM_SIX_COLORS = ["red", "blue", "green", "yellow", "purple", "orange"]
 

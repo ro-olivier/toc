@@ -1,6 +1,6 @@
+import json
 from dataclasses import FrozenInstanceError
 
-import json
 import pytest
 
 from toc.model.rules import *

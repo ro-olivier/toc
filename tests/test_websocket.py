@@ -2,18 +2,16 @@ from contextlib import ExitStack
 from threading import Event
 
 import pytest
-
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from toc.application import app
-from toc.runtime import manager, router
-from toc.model.audit import GameEventType
-from toc.infrastructure.identity import resumeTokenMatches
-from toc.model.game_mode import GameMode, getGameModeDefinition
-from toc.model.game import Game
 from settings import INVALID_PLAYER_NAME_CODE, MAX_PLAYER_NAME_LENGTH
-
+from toc.application import app
+from toc.infrastructure.identity import resumeTokenMatches
+from toc.model.audit import GameEventType
+from toc.model.game import Game
+from toc.model.game_mode import GameMode, getGameModeDefinition
+from toc.runtime import manager, router
 
 PLAYER_NAMES = ["Alice", "Bob", "Carol", "Diana"]
 
