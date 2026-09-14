@@ -105,6 +105,11 @@ def normalizePlayerName(playerName: object) -> str:
 	if PLAYER_NAME_PATTERN.fullmatch(normalizedName) is None:
 		raise ValueError("Player name contains characters that are not URL-safe")
 
+	if normalizedName in (".", ".."):
+		raise ValueError("Player name cannot be '.' or '..'")
+
+	return normalizedName
+
 	return normalizedName
 
 

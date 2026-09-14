@@ -27,6 +27,13 @@ app.returnToStartAfterServerClose = function returnToStartAfterServerClose(messa
 
 app.connectToGame = async function connectToGame(gameId, name) {
   app.clearError();
+  name = name.trim();
+
+  if (name === "." || name === "..") {
+    app.showError(i18n.t("errors.invalid_creator_name"));
+    return;
+  }
+
   gameId = gameId.trim().toLowerCase();
   const wsUrl = app.buildWebSocketUrl(gameId, name);
   try {

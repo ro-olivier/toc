@@ -69,3 +69,8 @@ def test_player_name_normalization_accepts_url_safe_characters():
 def test_player_name_normalization_rejects_non_url_safe_names(playerName):
 	with pytest.raises(ValueError):
 		normalizePlayerName(playerName)
+
+@pytest.mark.parametrize("playerName", [".", ".."])
+def test_player_name_normalization_rejects_url_path_segments(playerName):
+	with pytest.raises(ValueError, match="cannot be"):
+		normalizePlayerName(playerName)
