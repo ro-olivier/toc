@@ -76,7 +76,7 @@ async def websocket_endpoint(websocket: WebSocket, gameId: str, playerName: str)
 	try:
 		gameId = normalizeJoinCode(gameId)
 	except ValueError:
-		await websocket.close(code=4001)
+		await websocket.close(code=NO_GAME_FOUND_CODE)
 		return
 
 	gameSession = manager.getOrRestoreGame(gameId, router)
@@ -157,7 +157,7 @@ async def websocket_endpoint(websocket: WebSocket, gameId: str, playerName: str)
 		gameSession.notePlayerConnected()
 
 	except (DuplicateNameError, KeyError):
-		await websocket.close(code=4003)
+		await websocket.close(code=NO_PLAYER_CONTEXT_FOUND_CODE)
 		return
 
 	async def input_loop() -> None:

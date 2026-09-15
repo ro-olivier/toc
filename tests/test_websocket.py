@@ -5,13 +5,19 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from settings import INVALID_PLAYER_NAME_CODE, MAX_PLAYER_NAME_LENGTH
+from settings import (
+	INVALID_PLAYER_NAME_CODE,
+	MAX_PLAYER_NAME_LENGTH,
+	NO_GAME_FOUND_CODE,
+	NO_PLAYER_CONTEXT_FOUND_CODE,
+)
 from toc.application import app
 from toc.infrastructure.identity import resumeTokenMatches
 from toc.model.audit import GameEventType
 from toc.model.game import Game
 from toc.model.game_mode import GameMode, getGameModeDefinition
 from toc.runtime import manager, router
+from toc.session.input_router import DuplicateNameError
 
 PLAYER_NAMES = ["Alice", "Bob", "Carol", "Diana"]
 
@@ -146,7 +152,7 @@ def test_valid_websocket_connection_receives_ready_and_lobby_state(client, gameI
 
 def test_unknown_game_closes_websocket_with_4001(client):
 	with client.websocket_connect("/toc/ws/DOES-NOT-EXIST/Alice") as websocket:
-		assertWebSocketClosesWith(websocket, 4001)
+		assertWebSocketClosesWith(websocket, NO_GAME_FOUND_CODE)
 
 
 def test_duplicate_active_player_name_closes_websocket_with_4002(client, gameId):
@@ -155,9 +161,21 @@ def test_duplicate_active_player_name_closes_websocket_with_4002(client, gameId)
 		receiveLobbyState(firstConnection)
 
 		with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as duplicateConnection:
-			assertWebSocketClosesWith(duplicateConnection, 4002)
+			assertWebSocketClosesWith(duplicateConnection, NO_PLAYER_CONTEXT_FOUND_CODE)
 
+def test_registration_race_closes_websocket_with_player_context_code(client, gameId, monkeypatch):
+	def rejectRegistration(routerId):
+		raise DuplicateNameError
 
+	monkeypatch.setattr(router, "register", rejectRegistration)
+
+	with client.websocket_connect(f"/toc/ws/{gameId}/Alice") as websocket:
+		websocket.send_json({"type": "identify", "resumeToken": None})
+		assertWebSocketClosesWith(websocket, NO_PLAYER_CONTEXT_FOUND_CODE)
+
+	assert manager.games[gameId].participants == {}
+
+	
 def test_fifth_player_closes_websocket_with_4004(client, gameId):
 	with ExitStack() as connections:
 		for playerName in PLAYER_NAMES:
