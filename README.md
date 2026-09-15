@@ -7,7 +7,7 @@ This release supports two, four, and six-seat boards; human participants may con
 ## Documentation
 
 - [Player guide](docs/PLAYER_GUIDE.md) — creating, joining, playing, reconnecting, and the supported modes.
-- [Game rules](RULES.md) — the complete implemented rules and every configurable option.
+- [Game rules](docs/RULES.md) — the complete implemented rules and every configurable option.
 - [Architecture](docs/ARCHITECTURE.md) — source layout, responsibilities, runtime flow, and domain model.
 - [Configuration reference](docs/CONFIGURATION.md) — environment, lifecycle constants, modes, rulesets, translations, and versions.
 - [HTTP and WebSocket protocol](docs/PROTOCOL.md) — public endpoints, message contracts, and close codes.

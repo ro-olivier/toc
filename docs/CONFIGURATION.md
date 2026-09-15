@@ -73,7 +73,7 @@ The default mode is `team_four`.
 
 `GameRules` is an immutable, slotted dataclass. The only named preset is `montsurvent`, which is also the default. A game stores both the preset label and all effective values so future preset edits cannot change an archived game retroactively.
 
-The complete semantic reference is in [Game rules](../RULES.md).
+The complete semantic reference is in [Game rules](./RULES.md).
 
 ### Programmatic construction
 

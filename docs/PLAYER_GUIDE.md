@@ -102,4 +102,4 @@ An unstarted lobby remains open for 15 minutes. After that, it closes without be
 - Check the service logs with `journalctl -u toc.service`.
 - Preserve the corresponding `.json.gz` archive when reporting a game-state bug; it contains the state and audit trail needed for diagnosis.
 
-See [Game rules](../RULES.md) for all card and board behaviour.
+See [Game rules](./RULES.md) for all card and board behaviour.
