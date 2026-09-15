@@ -109,8 +109,6 @@ def normalizePlayerName(playerName: object) -> str:
 
 	return normalizedName
 
-	return normalizedName
-
 
 def createSessionId() -> str:
 	return uuid.uuid4().hex
