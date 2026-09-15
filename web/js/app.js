@@ -20,7 +20,7 @@ app.refreshOpenLobbies();
 
 dom.resumeGameBtn.addEventListener("click", async () => {
   if (!state.stored_player_name || !state.stored_game_id) return;
-  await app.connectToGame(state.stored_game_id, state.stored_player_name, true);
+  await app.connectToGame(state.stored_game_id, state.stored_player_name);
 });
 
 window.setInterval(() => {
