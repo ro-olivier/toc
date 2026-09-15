@@ -167,6 +167,18 @@ class GameSession:
 		if self._allPlayersDisconnectedMonotonic is None:
 			self._allPlayersDisconnectedMonotonic = self._clock.monotonic()
 
+	def canDiscardFinishedSession(self) -> bool:
+		return self.game is not None and self.game.isFinished and not any(sessionParticipant.active for sessionParticipant in self.participants.values())
+
+	def forgetPlayerRoutingState(self) -> None:
+		if any(sessionParticipant.active for sessionParticipant in self.participants.values()):
+			raise RuntimeError("Cannot forget routing state while players are connected")
+
+		for routerId in self.participants:
+			self.router.forget(routerId)
+
+		self._allPlayersDisconnectedMonotonic = None
+
 	def lobbyHasExpired(self, lifetimeSeconds: float = LOBBY_LIFETIME_SECONDS) -> bool:
 		return not self.started and self.lobbyAgeSeconds() >= lifetimeSeconds
 

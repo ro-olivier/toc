@@ -247,10 +247,24 @@ class ConnectionManager:
 	async def monitorOnce(self) -> dict[str, tuple[str, ...]]:
 		expiredGameIds: list[str] = []
 		suspendedGameIds: list[str] = []
+		finishedGameIds: list[str] = []
 		failedGameIds: list[str] = []
 
 		for gameId, session in list(self.games.items()):
 			try:
+				if session.canDiscardFinishedSession():
+					await session.finalizeFinishedGame()
+
+					if self.games.get(gameId) is not session or not session.canDiscardFinishedSession():
+						continue
+
+					session.forgetPlayerRoutingState()
+					self.games.pop(gameId)
+					finishedGameIds.append(gameId)
+
+					logger.info("Finished game removed from memory", extra={"sessionId": session.sessionId, "joinCode": session.joinCode})
+					continue
+
 				if session.lobbyHasExpired():
 					await session.closeConnections(LOBBY_EXPIRED_CLOSE_CODE, "Lobby expired")
 
@@ -290,5 +304,6 @@ class ConnectionManager:
 		return {
 			"expired": tuple(expiredGameIds),
 			"suspended": tuple(suspendedGameIds),
+			"finished": tuple(finishedGameIds),
 			"failed": tuple(failedGameIds),
 		}

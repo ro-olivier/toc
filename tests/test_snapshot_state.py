@@ -1480,6 +1480,7 @@ def test_monitor_removes_expired_lobby_without_archiving(tmp_path):
 		assert result == {
 			"expired": ("TEST",),
 			"suspended": (),
+			"finished": (),
 			"failed": (),
 		}
 		assert manager.getGame("TEST") is None
@@ -1509,6 +1510,7 @@ def test_monitor_suspends_game_after_disconnection_grace(tmp_path):
 		assert result == {
 			"expired": (),
 			"suspended": (session.joinCode,),
+			"finished": (),
 			"failed": (),
 		}
 		assert manager.getGame(session.joinCode) is None
@@ -2006,3 +2008,101 @@ def test_suspended_game_index_is_reused_for_unknown_join_codes(tmp_path, monkeyp
 	assert manager.getOrRestoreGame("unknown-one", PlayerInputRouter()) is None
 	assert manager.getOrRestoreGame("unknown-two", PlayerInputRouter()) is None
 	assert readCalls == [(ArchiveCategory.SUSPENDED, session.sessionId)]
+
+def test_monitor_keeps_finished_game_while_a_player_is_connected(tmp_path):
+	async def scenario():
+		store = CompressedJsonStore(tmp_path / "game-data")
+		session = makeGameSessionState(store)
+		markGameAsStarted(session)
+		session.game._isFinished = True
+		await session.finalizeFinishedGame()
+		next(iter(session.participants.values())).active = True
+
+		manager = ConnectionManager(archiveStore=store)
+		manager.games[session.joinCode] = session
+
+		result = await manager.monitorOnce()
+
+		assert result == {
+			"expired": (),
+			"suspended": (),
+			"finished": (),
+			"failed": (),
+		}
+		assert manager.getGame(session.joinCode) is session
+		assert store.pathFor(ArchiveCategory.FINISHED, session.sessionId).exists()
+
+	asyncio.run(scenario())
+
+def test_monitor_forgets_finished_game_after_everyone_disconnects(tmp_path):
+	async def scenario():
+		store = CompressedJsonStore(tmp_path / "game-data")
+		session = makeGameSessionState(store)
+		markGameAsStarted(session)
+		session.game._isFinished = True
+
+		for routerId in session.participants:
+			session.router.register(routerId)
+			session.router.unregister(routerId)
+
+		manager = ConnectionManager(archiveStore=store)
+		manager.games[session.joinCode] = session
+
+		result = await manager.monitorOnce()
+
+		assert result == {
+			"expired": (),
+			"suspended": (),
+			"finished": (session.joinCode,),
+			"failed": (),
+		}
+		assert manager.getGame(session.joinCode) is None
+		assert session.router.inputQueues == {}
+		assert session.router.outputQueues == {}
+		assert session.router.recycleBin == {}
+		assert session.router.pendingPrompts == {}
+		assert store.pathFor(ArchiveCategory.FINISHED, session.sessionId).exists()
+		assert not store.pathFor(ArchiveCategory.ACTIVE, session.sessionId).exists()
+		assert not store.pathFor(ArchiveCategory.SUSPENDED, session.sessionId).exists()
+
+	asyncio.run(scenario())
+
+def test_monitor_keeps_finished_game_when_final_archive_write_fails(tmp_path, monkeypatch):
+	async def scenario():
+		store = CompressedJsonStore(tmp_path / "game-data")
+		session = makeGameSessionState(store)
+		markGameAsStarted(session)
+		await session.checkpointActive()
+		session.game._isFinished = True
+
+		for routerId in session.participants:
+			session.router.register(routerId)
+			session.router.unregister(routerId)
+
+		originalWrite = store.write
+
+		def failingWrite(category, sessionId, payload):
+			if category is ArchiveCategory.FINISHED:
+				raise OSError("Simulated finished-archive failure")
+
+			return originalWrite(category, sessionId, payload)
+
+		monkeypatch.setattr(store, "write", failingWrite)
+
+		manager = ConnectionManager(archiveStore=store)
+		manager.games[session.joinCode] = session
+
+		result = await manager.monitorOnce()
+
+		assert result == {
+			"expired": (),
+			"suspended": (),
+			"finished": (),
+			"failed": (session.joinCode,),
+		}
+		assert manager.getGame(session.joinCode) is session
+		assert set(session.router.recycleBin) == set(session.participants)
+		assert store.pathFor(ArchiveCategory.ACTIVE, session.sessionId).exists()
+		assert not store.pathFor(ArchiveCategory.FINISHED, session.sessionId).exists()
+
+	asyncio.run(scenario())

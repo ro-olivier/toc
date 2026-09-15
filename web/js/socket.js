@@ -14,12 +14,25 @@ app.getResumeTokenStorageKey = function getResumeTokenStorageKey(gameId, playerN
   return `toc.resumeToken.${encodeURIComponent(gameId)}.${encodeURIComponent(playerName)}`;
 };
 
+app.clearStoredGameCredentials = function clearStoredGameCredentials(gameId, playerName) {
+  window.localStorage.removeItem(app.getResumeTokenStorageKey(gameId, playerName));
+
+  if (window.localStorage.getItem("session_game_ID") === gameId) {
+    window.localStorage.removeItem("session_game_ID");
+  }
+
+  if (state.stored_game_id === gameId) {
+    state.stored_game_id = null;
+  }
+
+  app.refreshResumeGamePanel();
+};
+
 app.returnToStartAfterServerClose = function returnToStartAfterServerClose(messageKey, gameId, playerName, clearGameCredentials) {
   window.sessionStorage.setItem(constants.START_NOTICE_STORAGE_KEY, messageKey);
 
   if (clearGameCredentials) {
-    window.localStorage.removeItem(app.getResumeTokenStorageKey(gameId, playerName));
-    window.localStorage.removeItem("session_game_ID");
+    app.clearStoredGameCredentials(gameId, playerName);
   }
 
   window.location.reload();
@@ -290,6 +303,7 @@ app.connectToGame = async function connectToGame(gameId, name) {
         break;
 
       case "game-over":
+        app.clearStoredGameCredentials(gameId, name);
         app.disableCardSelection();
         app.setCancelSelectionVisible(false);
         app.clearSpotSelection();
