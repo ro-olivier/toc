@@ -56,7 +56,7 @@ class Player:
 	async def sendMessageToUser(self, message: dict[str, object]) -> None:
 		await self._router.sendOutput(self._routerId, message)
 
-	async def getInputFromPrompt(self, messageKey: str, fallback: str, parameters: dict[str, object] | None = None) -> dict[str, object]:
+	async def getInputFromPrompt(self) -> dict[str, object]:
 		return await self._router.waitForInput(self._routerId)
 		
 	@property
@@ -139,10 +139,10 @@ class Player:
 	## getChoicesFromPlayer methods
 	async def getCardChoiceFromPlayer(self, messageKey: str = "prompts.choose_card", fallback: str = "What card do you want to play?") -> Card:
 		await self.sendMessageToUser(buildMessage("query-card", messageKey, fallback, **self.getMessageIdentity()))
-		cardChoice = await self.getInputFromPrompt(messageKey, fallback)
+		cardChoice = await self.getInputFromPrompt()
 
 		while not cardChoice or (not 'type' in cardChoice) or (cardChoice['type'] != 'card_selection') or (not Card(cardChoice['suit'], cardChoice['value']) in self._hand.cards):
-			cardChoice = await self.getInputFromPrompt(messageKey, fallback)
+			cardChoice = await self.getInputFromPrompt()
 
 		chosenCard = Card(cardChoice['suit'], cardChoice['value'])
 		self._router.clearPendingPrompt(self._routerId)
@@ -216,7 +216,7 @@ class Player:
 
 		originsById = {str(origin): origin for origin in possibleOrigins}
 		while True:
-			spotChoice = await self.getInputFromPrompt(messageKey, fallback)
+			spotChoice = await self.getInputFromPrompt()
 			if canCancel and isinstance(spotChoice, dict) and spotChoice.get("type") == "cancel_move_selection":
 				self._router.clearPendingPrompt(self._routerId)
 				return None
@@ -232,7 +232,7 @@ class Player:
 
 		targetsById = {str(target): target for target in possibleTargets}
 		while True:
-			spotChoice = await self.getInputFromPrompt(messageKey, fallback)
+			spotChoice = await self.getInputFromPrompt()
 			if canCancel and isinstance(spotChoice, dict) and spotChoice.get("type") == "cancel_move_selection":
 				self._router.clearPendingPrompt(self._routerId)
 				return None
