@@ -76,7 +76,6 @@ app.connectToGame = async function connectToGame(gameId, name) {
       console.warn("[WebSocket] Received invalid JSON:", event.data);
       return;
     }
-    console.log('[ws.oneMessage top handler] Received the following message from back-end:' + JSON.stringify(data))
 
     const actingSeatId = app.getMessageSeatId(data);
     switch (data.type) {
@@ -413,7 +412,6 @@ app.sendSpotSelection = function sendSpotSelection(seatId, spot) {
 
 app.sendSevenHopChoice = function sendSevenHopChoice(result) {
   const message = {"id": crypto.randomUUID(), "requestId": state.activeRequestId, "type": "seven_hop_choice", "name": state.local_player_name, "result": result};
-  console.log('[sendSevenHopChoice] Sending following content to back-end:' + JSON.stringify(message));
   state.ws.send(JSON.stringify(message));
 };
 
